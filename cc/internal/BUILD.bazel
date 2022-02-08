@@ -335,7 +335,7 @@ cc_test(
 
 cc_test(
     name = "rsa_util_test",
-    size = "small",
+    size = "large",
     srcs = ["rsa_util_test.cc"],
     deps = [
         ":bn_util",
@@ -353,7 +353,7 @@ cc_test(
 
 cc_test(
     name = "ec_util_test",
-    size = "small",
+    size = "large",
     srcs = ["ec_util_test.cc"],
     data = [
         "@wycheproof//testvectors:ecdh",
@@ -365,6 +365,7 @@ cc_test(
         ":ec_util",
         ":fips_utils",
         ":ssl_unique_ptr",
+        ":ssl_util",
         "//subtle:common_enums",
         "//subtle:subtle_util",
         "//subtle:wycheproof_util",
