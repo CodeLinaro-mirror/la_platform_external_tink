@@ -118,7 +118,7 @@ TEST_F(CordAesGcmBoringSslTest, CanDecryptWithStringAead) {
       subtle::AesGcmBoringSsl::New(key_);
   ASSERT_THAT(string_aead.status(), IsOk());
   util::StatusOr<std::string> plaintext =
-      (*string_aead)->Decrypt(ct.ValueOrDie().Flatten(), aad_cord.Flatten());
+      (*string_aead)->Decrypt(ct.value().Flatten(), aad_cord.Flatten());
   ASSERT_THAT(plaintext.status(), IsOk());
   EXPECT_EQ(*plaintext, kMessage);
 }
@@ -128,7 +128,7 @@ TEST_F(CordAesGcmBoringSslTest, ModifiedCord) {
   absl::Cord aad = absl::Cord(kAad);
   util::StatusOr<absl::Cord> ct = cipher_->Encrypt(message, aad);
   ASSERT_THAT(ct.status(), IsOk());
-  util::StatusOr<std::string> plaintext = cipher_->Decrypt(*ct, aad);
+  util::StatusOr<absl::Cord> plaintext = cipher_->Decrypt(*ct, aad);
   ASSERT_THAT(plaintext.status(), IsOk());
   EXPECT_EQ(*plaintext, message);
 

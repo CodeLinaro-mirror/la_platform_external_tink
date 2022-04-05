@@ -16,6 +16,7 @@
 #include "tink/internal/keyset_wrapper_impl.h"
 
 #include <string>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -59,7 +60,7 @@ class Wrapper : public PrimitiveWrapper<InputPrimitive, OutputPrimitive> {
         result->back().second.append(" (primary)");
       }
     }
-    return result;
+    return std::move(result);
   }
 };
 
@@ -104,7 +105,7 @@ TEST(KeysetWrapperImplTest, Basic) {
       wrapper_or->Wrap(keyset);
 
   ASSERT_THAT(wrapped.status(), IsOk());
-  ASSERT_THAT(*wrapped.ValueOrDie(),
+  ASSERT_THAT(*wrapped.value(),
               UnorderedElementsAre(Pair(111, "one"), Pair(222, "two (primary)"),
                                    Pair(333, "three")));
 }
@@ -155,7 +156,7 @@ TEST(KeysetWrapperImplTest, OnlyEnabled) {
       wrapper_or->Wrap(keyset);
 
   ASSERT_THAT(wrapped.status(), IsOk());
-  ASSERT_THAT(*wrapped.ValueOrDie(),
+  ASSERT_THAT(*wrapped.value(),
               UnorderedElementsAre(Pair(111, "one"), Pair(222, "two (primary)"),
                                    Pair(444, "four")));
 }
