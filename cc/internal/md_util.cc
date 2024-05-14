@@ -19,6 +19,7 @@
 
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
+#include "absl/strings/str_cat.h"
 #include "openssl/evp.h"
 #include "tink/internal/err_util.h"
 #include "tink/internal/util.h"
