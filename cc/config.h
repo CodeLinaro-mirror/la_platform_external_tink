@@ -21,6 +21,7 @@
 
 #include "absl/status/status.h"
 #include "absl/strings/ascii.h"
+#include "absl/strings/str_cat.h"
 #include "tink/aead/aead_config.h"
 #include "tink/catalogue.h"
 #include "tink/daead/deterministic_aead_config.h"
