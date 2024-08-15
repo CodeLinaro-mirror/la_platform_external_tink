@@ -20,7 +20,7 @@ package google.crypto.tink;
 
 option java_package = "com.google.crypto.tink.proto";
 option java_multiple_files = true;
-option go_package = "github.com/google/tink/proto/xchacha20_poly1305_go_proto";
+option go_package = "github.com/tink-crypto/tink-go/v2/proto/xchacha20_poly1305_go_proto";
 
 message XChaCha20Poly1305KeyFormat {
   uint32 version = 1;
@@ -29,5 +29,5 @@ message XChaCha20Poly1305KeyFormat {
 // key_type: type.googleapis.com/google.crypto.tink.XChaCha20Poly1305Key
 message XChaCha20Poly1305Key {
   uint32 version = 1;
-  bytes key_value = 3;
+  bytes key_value = 3;  // Placeholder for ctype.
 }

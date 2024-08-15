@@ -23,10 +23,10 @@ package google.crypto.tink;
 
 option java_package = "com.google.crypto.tink.proto";
 option java_multiple_files = true;
-option go_package = "github.com/google/tink/proto/ed25519_go_proto";
+option go_package = "github.com/tink-crypto/tink-go/v2/proto/ed25519_go_proto";
 
 message Ed25519KeyFormat {
-    uint32 version = 1;
+  uint32 version = 1;
 }
 
 // key_type: type.googleapis.com/google.crypto.tink.Ed25519PublicKey
@@ -36,7 +36,7 @@ message Ed25519PublicKey {
   // The public key is 32 bytes, encoded according to
   // https://tools.ietf.org/html/rfc8032#section-5.1.2.
   // Required.
-  bytes key_value = 2;
+  bytes key_value = 2;  // Placeholder for ctype.
 }
 
 // key_type: type.googleapis.com/google.crypto.tink.Ed25519PrivateKey
@@ -46,7 +46,7 @@ message Ed25519PrivateKey {
   // The private key is 32 bytes of cryptographically secure random data.
   // See https://tools.ietf.org/html/rfc8032#section-5.1.5.
   // Required.
-  bytes key_value = 2;
+  bytes key_value = 2;  // Placeholder for ctype.
   // The corresponding public key.
   Ed25519PublicKey public_key = 3;
 }

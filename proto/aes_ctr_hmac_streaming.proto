@@ -23,7 +23,7 @@ import "proto/hmac.proto";
 
 option java_package = "com.google.crypto.tink.proto";
 option java_multiple_files = true;
-option go_package = "github.com/google/tink/proto/aes_ctr_hmac_streaming_go_proto";
+option go_package = "github.com/tink-crypto/tink-go/v2/proto/aes_ctr_hmac_streaming_go_proto";
 
 message AesCtrHmacStreamingParams {
   uint32 ciphertext_segment_size = 1;
@@ -42,5 +42,5 @@ message AesCtrHmacStreamingKeyFormat {
 message AesCtrHmacStreamingKey {
   uint32 version = 1;
   AesCtrHmacStreamingParams params = 2;
-  bytes key_value = 3;  // the main key, aka. "ikm", input key material
+  bytes key_value = 3;  // Placeholder for ctype.  // the main key, aka. "ikm", input key material
 }
