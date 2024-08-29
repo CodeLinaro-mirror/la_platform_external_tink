@@ -14,59 +14,125 @@
 # limitations under the License.
 ################################################################################
 
-# This scripts runs all the Bazel tests withing a given workspace directory.
+# This script runs all the Bazel tests within a given workspace directory.
 #
 # Users must spcify the WORKSPACE directory. Optionally, the user can specify
 # a set of additional manual targets to run.
 #
-# Usage:
-#   ./kokoro/testutils/run_bazel_tests.sh \
-#     <workspace directory> \
-#     [<manual target> <manual target> ...]
 
-#######################################
-# Print some debugging output then fail.
-# Globals:
-#   None
-# Arguments:
-#   None
-#######################################
-fail_with_debug_output() {
-  ls -l
-  df -h /
+# Note: -E extends the trap to shell functions, command substitutions, and
+# commands executed in a subshell environment.
+set -eEo pipefail
+# Print some debug output on error before exiting.
+trap print_debug_output ERR
+
+usage() {
+  echo "Usage: $0 [-mh] [-b <build parameter> ...] [-t <test parameter> ...] \\"
+  echo "         <workspace directory> [<manual target> <manual target> ...]"
+  echo "  -m: Runs only the manual targets. If set, manual targets must be"
+  echo "      provided."
+  echo "  -b: Comma separated list of flags to pass to `bazel build`."
+  echo "  -t: Comma separated list of flags to pass to `bazel test`."
+  echo "  -h: Help. Print this usage information."
   exit 1
 }
 
+readonly PLATFORM="$(uname | tr '[:upper:]' '[:lower:]')"
+MANUAL_ONLY="false"
+WORKSPACE_DIR=
+MANUAL_TARGETS=
+BAZEL_CMD="bazel"
+BUILD_FLAGS=()
+TEST_FLAGS=()
+
 #######################################
-# Runs the tests contained in the given Bazel workspace.
+# Process command line arguments.
+#
 # Globals:
-#   None
-# Arguments:
-#   workspace_dir: The workspace directory path.
-#   manual_targets: (optional) Additional manual test targets.
+#   WORKSPACE_DIR
+#   MANUAL_TARGETS
 #######################################
-run_bazel_tests() {
-  local workspace_dir="$1"
+process_args() {
+  # Parse options.
+  while getopts "mhb:t:" opt; do
+    case "${opt}" in
+      m) MANUAL_ONLY="true" ;;
+      b) BUILD_FLAGS=($(echo "${OPTARG}" | tr ',' '\n')) ;;
+      t) TEST_FLAGS=($(echo "${OPTARG}" | tr ',' '\n')) ;;
+      *) usage ;;
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  WORKSPACE_DIR="$1"
+  readonly WORKSPACE_DIR
+
+  if [[ -z "${WORKSPACE_DIR}" ]]; then
+    usage
+  fi
+
   shift 1
-  local manual_targets=("$@")
+  MANUAL_TARGETS=("$@")
+  readonly MANUAL_TARGETS
 
-  readonly PLATFORM="$(uname | tr '[:upper:]' '[:lower:]')"
+  if [[ "${MANUAL_ONLY}" == "true" ]] && (( ${#MANUAL_TARGETS[@]} == 0 )); then
+    usage
+  fi
 
-  local -a TEST_FLAGS=( --strategy=TestRunner=standalone --test_output=all )
+  # Use Bazelisk (https://github.com/bazelbuild/bazelisk) if available.
+  if command -v "bazelisk" &> /dev/null; then
+    BAZEL_CMD="bazelisk"
+  fi
+  readonly BAZEL_CMD
+  echo "Using: $(which ${BAZEL_CMD})"
+}
+
+#######################################
+# Print some debugging output.
+#######################################
+print_debug_output() {
+  ls -l
+  df -h
+}
+
+main() {
+  process_args "$@"
+
+  TEST_FLAGS+=(
+    --strategy=TestRunner=standalone
+    --test_output=all
+  )
+
+  local -r workspace_dir="$(cd ${WORKSPACE_DIR} && pwd)"
+
   if [[ "${PLATFORM}" == 'darwin' ]]; then
     TEST_FLAGS+=( --jvmopt="-Djava.net.preferIPv6Addresses=true" )
+    if [[ "${workspace_dir}" =~ javascript ]]; then
+      BUILD_FLAGS+=( --experimental_inprocess_symlink_creation )
+      TEST_FLAGS+=( --experimental_inprocess_symlink_creation )
+    fi
   fi
+  readonly BUILD_FLAGS
   readonly TEST_FLAGS
   (
+    set -x
     cd "${workspace_dir}"
-    time bazel build -- ... || fail_with_debug_output
-    time bazel test "${TEST_FLAGS[@]}" -- ... || fail_with_debug_output
+    if [[ "${MANUAL_ONLY}" == "false" ]]; then
+      time "${BAZEL_CMD}" build "${BUILD_FLAGS[@]}" -- ...
+      # Exit code 4 means targets build correctly but no tests were found. See
+      # https://bazel.build/docs/scripts#exit-codes.
+      bazel_test_return=0
+      time "${BAZEL_CMD}" test "${TEST_FLAGS[@]}" -- ... || bazel_test_return="$?"
+      if (( $bazel_test_return != 0 && $bazel_test_return != 4 )); then
+        return "${bazel_test_return}"
+      fi
+    fi
     # Run specific manual targets.
-    if (( ${#manual_targets[@]} > 0 )); then
-      time bazel test "${TEST_FLAGS[@]}"  -- "${manual_targets[@]}" \
-        || fail_with_debug_output
+    if (( ${#MANUAL_TARGETS[@]} > 0 )); then
+      time "${BAZEL_CMD}" build "${BUILD_FLAGS[@]}" -- "${MANUAL_TARGETS[@]}"
+      time "${BAZEL_CMD}" test "${TEST_FLAGS[@]}"  -- "${MANUAL_TARGETS[@]}"
     fi
   )
 }
 
-run_bazel_tests "$@"
+main "$@"
