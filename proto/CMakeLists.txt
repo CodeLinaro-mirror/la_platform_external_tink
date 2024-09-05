@@ -1,5 +1,7 @@
 tink_module(proto)
 
+add_subdirectory(experimental/pqcrypto)
+
 tink_cc_proto(
   NAME common_cc_proto
   SRCS common.proto
@@ -31,17 +33,6 @@ tink_cc_proto(
   NAME rsa_ssa_pss_cc_proto
   SRCS rsa_ssa_pss.proto
   DEPS tink::proto::common_cc_proto
-)
-
-tink_cc_proto(
-  NAME cached_dek_aead_cc_proto
-  SRCS cached_dek_aead.proto
-)
-
-tink_cc_proto(
-  NAME cached_dek_envelope_cc_proto
-  SRCS cached_dek_envelope.proto
-  DEPS tink::proto::tink_cc_proto
 )
 
 tink_cc_proto(

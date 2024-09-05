@@ -50,27 +50,40 @@ endmacro()
 
 set(gtest_force_shared_crt ON CACHE BOOL "Tink dependency override" FORCE)
 
-if (NOT TINK_USE_INSTALLED_GOOGLETEST)
+if (TINK_BUILD_TESTS)
+  if (TINK_USE_INSTALLED_GOOGLETEST)
+    # This uses the CMake's FindGTest module; if successful, this call to
+    # find_package generates the targets GTest::gmock, GTest::gtest and
+    # GTest::gtest_main.
+    find_package(GTest CONFIG REQUIRED)
+    _create_interface_target(gmock GTest::gmock)
+    _create_interface_target(gtest_main GTest::gtest_main)
+  else()
+    http_archive(
+      NAME googletest
+      URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+      SHA256 1f357c27ca988c3f7c6b4bf68a9395005ac6761f034046e9dde0896e3aba00e4
+    )
+  endif()
+
   http_archive(
-    NAME com_google_googletest
-    URL https://github.com/google/googletest/archive/refs/tags/release-1.11.0.tar.gz
-    SHA256 b4870bf121ff7795ba20d20bcdd8627b8e088f2d1dab299a031c1034eddc93d5
+    NAME wycheproof
+    URL https://github.com/google/wycheproof/archive/d8ed1ba95ac4c551db67f410c06131c3bc00a97c.zip
+    SHA256 eb1d558071acf1aa6d677d7f1cabec2328d1cf8381496c17185bd92b52ce7545
+    DATA_ONLY
   )
-else()
-  # This uses the CMake's FindGTest module; if successful, this call to
-  # find_package generates the targets GTest::gmock, GTest::gtest and
-  # GTest::gtest_main.
-  find_package(GTest CONFIG REQUIRED)
-  _create_interface_target(gmock GTest::gmock)
-  _create_interface_target(gtest_main GTest::gtest_main)
+  # Symlink the Wycheproof test data.
+  # Tests expect Wycheproof test vectors to be in a local testvectors/ folder.
+  add_directory_alias("${wycheproof_SOURCE_DIR}/testvectors"
+    "${CMAKE_BINARY_DIR}/testvectors")
 endif()
 
 if (NOT TINK_USE_INSTALLED_ABSEIL)
-  # Commit from 2021-12-03
+  # Release from 2023-09-18.
   http_archive(
-    NAME com_google_absl
-    URL https://github.com/abseil/abseil-cpp/archive/9336be04a242237cd41a525bedfcf3be1bb55377.zip
-    SHA256 368be019fc8d69a566ac2cf7a75262d5ba8f6409e3ef3cdbcf0106bdeb32e91c
+    NAME abseil
+    URL https://github.com/abseil/abseil-cpp/archive/refs/tags/20230802.1.zip
+    SHA256 497ebdc3a4885d9209b9bd416e8c3f71e7a1fb8af249f6c2a80b7cbeefcd7e21
   )
 else()
   # This is everything that needs to be done here. Abseil already defines its
@@ -78,31 +91,29 @@ else()
   find_package(absl REQUIRED)
 endif()
 
-http_archive(
-  NAME wycheproof
-  URL https://github.com/google/wycheproof/archive/d8ed1ba95ac4c551db67f410c06131c3bc00a97c.zip
-  SHA256 eb1d558071acf1aa6d677d7f1cabec2328d1cf8381496c17185bd92b52ce7545
-  DATA_ONLY
-)
-
-# Symlink the Wycheproof test data.
-# Paths are hard-coded in tests, which expects wycheproof/ in this location.
-add_directory_alias("${wycheproof_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/external/wycheproof")
-
-if (NOT TINK_USE_SYSTEM_OPENSSL)
-  http_archive(
-    NAME boringssl
-    URL https://github.com/google/boringssl/archive/7686eb8ac9bc60198cbc8354fcba7f54c02792ec.zip
-    SHA256 73a7bc71f95f3259ddedc6cb5ba45d02f2359c43e75af354928b0471a428bb84
-    CMAKE_SUBDIR src
-  )
-
-  # BoringSSL targets do not carry include directory info, this fixes it.
-  target_include_directories(crypto PUBLIC "${boringssl_SOURCE_DIR}/src/include")
+# Don't fetch BoringSSL or look for OpenSSL if target `crypto` is already
+# defined.
+if (NOT TARGET crypto)
+  if (NOT TINK_USE_SYSTEM_OPENSSL)
+    # Commit from 2024-04-11.
+    http_archive(
+      NAME boringssl
+      URL https://github.com/google/boringssl/archive/07fa2780386fbbc001937fabf116c1fe4ddd2705.zip
+      SHA256 7042eac2edf6daaf2c82ca514293869f1e1a237111247aed77aee0d31a2d42f2
+      CMAKE_SUBDIR src
+    )
+    # BoringSSL targets do not carry include directory info, this fixes it.
+    target_include_directories(crypto PUBLIC
+      "$<BUILD_INTERFACE:${boringssl_SOURCE_DIR}/src/include>")
+  else()
+    # Support for ED25519 was added from 1.1.1.
+    find_package(OpenSSL 1.1.1 REQUIRED)
+    _create_interface_target(crypto OpenSSL::Crypto)
+  endif()
 else()
-  # Support for ED25519 was added from 1.1.1.
-  find_package(OpenSSL 1.1.1 REQUIRED)
-  _create_interface_target(crypto OpenSSL::Crypto)
+  message(STATUS "Using an already declared `crypto` target")
+  get_target_property(crypto_INCLUDE_DIR crypto INTERFACE_INCLUDE_DIRECTORIES)
+  message(STATUS "crypto Include Dir: ${crypto_INCLUDE_DIR}")
 endif()
 
 set(RAPIDJSON_BUILD_DOC OFF CACHE BOOL "Tink dependency override" FORCE)
@@ -114,17 +125,22 @@ http_archive(
   URL https://github.com/Tencent/rapidjson/archive/v1.1.0.tar.gz
   SHA256 bf7ced29704a1e696fbccf2a2b4ea068e7774fa37f6d7dd4039d0787f8bed98e
 )
-
 # Rapidjson is a header-only library with no explicit target. Here we create one.
 add_library(rapidjson INTERFACE)
 target_include_directories(rapidjson INTERFACE "${rapidjson_SOURCE_DIR}")
 
-set(protobuf_BUILD_TESTS OFF CACHE BOOL "Tink dependency override" FORCE)
-set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "Tink dependency override" FORCE)
+if (NOT TINK_USE_INSTALLED_PROTOBUF)
+  set(protobuf_BUILD_TESTS OFF CACHE BOOL "Tink dependency override" FORCE)
+  set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "Tink dependency override" FORCE)
+  set(protobuf_INSTALL OFF CACHE BOOL "Tink dependency override" FORCE)
 
-http_archive(
-  NAME com_google_protobuf
-  URL https://github.com/protocolbuffers/protobuf/archive/v3.19.3.zip
-  SHA256 6b6bf5cd8d0cca442745c4c3c9f527c83ad6ef35a405f64db5215889ac779b42
-  CMAKE_SUBDIR cmake
-)
+  http_archive(
+    NAME com_google_protobuf
+    URL https://github.com/protocolbuffers/protobuf/releases/download/v26.1/protobuf-26.1.zip
+    SHA256 e15c272392df84ae95797759c685a9225fe5e88838bab3e0650c29239bdfccdd
+  )
+else()
+  find_package(Protobuf REQUIRED CONFIG)
+  include_directories(${Protobuf_INCLUDE_DIRS})
+  include_directories(${CMAKE_CURRENT_BINARY_DIR})
+endif()
