@@ -43,7 +43,7 @@ class ParametersParser {
   // This function is usually called on a `Serialization` subclass matching the
   // value returned by `ObjectIdentifier()`. However, implementations should
   // verify that this is the case.
-  virtual util::StatusOr<std::unique_ptr<Parameters>> ParseParameters(
+  virtual absl::StatusOr<std::unique_ptr<Parameters>> ParseParameters(
       const Serialization& serialization) const = 0;
 
   // Returns the object identifier for `SerializationT`, which is only valid
@@ -75,17 +75,17 @@ class ParametersParserImpl : public ParametersParser {
           function)
       : object_identifier_(object_identifier), function_(function) {}
 
-  util::StatusOr<std::unique_ptr<Parameters>> ParseParameters(
+  absl::StatusOr<std::unique_ptr<Parameters>> ParseParameters(
       const Serialization& serialization) const override {
     if (serialization.ObjectIdentifier() != object_identifier_) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "Invalid object identifier for this parameters parser.");
     }
     const SerializationT* st =
         dynamic_cast<const SerializationT*>(&serialization);
     if (st == nullptr) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "Invalid serialization type for this parameters parser.");
     }

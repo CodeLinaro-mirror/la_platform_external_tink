@@ -50,7 +50,7 @@ class HybridDecryptSetWrapper : public HybridDecrypt {
         monitoring_decryption_client_(std::move(monitoring_decryption_client)) {
   }
 
-  crypto::tink::util::StatusOr<std::string> Decrypt(
+  absl::StatusOr<std::string> Decrypt(
       absl::string_view ciphertext,
       absl::string_view context_info) const override;
 
@@ -61,7 +61,7 @@ class HybridDecryptSetWrapper : public HybridDecrypt {
   std::unique_ptr<MonitoringClient> monitoring_decryption_client_;
 };
 
-util::StatusOr<std::string> HybridDecryptSetWrapper::Decrypt(
+absl::StatusOr<std::string> HybridDecryptSetWrapper::Decrypt(
     absl::string_view ciphertext, absl::string_view context_info) const {
   // BoringSSL expects a non-null pointer for context_info,
   // regardless of whether the size is 0.
@@ -103,27 +103,27 @@ util::StatusOr<std::string> HybridDecryptSetWrapper::Decrypt(
   if (monitoring_decryption_client_ != nullptr) {
     monitoring_decryption_client_->LogFailure();
   }
-  return util::Status(absl::StatusCode::kInvalidArgument, "decryption failed");
+  return absl::Status(absl::StatusCode::kInvalidArgument, "decryption failed");
 }
 
-util::Status Validate(PrimitiveSet<HybridDecrypt>* hybrid_decrypt_set) {
+absl::Status Validate(PrimitiveSet<HybridDecrypt>* hybrid_decrypt_set) {
   if (hybrid_decrypt_set == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "hybrid_decrypt_set must be non-NULL");
   }
   if (hybrid_decrypt_set->get_primary() == nullptr) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "hybrid_decrypt_set has no primary");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // anonymous namespace
 
 // static
-util::StatusOr<std::unique_ptr<HybridDecrypt>> HybridDecryptWrapper::Wrap(
+absl::StatusOr<std::unique_ptr<HybridDecrypt>> HybridDecryptWrapper::Wrap(
     std::unique_ptr<PrimitiveSet<HybridDecrypt>> primitive_set) const {
-  util::Status status = Validate(primitive_set.get());
+  absl::Status status = Validate(primitive_set.get());
   if (!status.ok()) return status;
 
   MonitoringClientFactory* const monitoring_factory =
@@ -135,13 +135,13 @@ util::StatusOr<std::unique_ptr<HybridDecrypt>> HybridDecryptWrapper::Wrap(
         absl::make_unique<HybridDecryptSetWrapper>(std::move(primitive_set))};
   }
 
-  util::StatusOr<MonitoringKeySetInfo> keyset_info =
+  absl::StatusOr<MonitoringKeySetInfo> keyset_info =
       internal::MonitoringKeySetInfoFromPrimitiveSet(*primitive_set);
   if (!keyset_info.ok()) {
     return keyset_info.status();
   }
 
-  util::StatusOr<std::unique_ptr<MonitoringClient>>
+  absl::StatusOr<std::unique_ptr<MonitoringClient>>
       monitoring_decryption_client = monitoring_factory->New(
           MonitoringContext(kPrimitive, kDecryptApi, *keyset_info));
   if (!monitoring_decryption_client.ok()) {

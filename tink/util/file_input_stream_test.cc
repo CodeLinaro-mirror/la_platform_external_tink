@@ -49,11 +49,11 @@ using ::crypto::tink::test::StatusIs;
 constexpr int kDefaultTestStreamSize = 100 * 1024;  // 100 KB.
 
 // Opens test file `filename` and returns a file descriptor to it.
-util::StatusOr<int> OpenTestFileToRead(absl::string_view filename) {
+absl::StatusOr<int> OpenTestFileToRead(absl::string_view filename) {
   std::string full_filename = absl::StrCat(test::TmpDir(), "/", filename);
   int fd = open(full_filename.c_str(), O_RDONLY);
   if (fd == -1) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         absl::StrCat("Cannot open file ", full_filename,
                                      " error: ", std::strerror(errno)));
   }
@@ -63,7 +63,7 @@ util::StatusOr<int> OpenTestFileToRead(absl::string_view filename) {
 // Reads the specified `input_stream` until no more bytes can be read,
 // and puts the read bytes into `contents`.
 // Returns the status of the last input_stream->Next()-operation.
-util::Status ReadAll(util::FileInputStream* input_stream,
+absl::Status ReadAll(util::FileInputStream* input_stream,
                      std::string* contents) {
   contents->clear();
   const void* buffer;
@@ -84,7 +84,7 @@ TEST_P(FileInputStreamTestDefaultBufferSize, ReadAllfFromInputStreamSucceeds) {
   std::string filename = absl::StrCat(
       stream_size, "_", internal::GetTestFileNamePrefix(), "_file.bin");
   ASSERT_THAT(internal::CreateTestFile(filename, file_contents), IsOk());
-  util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+  absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
   ASSERT_THAT(input_fd.status(), IsOk());
   EXPECT_EQ(stream_size, file_contents.size());
   auto input_stream = absl::make_unique<util::FileInputStream>(*input_fd);
@@ -111,7 +111,7 @@ TEST_P(FileInputStreamTestCustomBufferSizes,
   std::string filename = absl::StrCat(
       buffer_size, "_", internal::GetTestFileNamePrefix(), "_file.bin");
   ASSERT_THAT(internal::CreateTestFile(filename, file_contents), IsOk());
-  util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+  absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
   ASSERT_THAT(input_fd.status(), IsOk());
   EXPECT_EQ(kDefaultTestStreamSize, file_contents.size());
   auto input_stream =
@@ -143,7 +143,7 @@ TEST(FileInputStreamTest, NextFailsIfDataIsNull) {
   std::string filename = absl::StrCat(
       buffer_size, "_", internal::GetTestFileNamePrefix(), "_file.bin");
   ASSERT_THAT(internal::CreateTestFile(filename, file_contents), IsOk());
-  util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+  absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
   ASSERT_THAT(input_fd.status(), IsOk());
   EXPECT_EQ(kDefaultTestStreamSize, file_contents.size());
   auto input_stream =
@@ -160,7 +160,7 @@ TEST(FileInputStreamTest, NextReadsExactlyOneBlockOfData) {
   std::string filename = absl::StrCat(
       buffer_size, "_", internal::GetTestFileNamePrefix(), "_file.bin");
   ASSERT_THAT(internal::CreateTestFile(filename, file_contents), IsOk());
-  util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+  absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
   ASSERT_THAT(input_fd.status(), IsOk());
   EXPECT_EQ(kDefaultTestStreamSize, file_contents.size());
   auto input_stream =
@@ -169,7 +169,7 @@ TEST(FileInputStreamTest, NextReadsExactlyOneBlockOfData) {
   auto expected_file_content_block =
       absl::string_view(file_contents).substr(0, buffer_size);
   const void* buffer = nullptr;
-  util::StatusOr<int> next_result = input_stream->Next(&buffer);
+  absl::StatusOr<int> next_result = input_stream->Next(&buffer);
   ASSERT_THAT(next_result, IsOkAndHolds(buffer_size));
   // Check that we advanced of buffer_size bytes.
   EXPECT_EQ(input_stream->Position(), buffer_size);
@@ -184,7 +184,7 @@ TEST(FileInputStreamTest, BackupForNegativeOrZeroBytesIsANoop) {
   std::string filename = absl::StrCat(
       buffer_size, "_", internal::GetTestFileNamePrefix(), "_file.bin");
   ASSERT_THAT(internal::CreateTestFile(filename, file_contents), IsOk());
-  util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+  absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
   ASSERT_THAT(input_fd.status(), IsOk());
   EXPECT_EQ(kDefaultTestStreamSize, file_contents.size());
   auto input_stream =
@@ -223,7 +223,7 @@ TEST(FileInputStreamTest, BackupForLessThanOneBlockOfData) {
   std::string filename = absl::StrCat(
       buffer_size, "_", internal::GetTestFileNamePrefix(), "_file.bin");
   ASSERT_THAT(internal::CreateTestFile(filename, file_contents), IsOk());
-  util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+  absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
   ASSERT_THAT(input_fd.status(), IsOk());
   EXPECT_EQ(kDefaultTestStreamSize, file_contents.size());
   auto input_stream =
@@ -274,7 +274,7 @@ TEST(FileInputStreamTest, BackupAtMostOfOneBlock) {
   std::string filename = absl::StrCat(
       buffer_size, "_", internal::GetTestFileNamePrefix(), "_file.bin");
   ASSERT_THAT(internal::CreateTestFile(filename, file_contents), IsOk());
-  util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+  absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
   ASSERT_THAT(input_fd.status(), IsOk());
   EXPECT_EQ(kDefaultTestStreamSize, file_contents.size());
   auto input_stream =

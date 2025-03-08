@@ -16,9 +16,12 @@
 
 #include "tink/experimental/pqcrypto/kem/ml_kem_parameters.h"
 
+#include <memory>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "tink/parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 
@@ -49,7 +52,7 @@ INSTANTIATE_TEST_SUITE_P(MlKemParametersTestSuite, MlKemParametersTest,
 TEST_P(MlKemParametersTest, CreateMlKem768Works) {
   VariantTestCase test_case = GetParam();
 
-  util::StatusOr<MlKemParameters> parameters =
+  absl::StatusOr<MlKemParameters> parameters =
       MlKemParameters::Create(/*key_size=*/768, test_case.variant);
   ASSERT_THAT(parameters, IsOk());
 
@@ -84,7 +87,7 @@ TEST(MlKemParametersTest, CreateWithInvalidVariantFails) {
 }
 
 TEST(MlKemParametersTest, CopyConstructor) {
-  util::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
+  absl::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
       /*key_size=*/768, MlKemParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
@@ -96,7 +99,7 @@ TEST(MlKemParametersTest, CopyConstructor) {
 }
 
 TEST(MlKemParametersTest, CopyAssignment) {
-  util::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
+  absl::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
       /*key_size=*/768, MlKemParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
@@ -108,11 +111,11 @@ TEST(MlKemParametersTest, CopyAssignment) {
 }
 
 TEST(MlKemParametersTest, ParametersEquals) {
-  util::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
+  absl::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
       /*key_size=*/768, MlKemParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<MlKemParameters> other_parameters = MlKemParameters::Create(
+  absl::StatusOr<MlKemParameters> other_parameters = MlKemParameters::Create(
       /*key_size=*/768, MlKemParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
@@ -120,6 +123,15 @@ TEST(MlKemParametersTest, ParametersEquals) {
   EXPECT_TRUE(*other_parameters == *parameters);
   EXPECT_FALSE(*parameters != *other_parameters);
   EXPECT_FALSE(*other_parameters != *parameters);
+}
+
+TEST(MlKemParametersTest, Clone) {
+  absl::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
+      /*key_size=*/768, MlKemParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  std::unique_ptr<Parameters> cloned_parameters = parameters->Clone();
+  ASSERT_THAT(*cloned_parameters, Eq(*parameters));
 }
 
 }  // namespace

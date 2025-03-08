@@ -32,6 +32,8 @@ namespace tink {
 // use secret big integers types for the key material.
 class RestrictedBigInteger {
  public:
+  RestrictedBigInteger() = default;
+
   // Copyable and movable.
   RestrictedBigInteger(const RestrictedBigInteger& other) = default;
   RestrictedBigInteger& operator=(const RestrictedBigInteger& other) = default;
@@ -44,9 +46,20 @@ class RestrictedBigInteger {
   explicit RestrictedBigInteger(absl::string_view secret_big_integer,
                                 SecretKeyAccessToken token);
 
+  // Creates a new RestrictedBigInteger object that wraps `secret_big_integer`,
+  // after removing the leading zeros. Note that creating a `token` requires
+  // access to InsecureSecretKeyAccess::Get().
+  explicit RestrictedBigInteger(util::SecretData secret_big_integer,
+                                SecretKeyAccessToken token);
+
   // Returns the value of this RestrictedBigInteger object.
   absl::string_view GetSecret(SecretKeyAccessToken token) const {
     return util::SecretDataAsStringView(secret_);
+  }
+
+  // Returns the secret data of this RestrictedBigInteger object.
+  const util::SecretData& GetSecretData(SecretKeyAccessToken token) const {
+    return secret_;
   }
 
   int64_t SizeInBytes() const { return secret_.size(); }

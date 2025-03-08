@@ -44,7 +44,7 @@ namespace {
 
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
-using ::google::crypto::tink::AesGcmKey;
+using AesGcmKeyProto = ::google::crypto::tink::AesGcmKey;
 using ::google::crypto::tink::AesGcmKeyFormat;
 using ::google::crypto::tink::KeyData;
 using ::google::crypto::tink::KeyTemplate;
@@ -60,12 +60,13 @@ class FakePrimitive {
 };
 
 class FakeKeyTypeManager
-    : public KeyTypeManager<AesGcmKey, AesGcmKeyFormat, List<FakePrimitive>> {
+    : public KeyTypeManager<AesGcmKeyProto, AesGcmKeyFormat,
+                            List<FakePrimitive>> {
  public:
   class FakePrimitiveFactory : public PrimitiveFactory<FakePrimitive> {
    public:
-    util::StatusOr<std::unique_ptr<FakePrimitive>> Create(
-        const AesGcmKey& key) const override {
+    absl::StatusOr<std::unique_ptr<FakePrimitive>> Create(
+        const AesGcmKeyProto& key) const override {
       return absl::make_unique<FakePrimitive>(key.key_value());
     }
   };
@@ -81,24 +82,24 @@ class FakeKeyTypeManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  util::Status ValidateKey(const AesGcmKey& key) const override {
-    return util::OkStatus();
+  absl::Status ValidateKey(const AesGcmKeyProto& key) const override {
+    return absl::OkStatus();
   }
 
-  util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const AesGcmKeyFormat& key_format) const override {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
-  util::StatusOr<AesGcmKey> CreateKey(
+  absl::StatusOr<AesGcmKeyProto> CreateKey(
       const AesGcmKeyFormat& key_format) const override {
-    return AesGcmKey();
+    return AesGcmKeyProto();
   }
 
-  util::StatusOr<AesGcmKey> DeriveKey(
+  absl::StatusOr<AesGcmKeyProto> DeriveKey(
       const AesGcmKeyFormat& key_format,
       InputStream* input_stream) const override {
-    return AesGcmKey();
+    return AesGcmKeyProto();
   }
 
  private:
@@ -109,7 +110,7 @@ class FakeKeyTypeManager
 class FakePrimitiveWrapper
     : public PrimitiveWrapper<FakePrimitive, FakePrimitive> {
  public:
-  util::StatusOr<std::unique_ptr<FakePrimitive>> Wrap(
+  absl::StatusOr<std::unique_ptr<FakePrimitive>> Wrap(
       std::unique_ptr<PrimitiveSet<FakePrimitive>> primitive_set)
       const override {
     return absl::make_unique<FakePrimitive>(
@@ -147,7 +148,7 @@ TEST(GlobalRegistryTest, GetPrimitiveFromConfig) {
   KeyTemplate templ;
   templ.set_type_url("type.googleapis.com/google.crypto.tink.AesGcmKey");
   templ.set_output_prefix_type(OutputPrefixType::TINK);
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       KeysetHandle::GenerateNew(templ, KeyGenConfigGlobalRegistry());
   ASSERT_THAT(handle, IsOk());
   EXPECT_THAT(

@@ -17,6 +17,8 @@
 #ifndef TINK_AEAD_AES_GCM_SIV_KEY_H_
 #define TINK_AEAD_AES_GCM_SIV_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -43,7 +45,7 @@ class AesGcmSivKey : public AeadKey {
 
   // Creates a new AES-GCM-SIV key.  If the parameters specify a variant
   // that uses a prefix, then the id is used to compute this prefix.
-  static util::StatusOr<AesGcmSivKey> Create(
+  static absl::StatusOr<AesGcmSivKey> Create(
       const AesGcmSivParameters& parameters, const RestrictedData& key_bytes,
       absl::optional<int> id_requirement, PartialKeyAccessToken token);
 
@@ -58,11 +60,15 @@ class AesGcmSivKey : public AeadKey {
     return parameters_;
   }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<AesGcmSivKey>(*this);
+  }
 
  private:
   AesGcmSivKey(const AesGcmSivParameters& parameters,

@@ -49,25 +49,24 @@ class AesCtrHmacStreamingKeyManager
  public:
   class StreamingAeadFactory
       : public PrimitiveFactory<StreamingAead> {
-    crypto::tink::util::StatusOr<std::unique_ptr<StreamingAead>> Create(
+    absl::StatusOr<std::unique_ptr<StreamingAead>> Create(
         const google::crypto::tink::AesCtrHmacStreamingKey& key)
         const override {
-          subtle::AesCtrHmacStreaming::Params params;
-          params.ikm = util::SecretDataFromStringView(key.key_value());
-          params.hkdf_algo = crypto::tink::util::Enums::ProtoToSubtle(
-              key.params().hkdf_hash_type());
-          params.key_size = key.params().derived_key_size();
-          params.ciphertext_segment_size =
-              key.params().ciphertext_segment_size();
-          params.ciphertext_offset = 0;
-          params.tag_algo = crypto::tink::util::Enums::ProtoToSubtle(
-              key.params().hmac_params().hash());
-          params.tag_size = key.params().hmac_params().tag_size();
-          auto streaming_result =
-              crypto::tink::subtle::AesCtrHmacStreaming::New(params);
-          if (!streaming_result.ok()) return streaming_result.status();
-          return {std::move(streaming_result.value())};
-        }
+      subtle::AesCtrHmacStreaming::Params params;
+      params.ikm = util::SecretDataFromStringView(key.key_value());
+      params.hkdf_algo = crypto::tink::util::Enums::ProtoToSubtle(
+          key.params().hkdf_hash_type());
+      params.key_size = key.params().derived_key_size();
+      params.ciphertext_segment_size = key.params().ciphertext_segment_size();
+      params.ciphertext_offset = 0;
+      params.tag_algo = crypto::tink::util::Enums::ProtoToSubtle(
+          key.params().hmac_params().hash());
+      params.tag_size = key.params().hmac_params().tag_size();
+      auto streaming_result =
+          crypto::tink::subtle::AesCtrHmacStreaming::New(params);
+      if (!streaming_result.ok()) return streaming_result.status();
+      return {std::move(streaming_result.value())};
+    }
   };
 
   AesCtrHmacStreamingKeyManager()
@@ -85,19 +84,18 @@ class AesCtrHmacStreamingKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::AesCtrHmacStreamingKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::AesCtrHmacStreamingKeyFormat& key_format)
       const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::AesCtrHmacStreamingKey>
-  CreateKey(const google::crypto::tink::AesCtrHmacStreamingKeyFormat&
-                key_format) const override;
+  absl::StatusOr<google::crypto::tink::AesCtrHmacStreamingKey> CreateKey(
+      const google::crypto::tink::AesCtrHmacStreamingKeyFormat& key_format)
+      const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::AesCtrHmacStreamingKey>
-  DeriveKey(
+  absl::StatusOr<google::crypto::tink::AesCtrHmacStreamingKey> DeriveKey(
       const google::crypto::tink::AesCtrHmacStreamingKeyFormat& key_format,
       InputStream* input_stream) const override;
 

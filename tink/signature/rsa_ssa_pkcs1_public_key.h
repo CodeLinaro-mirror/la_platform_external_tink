@@ -17,6 +17,8 @@
 #ifndef TINK_SIGNATURE_RSA_SSA_PKCS1_PUBLIC_KEY_H_
 #define TINK_SIGNATURE_RSA_SSA_PKCS1_PUBLIC_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 
 #include "absl/strings/string_view.h"
@@ -44,7 +46,7 @@ class RsaSsaPkcs1PublicKey : public SignaturePublicKey {
   // Creates a new RsaSsaPkcs1 public key from `modulus`. If
   // `parameters` specify a variant that uses a prefix, then `id_requirement` is
   // used to compute this prefix.
-  static util::StatusOr<RsaSsaPkcs1PublicKey> Create(
+  static absl::StatusOr<RsaSsaPkcs1PublicKey> Create(
       const RsaSsaPkcs1Parameters& parameters, const BigInteger& modulus,
       absl::optional<int> id_requirement, PartialKeyAccessToken token);
 
@@ -58,11 +60,15 @@ class RsaSsaPkcs1PublicKey : public SignaturePublicKey {
     return parameters_;
   }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<RsaSsaPkcs1PublicKey>(*this);
+  }
 
  private:
   explicit RsaSsaPkcs1PublicKey(const RsaSsaPkcs1Parameters& parameters,

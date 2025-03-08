@@ -40,13 +40,13 @@
 namespace crypto {
 namespace tink {
 
-using crypto::tink::util::Enums;
-using crypto::tink::util::Status;
-using crypto::tink::util::StatusOr;
-using google::crypto::tink::HashType;
-using google::crypto::tink::HmacKey;
-using google::crypto::tink::HmacKeyFormat;
-using google::crypto::tink::HmacParams;
+using ::crypto::tink::util::Enums;
+using ::crypto::tink::util::Status;
+using ::crypto::tink::util::StatusOr;
+using ::google::crypto::tink::HashType;
+using HmacKeyProto = ::google::crypto::tink::HmacKey;
+using ::google::crypto::tink::HmacKeyFormat;
+using ::google::crypto::tink::HmacParams;
 
 namespace {
 
@@ -55,9 +55,9 @@ constexpr int kMinTagSizeInBytes = 10;
 
 }  // namespace
 
-StatusOr<HmacKey> HmacKeyManager::CreateKey(
+absl::StatusOr<HmacKeyProto> HmacKeyManager::CreateKey(
     const HmacKeyFormat& hmac_key_format) const {
-  HmacKey hmac_key;
+  HmacKeyProto hmac_key;
   hmac_key.set_version(get_version());
   *(hmac_key.mutable_params()) = hmac_key_format.params();
   hmac_key.set_key_value(
@@ -65,24 +65,24 @@ StatusOr<HmacKey> HmacKeyManager::CreateKey(
   return hmac_key;
 }
 
-StatusOr<HmacKey> HmacKeyManager::DeriveKey(
+absl::StatusOr<HmacKeyProto> HmacKeyManager::DeriveKey(
     const HmacKeyFormat& hmac_key_format, InputStream* input_stream) const {
-  crypto::tink::util::Status status =
+  absl::Status status =
       ValidateVersion(hmac_key_format.version(), get_version());
   if (!status.ok()) return status;
 
-  crypto::tink::util::StatusOr<std::string> randomness =
+  absl::StatusOr<std::string> randomness =
       ReadBytesFromStream(hmac_key_format.key_size(), input_stream);
   if (!randomness.ok()) {
     if (randomness.status().code() == absl::StatusCode::kOutOfRange) {
-      return crypto::tink::util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "Could not get enough pseudorandomness from input stream");
     }
     return randomness.status();
   }
 
-  HmacKey hmac_key;
+  HmacKeyProto hmac_key;
   hmac_key.set_version(get_version());
   *(hmac_key.mutable_params()) = hmac_key_format.params();
   hmac_key.set_key_value(randomness.value());
@@ -112,14 +112,14 @@ Status HmacKeyManager::ValidateParams(const HmacParams& params) const {
           params.tag_size(), Enums::HashName(params.hash()));
     }
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-Status HmacKeyManager::ValidateKey(const HmacKey& key) const {
+Status HmacKeyManager::ValidateKey(const HmacKeyProto& key) const {
   Status status = ValidateVersion(key.version(), get_version());
   if (!status.ok()) return status;
   if (key.key_value().size() < kMinKeySizeInBytes) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Invalid HmacKey: key_value is too short.");
   }
   return ValidateParams(key.params());
@@ -129,7 +129,7 @@ Status HmacKeyManager::ValidateKey(const HmacKey& key) const {
 Status HmacKeyManager::ValidateKeyFormat(
     const HmacKeyFormat& key_format) const {
   if (key_format.key_size() < kMinKeySizeInBytes) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Invalid HmacKeyFormat: key_size is too small.");
   }
   return ValidateParams(key_format.params());

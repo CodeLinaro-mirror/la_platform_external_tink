@@ -49,7 +49,7 @@ class AesGcmHkdfStreamingKeyManager
  public:
   class AesGcmHkdfStreamingKeyManagerFactory
       : public PrimitiveFactory<StreamingAead> {
-    crypto::tink::util::StatusOr<std::unique_ptr<StreamingAead>> Create(
+    absl::StatusOr<std::unique_ptr<StreamingAead>> Create(
         const google::crypto::tink::AesGcmHkdfStreamingKey& key)
         const override {
       subtle::AesGcmHkdfStreaming::Params params;
@@ -81,19 +81,18 @@ class AesGcmHkdfStreamingKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::AesGcmHkdfStreamingKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::AesGcmHkdfStreamingKeyFormat& key_format)
       const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::AesGcmHkdfStreamingKey>
-  CreateKey(const google::crypto::tink::AesGcmHkdfStreamingKeyFormat&
-                key_format) const override;
+  absl::StatusOr<google::crypto::tink::AesGcmHkdfStreamingKey> CreateKey(
+      const google::crypto::tink::AesGcmHkdfStreamingKeyFormat& key_format)
+      const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::AesGcmHkdfStreamingKey>
-  DeriveKey(
+  absl::StatusOr<google::crypto::tink::AesGcmHkdfStreamingKey> DeriveKey(
       const google::crypto::tink::AesGcmHkdfStreamingKeyFormat& key_format,
       InputStream* input_stream) const override;
 
@@ -104,7 +103,7 @@ class AesGcmHkdfStreamingKeyManager
       kTypeGoogleapisCom,
       google::crypto::tink::AesGcmHkdfStreamingKey().GetTypeName());
 
-  static crypto::tink::util::Status Validate(
+  static absl::Status Validate(
       const google::crypto::tink::AesGcmHkdfStreamingKeyFormat& key_format);
 };
 

@@ -45,7 +45,7 @@ class RsaSsaPssSignKeyManager
                                    List<PublicKeySign>> {
  public:
   class PublicKeySignFactory : public PrimitiveFactory<PublicKeySign> {
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicKeySign>> Create(
+    absl::StatusOr<std::unique_ptr<PublicKeySign>> Create(
         const google::crypto::tink::RsaSsaPssPrivateKey& private_key)
         const override;
   };
@@ -62,19 +62,18 @@ class RsaSsaPssSignKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::RsaSsaPssPrivateKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(const google::crypto::tink::RsaSsaPssKeyFormat&
+                                     key_format) const override;
+
+  absl::StatusOr<google::crypto::tink::RsaSsaPssPrivateKey> CreateKey(
       const google::crypto::tink::RsaSsaPssKeyFormat& key_format)
       const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::RsaSsaPssPrivateKey>
-  CreateKey(const google::crypto::tink::RsaSsaPssKeyFormat& key_format)
-      const override;
-
-  crypto::tink::util::StatusOr<google::crypto::tink::RsaSsaPssPublicKey>
-  GetPublicKey(const google::crypto::tink::RsaSsaPssPrivateKey& private_key)
+  absl::StatusOr<google::crypto::tink::RsaSsaPssPublicKey> GetPublicKey(
+      const google::crypto::tink::RsaSsaPssPrivateKey& private_key)
       const override {
     return private_key.public_key();
   }

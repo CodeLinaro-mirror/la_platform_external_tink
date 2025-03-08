@@ -27,8 +27,6 @@
 #include "tink/internal/fips_utils.h"
 #include "tink/public_key_verify.h"
 #include "tink/util/constants.h"
-#include "tink/util/errors.h"
-#include "tink/util/protobuf_helper.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "proto/common.pb.h"
@@ -44,7 +42,7 @@ class RawJwtEcdsaVerifyKeyManager
                             List<PublicKeyVerify>> {
  public:
   class PublicKeyVerifyFactory : public PrimitiveFactory<PublicKeyVerify> {
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
+    absl::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
         const google::crypto::tink::JwtEcdsaPublicKey& jwt_ecdsa_public_key)
         const override;
   };
@@ -61,7 +59,7 @@ class RawJwtEcdsaVerifyKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::JwtEcdsaPublicKey& key) const override;
 
   internal::FipsCompatibility FipsStatus() const override {
@@ -69,15 +67,14 @@ class RawJwtEcdsaVerifyKeyManager
   }
 
  private:
-  static crypto::tink::util::Status ValidateAlgorithm(
+  static absl::Status ValidateAlgorithm(
       const google::crypto::tink::JwtEcdsaAlgorithm& algorithm);
 
-  static crypto::tink::util::StatusOr<google::crypto::tink::EllipticCurveType>
+  static absl::StatusOr<google::crypto::tink::EllipticCurveType>
   CurveForEcdsaAlgorithm(
       const google::crypto::tink::JwtEcdsaAlgorithm& algorithm);
 
-  static crypto::tink::util::StatusOr<google::crypto::tink::HashType>
-  HashForEcdsaAlgorithm(
+  static absl::StatusOr<google::crypto::tink::HashType> HashForEcdsaAlgorithm(
       const google::crypto::tink::JwtEcdsaAlgorithm& algorithm);
 
   const std::string key_type_ =

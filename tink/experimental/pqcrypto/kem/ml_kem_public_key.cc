@@ -19,15 +19,14 @@
 #include <string>
 
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
-#include "openssl/experimental/kyber.h"
+#include "openssl/mlkem.h"
 #include "tink/experimental/pqcrypto/kem/ml_kem_parameters.h"
+#include "tink/internal/output_prefix_util.h"
 #include "tink/key.h"
 #include "tink/partial_key_access_token.h"
-#include "tink/subtle/subtle_util.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
@@ -35,18 +34,17 @@ namespace crypto {
 namespace tink {
 namespace {
 
-util::StatusOr<std::string> ComputeOutputPrefix(
+absl::StatusOr<std::string> ComputeOutputPrefix(
     const MlKemParameters& parameters, absl::optional<int> id_requirement) {
   switch (parameters.GetVariant()) {
     case MlKemParameters::Variant::kTink:
       if (!id_requirement.has_value()) {
-        return util::Status(absl::StatusCode::kInvalidArgument,
+        return absl::Status(absl::StatusCode::kInvalidArgument,
                             "ID requirement must have value with kTink");
       }
-      return absl::StrCat(absl::HexStringToBytes("01"),
-                          subtle::BigEndian32(*id_requirement));
+      return internal::ComputeOutputPrefix(1, *id_requirement);
     default:
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           absl::StrCat("Invalid variant: ", parameters.GetVariant()));
   }
@@ -54,36 +52,36 @@ util::StatusOr<std::string> ComputeOutputPrefix(
 
 }  // namespace
 
-util::StatusOr<MlKemPublicKey> MlKemPublicKey::Create(
+absl::StatusOr<MlKemPublicKey> MlKemPublicKey::Create(
     const MlKemParameters& parameters, absl::string_view public_key_bytes,
     absl::optional<int> id_requirement, PartialKeyAccessToken token) {
   if (parameters.HasIdRequirement() && !id_requirement.has_value()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create key without ID requirement with parameters with ID "
         "requirement");
   }
   if (!parameters.HasIdRequirement() && id_requirement.has_value()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create key with ID requirement with parameters without ID "
         "requirement");
   }
 
   if (parameters.GetKeySize() != 768) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Invalid ML-KEM key size. Only ML-KEM-768 is "
                         "currently supported.");
   }
 
-  if (public_key_bytes.size() != KYBER_PUBLIC_KEY_BYTES) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+  if (public_key_bytes.size() != MLKEM768_PUBLIC_KEY_BYTES) {
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         absl::StrCat("Invalid ML-KEM public key size. Only ",
-                                     KYBER_PUBLIC_KEY_BYTES,
+                                     MLKEM768_PUBLIC_KEY_BYTES,
                                      "-byte keys are currently supported."));
   }
 
-  util::StatusOr<std::string> output_prefix =
+  absl::StatusOr<std::string> output_prefix =
       ComputeOutputPrefix(parameters, id_requirement);
   if (!output_prefix.ok()) {
     return output_prefix.status();

@@ -32,9 +32,13 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "tink/aead.h"
+#include "tink/aead/aead_config.h"
 #include "tink/aead/aead_key_templates.h"
 #include "tink/aead/aead_wrapper.h"
 #include "tink/aead/aes_gcm_key_manager.h"
+#include "tink/aead/aes_gcm_parameters.h"
+#include "tink/aead/xchacha20_poly1305_key.h"
+#include "tink/aead/xchacha20_poly1305_parameters.h"
 #include "tink/binary_keyset_reader.h"
 #include "tink/binary_keyset_writer.h"
 #include "tink/cleartext_keyset_handle.h"
@@ -46,21 +50,25 @@
 #include "tink/core/key_type_manager.h"
 #include "tink/core/template_util.h"
 #include "tink/input_stream.h"
+#include "tink/insecure_secret_key_access.h"
 #include "tink/internal/configuration_impl.h"
 #include "tink/internal/fips_utils.h"
 #include "tink/internal/key_gen_configuration_impl.h"
-#include "tink/json/json_keyset_reader.h"
-#include "tink/json/json_keyset_writer.h"
+#include "tink/internal/mutable_serialization_registry.h"
+#include "tink/internal/ssl_util.h"
 #include "tink/key_gen_configuration.h"
 #include "tink/key_status.h"
 #include "tink/keyset_reader.h"
+#include "tink/partial_key_access.h"
 #include "tink/primitive_set.h"
 #include "tink/primitive_wrapper.h"
 #include "tink/registry.h"
+#include "tink/restricted_data.h"
 #include "tink/signature/ecdsa_sign_key_manager.h"
 #include "tink/signature/ecdsa_verify_key_manager.h"
 #include "tink/signature/signature_key_templates.h"
 #include "tink/subtle/random.h"
+#include "tink/subtle/xchacha20_poly1305_boringssl.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_keyset_handle.h"
@@ -82,9 +90,9 @@ using ::crypto::tink::test::AddTinkKey;
 using ::crypto::tink::test::DummyAead;
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
-using ::google::crypto::tink::AesGcmKey;
+using AesGcmKeyProto = ::google::crypto::tink::AesGcmKey;
 using ::google::crypto::tink::AesGcmKeyFormat;
-using ::google::crypto::tink::AesGcmSivKey;
+using AesGcmSivKeyProto = ::google::crypto::tink::AesGcmSivKey;
 using ::google::crypto::tink::EcdsaKeyFormat;
 using ::google::crypto::tink::EncryptedKeyset;
 using ::google::crypto::tink::KeyData;
@@ -94,11 +102,14 @@ using ::google::crypto::tink::KeyTemplate;
 using ::google::crypto::tink::OutputPrefixType;
 using ::testing::_;
 using ::testing::Eq;
+using ::testing::HasSubstr;
 using ::testing::IsFalse;
 using ::testing::IsTrue;
 using ::testing::Not;
 using ::testing::NotNull;
 using ::testing::SizeIs;
+using ::testing::TestWithParam;
+using ::testing::Values;
 
 namespace {
 
@@ -117,14 +128,14 @@ using KeysetHandleDeathTest = KeysetHandleTest;
 
 // Fake AEAD key type manager for testing.
 class FakeAeadKeyManager
-    : public KeyTypeManager<AesGcmKey, AesGcmKeyFormat, List<Aead>> {
+    : public KeyTypeManager<AesGcmKeyProto, AesGcmKeyFormat, List<Aead>> {
  public:
   class AeadFactory : public PrimitiveFactory<Aead> {
    public:
     explicit AeadFactory(absl::string_view key_type) : key_type_(key_type) {}
 
-    util::StatusOr<std::unique_ptr<Aead>> Create(
-        const AesGcmKey& key) const override {
+    absl::StatusOr<std::unique_ptr<Aead>> Create(
+        const AesGcmKeyProto& key) const override {
       return {absl::make_unique<DummyAead>(key_type_)};
     }
 
@@ -145,24 +156,24 @@ class FakeAeadKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(const AesGcmKey& key) const override {
-    return util::OkStatus();
+  absl::Status ValidateKey(const AesGcmKeyProto& key) const override {
+    return absl::OkStatus();
   }
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const AesGcmKeyFormat& key_format) const override {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
-  crypto::tink::util::StatusOr<AesGcmKey> CreateKey(
+  absl::StatusOr<AesGcmKeyProto> CreateKey(
       const AesGcmKeyFormat& key_format) const override {
-    return AesGcmKey();
+    return AesGcmKeyProto();
   }
 
-  crypto::tink::util::StatusOr<AesGcmKey> DeriveKey(
+  absl::StatusOr<AesGcmKeyProto> DeriveKey(
       const AesGcmKeyFormat& key_format,
       InputStream* input_stream) const override {
-    return AesGcmKey();
+    return AesGcmKeyProto();
   }
 
  private:
@@ -171,9 +182,9 @@ class FakeAeadKeyManager
 
 class MockAeadPrimitiveWrapper : public PrimitiveWrapper<Aead, Aead> {
  public:
-  MOCK_METHOD(util::StatusOr<std::unique_ptr<Aead>>, Wrap,
+  MOCK_METHOD(absl::StatusOr<std::unique_ptr<Aead>>, Wrap,
               (std::unique_ptr<PrimitiveSet<Aead>> primitive_set),
-              (const override));
+              (const, override));
 };
 
 // Generates a keyset for testing.
@@ -200,6 +211,26 @@ Keyset GetPublicTestKeyset() {
   return keyset;
 }
 
+// Creates an XChaCha20Poly1305Key from the given parameters.
+absl::StatusOr<std::unique_ptr<XChaCha20Poly1305Key>>
+CreateXChaCha20Poly1305Key(const XChaCha20Poly1305Parameters& params,
+                           absl::optional<int> id_requirement) {
+  RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
+  absl::StatusOr<XChaCha20Poly1305Key> key = XChaCha20Poly1305Key::Create(
+      params.GetVariant(), secret, id_requirement, GetPartialKeyAccess());
+  if (!key.ok()) {
+    return key.status();
+  }
+  return absl::make_unique<crypto::tink::XChaCha20Poly1305Key>(*key);
+}
+
+absl::StatusOr<std::unique_ptr<Aead>> GetPrimitiveForXChaCha20Poly1305Key(
+    const XChaCha20Poly1305Key& key) {
+  return subtle::XChacha20Poly1305BoringSsl::New(
+      (key.GetKeyBytes(GetPartialKeyAccess())
+           .Get(InsecureSecretKeyAccess::Get())));
+}
+
 TEST_F(KeysetHandleTest, DefaultCtor) {
   KeysetHandle keyset_handle;
   EXPECT_THAT(keyset_handle.size(), Eq(0));
@@ -210,7 +241,7 @@ TEST_F(KeysetHandleTest, DefaultCtor) {
 }
 
 TEST_F(KeysetHandleTest, CopyCtorAndAssignment) {
-  util::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
       KeysetHandle::ReadNoSecret(GetPublicTestKeyset().SerializeAsString());
   ASSERT_THAT(keyset_handle, IsOk());
   ASSERT_THAT(*keyset_handle, NotNull());
@@ -233,7 +264,7 @@ TEST_F(KeysetHandleTest, CopyCtorAndAssignment) {
 }
 
 TEST_F(KeysetHandleTest, MoveCtorAndAssignment) {
-  util::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
       KeysetHandle::ReadNoSecret(GetPublicTestKeyset().SerializeAsString());
   ASSERT_THAT(keyset_handle, IsOk());
   ASSERT_THAT(*keyset_handle, NotNull());
@@ -338,9 +369,9 @@ TEST_F(KeysetHandleTest, ReadEncryptedWithAnnotations) {
       *aead.Encrypt(keyset.SerializeAsString(), /*associated_data=*/"");
   EncryptedKeyset encrypted_keyset;
   encrypted_keyset.set_encrypted_keyset(keyset_ciphertext);
-  util::StatusOr<std::unique_ptr<KeysetReader>> reader =
+  absl::StatusOr<std::unique_ptr<KeysetReader>> reader =
       BinaryKeysetReader::New(encrypted_keyset.SerializeAsString());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
       KeysetHandle::Read(*std::move(reader), aead, kAnnotations);
   ASSERT_THAT(keyset_handle, IsOk());
 
@@ -378,129 +409,6 @@ TEST_F(KeysetHandleTest, ReadEncryptedWithAnnotations) {
   Registry::Reset();
 }
 
-TEST_F(KeysetHandleTest, ReadEncryptedKeysetJson) {
-  Keyset keyset;
-  Keyset::Key key;
-  AddTinkKey("some_key_type", 42, key, KeyStatusType::ENABLED,
-             KeyData::SYMMETRIC, &keyset);
-  AddRawKey("some_other_key_type", 711, key, KeyStatusType::ENABLED,
-            KeyData::SYMMETRIC, &keyset);
-  keyset.set_primary_key_id(42);
-
-  {  // Good encrypted keyset.
-    DummyAead aead("dummy aead 42");
-    std::string keyset_ciphertext =
-        aead.Encrypt(keyset.SerializeAsString(), /* associated_data= */ "")
-            .value();
-    EncryptedKeyset encrypted_keyset;
-    encrypted_keyset.set_encrypted_keyset(keyset_ciphertext);
-    auto* keyset_info = encrypted_keyset.mutable_keyset_info();
-    keyset_info->set_primary_key_id(42);
-    auto* key_info = keyset_info->add_key_info();
-    key_info->set_key_id(42);
-    key_info->set_type_url("dummy key type");
-    key_info->set_output_prefix_type(OutputPrefixType::TINK);
-    key_info->set_status(KeyStatusType::ENABLED);
-    std::stringbuf buffer;
-    std::unique_ptr<std::ostream> destination_stream(new std::ostream(&buffer));
-    auto writer_result = JsonKeysetWriter::New(std::move(destination_stream));
-    ASSERT_TRUE(writer_result.ok()) << writer_result.status();
-    auto status = writer_result.value()->Write(encrypted_keyset);
-    EXPECT_TRUE(status.ok()) << status;
-    std::string json_serialized_encrypted_keyset = buffer.str();
-    EXPECT_TRUE(status.ok()) << status;
-    auto reader = std::move(
-        JsonKeysetReader::New(json_serialized_encrypted_keyset).value());
-    auto result = KeysetHandle::Read(std::move(reader), aead);
-    EXPECT_TRUE(result.ok()) << result.status();
-    auto handle = std::move(result.value());
-    EXPECT_EQ(keyset.SerializeAsString(),
-              TestKeysetHandle::GetKeyset(*handle).SerializeAsString());
-  }
-
-  {  // AEAD does not match the ciphertext
-    DummyAead aead("dummy aead 42");
-    std::string keyset_ciphertext =
-        aead.Encrypt(keyset.SerializeAsString(), /* associated_data= */ "")
-            .value();
-    EncryptedKeyset encrypted_keyset;
-    encrypted_keyset.set_encrypted_keyset(keyset_ciphertext);
-    auto reader = std::move(
-        JsonKeysetReader::New(encrypted_keyset.SerializeAsString()).value());
-    DummyAead wrong_aead("wrong aead");
-    auto result = KeysetHandle::Read(std::move(reader), wrong_aead);
-    EXPECT_FALSE(result.ok());
-    EXPECT_EQ(absl::StatusCode::kInvalidArgument, result.status().code());
-  }
-
-  {  // Ciphertext does not contain actual keyset.
-    DummyAead aead("dummy aead 42");
-    std::string keyset_ciphertext =
-        aead.Encrypt("not a serialized keyset", /* associated_data= */ "")
-            .value();
-    EncryptedKeyset encrypted_keyset;
-    encrypted_keyset.set_encrypted_keyset(keyset_ciphertext);
-    auto reader = std::move(
-        JsonKeysetReader::New(encrypted_keyset.SerializeAsString()).value());
-    auto result = KeysetHandle::Read(std::move(reader), aead);
-    EXPECT_FALSE(result.ok());
-    EXPECT_EQ(absl::StatusCode::kInvalidArgument, result.status().code());
-  }
-
-  {  // Wrong ciphertext of encrypted keyset.
-    DummyAead aead("dummy aead 42");
-    std::string keyset_ciphertext = "totally wrong ciphertext";
-    EncryptedKeyset encrypted_keyset;
-    encrypted_keyset.set_encrypted_keyset(keyset_ciphertext);
-    auto reader = std::move(
-        JsonKeysetReader::New(encrypted_keyset.SerializeAsString()).value());
-    auto result = KeysetHandle::Read(std::move(reader), aead);
-    EXPECT_FALSE(result.ok());
-    EXPECT_EQ(absl::StatusCode::kInvalidArgument, result.status().code());
-  }
-}
-
-TEST_F(KeysetHandleTest, WriteEncryptedKeyset_Json) {
-  // Prepare a valid keyset handle
-  Keyset keyset;
-  Keyset::Key key;
-  AddTinkKey("some_key_type", 42, key, KeyStatusType::ENABLED,
-             KeyData::SYMMETRIC, &keyset);
-  AddRawKey("some_other_key_type", 711, key, KeyStatusType::ENABLED,
-            KeyData::SYMMETRIC, &keyset);
-  keyset.set_primary_key_id(42);
-  auto reader =
-      std::move(BinaryKeysetReader::New(keyset.SerializeAsString()).value());
-  auto keyset_handle =
-      std::move(CleartextKeysetHandle::Read(std::move(reader)).value());
-
-  // Prepare a keyset writer.
-  DummyAead aead("dummy aead 42");
-  std::stringbuf buffer;
-  std::unique_ptr<std::ostream> destination_stream(new std::ostream(&buffer));
-  auto writer =
-      std::move(JsonKeysetWriter::New(std::move(destination_stream)).value());
-
-  // Write the keyset handle and check the result.
-  auto status = keyset_handle->Write(writer.get(), aead);
-  EXPECT_TRUE(status.ok()) << status;
-  auto reader_result = JsonKeysetReader::New(buffer.str());
-  EXPECT_TRUE(reader_result.ok()) << reader_result.status();
-  auto read_encrypted_result = reader_result.value()->ReadEncrypted();
-  EXPECT_TRUE(read_encrypted_result.ok()) << read_encrypted_result.status();
-  auto encrypted_keyset = std::move(read_encrypted_result.value());
-  auto decrypt_result = aead.Decrypt(encrypted_keyset->encrypted_keyset(),
-                                     /* associated_data= */ "");
-  EXPECT_TRUE(decrypt_result.status().ok()) << decrypt_result.status();
-  auto decrypted = decrypt_result.value();
-  EXPECT_EQ(decrypted, keyset.SerializeAsString());
-
-  // Try writing to a null-writer.
-  status = keyset_handle->Write(nullptr, aead);
-  EXPECT_FALSE(status.ok());
-  EXPECT_EQ(absl::StatusCode::kInvalidArgument, status.code());
-}
-
 TEST_F(KeysetHandleTest, ReadEncryptedKeysetWithAssociatedDataGoodKeyset) {
   Keyset keyset;
   Keyset::Key key;
@@ -517,7 +425,7 @@ TEST_F(KeysetHandleTest, ReadEncryptedKeysetWithAssociatedDataGoodKeyset) {
   encrypted_keyset.set_encrypted_keyset(keyset_ciphertext);
   std::unique_ptr<KeysetReader> reader = std::move(
       BinaryKeysetReader::New(encrypted_keyset.SerializeAsString()).value());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> result =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> result =
       KeysetHandle::ReadWithAssociatedData(std::move(reader), aead, "aad");
   EXPECT_THAT(result, IsOk());
   auto handle = std::move(result.value());
@@ -536,9 +444,9 @@ TEST_F(KeysetHandleTest, ReadEncryptedWithAssociatedDataAndAnnotations) {
       *aead.Encrypt(keyset.SerializeAsString(), kAssociatedData);
   EncryptedKeyset encrypted_keyset;
   encrypted_keyset.set_encrypted_keyset(keyset_ciphertext);
-  util::StatusOr<std::unique_ptr<KeysetReader>> reader =
+  absl::StatusOr<std::unique_ptr<KeysetReader>> reader =
       BinaryKeysetReader::New(encrypted_keyset.SerializeAsString());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
       KeysetHandle::ReadWithAssociatedData(*std::move(reader), aead,
                                            kAssociatedData, kAnnotations);
   ASSERT_THAT(keyset_handle, IsOk());
@@ -698,13 +606,13 @@ TEST_F(KeysetHandleTest, GenerateNewWithAnnotations) {
       {"key1", "value1"}, {"key2", "value2"}};
 
   // `handle` depends on the global registry.
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(),
                                 KeyGenConfigGlobalRegistry(), kAnnotations);
   ASSERT_THAT(handle, IsOk());
 
   // `config_handle` uses a config that depends on the global registry.
-  util::StatusOr<std::unique_ptr<KeysetHandle>> config_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> config_handle =
       KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(),
                                 KeyGenConfigGlobalRegistry(), kAnnotations);
   ASSERT_THAT(config_handle, IsOk());
@@ -741,7 +649,7 @@ TEST_F(KeysetHandleTest, GenerateNewWithAnnotations) {
   }
 }
 
-TEST_F(KeysetHandleTest, GenerateNewErrors) {
+TEST_F(KeysetHandleTest, GenerateNewInvalidKeyTemplateFails) {
   KeyTemplate templ;
   templ.set_type_url("type.googleapis.com/some.unknown.KeyType");
   templ.set_output_prefix_type(OutputPrefixType::TINK);
@@ -752,12 +660,128 @@ TEST_F(KeysetHandleTest, GenerateNewErrors) {
   EXPECT_EQ(absl::StatusCode::kNotFound, handle_result.status().code());
 }
 
-TEST_F(KeysetHandleTest, UnknownPrefixIsInvalid) {
-  KeyTemplate templ(AeadKeyTemplates::Aes128Gcm());
-  templ.set_output_prefix_type(OutputPrefixType::UNKNOWN_PREFIX);
-  auto handle_result =
-      KeysetHandle::GenerateNew(templ, KeyGenConfigGlobalRegistry());
-  EXPECT_FALSE(handle_result.ok());
+using KeysetHandlePrefixTest =
+    TestWithParam<XChaCha20Poly1305Parameters::Variant>;
+
+INSTANTIATE_TEST_SUITE_P(
+    KeysetHandlePrefixTestSuite, KeysetHandlePrefixTest,
+    Values(XChaCha20Poly1305Parameters::Variant::kTink,
+           XChaCha20Poly1305Parameters::Variant::kNoPrefix));
+
+TEST_P(KeysetHandlePrefixTest, GenerateNewFromParametersWorks) {
+  XChaCha20Poly1305Parameters::Variant variant = GetParam();
+
+  absl::StatusOr<XChaCha20Poly1305Parameters> params =
+      XChaCha20Poly1305Parameters::Create(variant);
+
+  KeyGenConfiguration config;
+  ASSERT_THAT(
+      internal::KeyGenConfigurationImpl::AddKeyCreator<
+          XChaCha20Poly1305Parameters>(CreateXChaCha20Poly1305Key, config),
+      IsOk());
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+      KeysetHandle::GenerateNewFromParameters(*params, config);
+  EXPECT_THAT(handle.status(), IsOk());
+  EXPECT_THAT((*handle)->GetPrimary().GetKey()->GetParameters(), Eq(*params));
+}
+
+TEST(KeysetHandleGenerateNewFromParametersTest,
+     GenerateNewFromParametersEmptyKeyGenConfigFails) {
+  Registry::Reset();
+  absl::StatusOr<XChaCha20Poly1305Parameters> params =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kNoPrefix);
+
+  KeyGenConfiguration config;
+  EXPECT_THAT(
+      KeysetHandle::GenerateNewFromParameters<XChaCha20Poly1305Parameters>(
+          *params, config)
+          .status(),
+      StatusIs(absl::StatusCode::kNotFound));
+}
+
+TEST(KeysetHandleGenerateNewFromParametersTest,
+     GenerateNewFromParametersWithAnnotations) {
+  const absl::flat_hash_map<std::string, std::string> kAnnotations = {
+      {"key1", "value1"}, {"key2", "value2"}};
+
+  absl::StatusOr<XChaCha20Poly1305Parameters> params =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kNoPrefix);
+
+  KeyGenConfiguration config;
+  ASSERT_THAT(
+      internal::KeyGenConfigurationImpl::AddKeyCreator<
+          XChaCha20Poly1305Parameters>(CreateXChaCha20Poly1305Key, config),
+      IsOk());
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+      KeysetHandle::GenerateNewFromParameters(*params, config, kAnnotations);
+  ASSERT_THAT(handle, IsOk());
+
+  auto primitive_wrapper = absl::make_unique<MockAeadPrimitiveWrapper>();
+  absl::flat_hash_map<std::string, std::string> generated_annotations;
+  EXPECT_CALL(*primitive_wrapper, Wrap(_))
+      .WillOnce(
+          [&generated_annotations](
+              std::unique_ptr<PrimitiveSet<Aead>> generated_primitive_set) {
+            generated_annotations = generated_primitive_set->get_annotations();
+            std::unique_ptr<Aead> aead = absl::make_unique<DummyAead>("");
+            return aead;
+          });
+
+  // TODO (b/352504713): Remove this once `GetPrimitive` is no longer dependent
+  // on the global registry / key managers.
+  Registry::Reset();
+  ASSERT_THAT(Registry::RegisterPrimitiveWrapper(std::move(primitive_wrapper)),
+              IsOk());
+  ASSERT_THAT(
+      Registry::RegisterKeyTypeManager(
+          absl::make_unique<FakeAeadKeyManager>(
+              "type.googleapis.com/google.crypto.tink.XChaCha20Poly1305Key"),
+          /*new_key_allowed=*/true),
+      IsOk());
+
+  EXPECT_THAT(
+      (*handle)->GetPrimitive<crypto::tink::Aead>(ConfigGlobalRegistry()),
+      IsOk());
+  EXPECT_EQ(generated_annotations, kAnnotations);
+
+  // This is needed to cleanup mocks.
+  Registry::Reset();
+}
+
+TEST(KeysetHandleGenerateNewFromParametersTest,
+     GenerateNewFromParametersWithGlobalRegistryConfigFails) {
+  Registry::Reset();
+  absl::StatusOr<XChaCha20Poly1305Parameters> params =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kNoPrefix);
+
+  EXPECT_THAT(
+      KeysetHandle::GenerateNewFromParameters<XChaCha20Poly1305Parameters>(
+          *params, KeyGenConfigGlobalRegistry())
+          .status(),
+      StatusIs(absl::StatusCode::kNotFound));
+}
+
+TEST_F(KeysetHandleTest, GenerateNewWithUnknownPrefixFails) {
+  KeyTemplate key_template(AeadKeyTemplates::Aes128Gcm());
+  key_template.set_output_prefix_type(OutputPrefixType::UNKNOWN_PREFIX);
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+      KeysetHandle::GenerateNew(key_template, KeyGenConfigGlobalRegistry());
+  EXPECT_THAT(handle, StatusIs(absl::StatusCode::kInvalidArgument,
+                               HasSubstr("key template has UNKNOWN prefix")));
+}
+
+TEST_F(KeysetHandleTest, GenerateNewWithIdRequirementFails) {
+  KeyTemplate key_template(AeadKeyTemplates::Aes128Gcm());
+  key_template.set_output_prefix_type(OutputPrefixType::WITH_ID_REQUIREMENT);
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+      KeysetHandle::GenerateNew(key_template, KeyGenConfigGlobalRegistry());
+  EXPECT_THAT(
+      handle,
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("key template has WITH_ID_REQUIREMENT prefix")));
 }
 
 void CompareKeyMetadata(const Keyset::Key& expected,
@@ -767,13 +791,13 @@ void CompareKeyMetadata(const Keyset::Key& expected,
   EXPECT_EQ(expected.output_prefix_type(), actual.output_prefix_type());
 }
 
-util::StatusOr<const Keyset> CreateEcdsaMultiKeyset() {
+absl::StatusOr<const Keyset> CreateEcdsaMultiKeyset() {
   Keyset keyset;
   EcdsaSignKeyManager key_manager;
   EcdsaKeyFormat key_format;
 
   if (!key_format.ParseFromString(SignatureKeyTemplates::EcdsaP256().value())) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Failed to parse EcdsaP256 key template");
   }
   AddTinkKey(EcdsaSignKeyManager().get_key_type(),
@@ -782,7 +806,7 @@ util::StatusOr<const Keyset> CreateEcdsaMultiKeyset() {
 
   if (!key_format.ParseFromString(
           SignatureKeyTemplates::EcdsaP384Sha384().value())) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Failed to parse EcdsaP384Sha384 key template");
   }
   AddLegacyKey(EcdsaSignKeyManager().get_key_type(),
@@ -791,7 +815,7 @@ util::StatusOr<const Keyset> CreateEcdsaMultiKeyset() {
 
   if (!key_format.ParseFromString(
           SignatureKeyTemplates::EcdsaP384Sha512().value())) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Failed to parse EcdsaP384Sha512 key template");
   }
   AddRawKey(EcdsaSignKeyManager().get_key_type(),
@@ -822,13 +846,14 @@ TEST_F(KeysetHandleTest, GetPublicKeysetHandle) {
               public_keyset.key(0).key_data().key_material_type());
   }
   {  // A keyset with multiple keys.
-    util::StatusOr<const Keyset> keyset = CreateEcdsaMultiKeyset();
+    absl::StatusOr<const Keyset> keyset = CreateEcdsaMultiKeyset();
     ASSERT_THAT(keyset, IsOk());
     std::unique_ptr<KeysetHandle> handle =
         TestKeysetHandle::GetKeysetHandle(*keyset);
-    util::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
+    absl::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
         handle->GetPublicKeysetHandle(KeyGenConfigGlobalRegistry());
     ASSERT_THAT(public_handle, IsOk());
+    EXPECT_THAT((*public_handle)->size(), Eq(3));
 
     const Keyset& public_keyset = TestKeysetHandle::GetKeyset(**public_handle);
     EXPECT_EQ(keyset->primary_key_id(), public_keyset.primary_key_id());
@@ -882,7 +907,7 @@ TEST_F(KeysetHandleTest, GetPublicKeysetHandleErrors) {
 }
 
 TEST_F(KeysetHandleTest, GetPublicKeysetHandleWithBespokeConfigSucceeds) {
-  util::StatusOr<const Keyset> keyset = CreateEcdsaMultiKeyset();
+  absl::StatusOr<const Keyset> keyset = CreateEcdsaMultiKeyset();
   ASSERT_THAT(keyset, IsOk());
   std::unique_ptr<KeysetHandle> handle =
       TestKeysetHandle::GetKeysetHandle(*keyset);
@@ -892,7 +917,7 @@ TEST_F(KeysetHandleTest, GetPublicKeysetHandleWithBespokeConfigSucceeds) {
                   absl::make_unique<EcdsaSignKeyManager>(),
                   absl::make_unique<EcdsaVerifyKeyManager>(), config),
               IsOk());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
       handle->GetPublicKeysetHandle(config);
   ASSERT_THAT(public_handle, IsOk());
 
@@ -906,12 +931,48 @@ TEST_F(KeysetHandleTest, GetPublicKeysetHandleWithBespokeConfigSucceeds) {
   }
 }
 
+TEST_F(KeysetHandleTest,
+       GetPublicKeysetHandleWithBespokeConfigNoKeyManagersSucceeds) {
+  absl::StatusOr<const Keyset> keyset = CreateEcdsaMultiKeyset();
+  ASSERT_THAT(keyset, IsOk());
+  std::unique_ptr<KeysetHandle> handle =
+      TestKeysetHandle::GetKeysetHandle(*keyset);
+
+  KeyGenConfiguration config;
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
+      handle->GetPublicKeysetHandle(config);
+  ASSERT_THAT(public_handle, IsOk());
+
+  const Keyset& public_keyset = TestKeysetHandle::GetKeyset(**public_handle);
+  EXPECT_EQ(keyset->primary_key_id(), public_keyset.primary_key_id());
+  EXPECT_EQ(keyset->key_size(), public_keyset.key_size());
+  for (int i = 0; i < keyset->key_size(); i++) {
+    CompareKeyMetadata(keyset->key(i), public_keyset.key(i));
+    EXPECT_EQ(KeyData::ASYMMETRIC_PUBLIC,
+              public_keyset.key(i).key_data().key_material_type());
+  }
+}
+
+TEST_F(
+    KeysetHandleTest,
+    GetPublicKeysetHandleWithBespokeConfigEmptySerializationRegistryFails) {
+  internal::MutableSerializationRegistry::GlobalInstance().Reset();
+  absl::StatusOr<const Keyset> keyset = CreateEcdsaMultiKeyset();
+  ASSERT_THAT(keyset, IsOk());
+  std::unique_ptr<KeysetHandle> handle =
+      TestKeysetHandle::GetKeysetHandle(*keyset);
+
+  KeyGenConfiguration config;
+  EXPECT_THAT(handle->GetPublicKeysetHandle(config).status(),
+              StatusIs(absl::StatusCode::kNotFound));
+}
+
 TEST_F(KeysetHandleTest, GetPublicKeysetHandleWithBespokeConfigFails) {
   KeyGenConfiguration config;
   ASSERT_THAT(internal::KeyGenConfigurationImpl::AddKeyTypeManager(
                   absl::make_unique<AesGcmKeyManager>(), config),
               IsOk());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(), config);
   ASSERT_THAT(handle, IsOk());
   EXPECT_THAT((*handle)->GetPublicKeysetHandle(config).status(),
@@ -920,12 +981,12 @@ TEST_F(KeysetHandleTest, GetPublicKeysetHandleWithBespokeConfigFails) {
 
 TEST_F(KeysetHandleTest,
        GetPublicKeysetHandleWithGlobalRegistryConfigSucceeds) {
-  util::StatusOr<const Keyset> keyset = CreateEcdsaMultiKeyset();
+  absl::StatusOr<const Keyset> keyset = CreateEcdsaMultiKeyset();
   ASSERT_THAT(keyset, IsOk());
   std::unique_ptr<KeysetHandle> handle =
       TestKeysetHandle::GetKeysetHandle(*keyset);
 
-  util::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
       handle->GetPublicKeysetHandle(KeyGenConfigGlobalRegistry());
   ASSERT_THAT(public_handle, IsOk());
 
@@ -940,7 +1001,7 @@ TEST_F(KeysetHandleTest,
 }
 
 TEST_F(KeysetHandleTest, GetPublicKeysetHandleWithGlobalRegistryConfigFails) {
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(),
                                 KeyGenConfigGlobalRegistry());
   ASSERT_THAT(handle, IsOk());
@@ -994,7 +1055,7 @@ TEST_F(KeysetHandleTest, GetPrimitiveWithBespokeConfigSucceeds) {
   ASSERT_THAT(internal::KeyGenConfigurationImpl::AddKeyTypeManager(
                   absl::make_unique<AesGcmKeyManager>(), key_gen_config),
               IsOk());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(), key_gen_config);
   ASSERT_THAT(handle, IsOk());
 
@@ -1014,7 +1075,7 @@ TEST_F(KeysetHandleTest, GetPrimitiveWithBespokeConfigFailsIfEmpty) {
   ASSERT_THAT(internal::KeyGenConfigurationImpl::AddKeyTypeManager(
                   absl::make_unique<AesGcmKeyManager>(), key_gen_config),
               IsOk());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(), key_gen_config);
   ASSERT_THAT(handle, IsOk());
 
@@ -1024,7 +1085,7 @@ TEST_F(KeysetHandleTest, GetPrimitiveWithBespokeConfigFailsIfEmpty) {
 }
 
 TEST_F(KeysetHandleTest, GetPrimitiveWithGlobalRegistryConfig) {
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(),
                                 KeyGenConfigGlobalRegistry());
   ASSERT_THAT(handle, IsOk());
@@ -1032,12 +1093,230 @@ TEST_F(KeysetHandleTest, GetPrimitiveWithGlobalRegistryConfig) {
   EXPECT_THAT((*handle)->GetPrimitive<Aead>(ConfigGlobalRegistry()), IsOk());
 }
 
+TEST_P(KeysetHandlePrefixTest,
+       GetPrimitiveWithBespokeConfigUsingPrimitiveGettersSucceeds) {
+  if (!internal::IsBoringSsl()) {
+    GTEST_SKIP() << "XChaCha20-Poly1305 is not supported when OpenSSL is used";
+  }
+  Registry::Reset();
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+  XChaCha20Poly1305Parameters::Variant variant = GetParam();
+  absl::StatusOr<XChaCha20Poly1305Parameters> params =
+      XChaCha20Poly1305Parameters::Create(variant);
+  ASSERT_THAT(params, IsOk());
+
+  KeyGenConfiguration key_gen_config;
+  ASSERT_THAT(internal::KeyGenConfigurationImpl::AddKeyCreator<
+                  XChaCha20Poly1305Parameters>(CreateXChaCha20Poly1305Key,
+                                               key_gen_config),
+              IsOk());
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+      KeysetHandle::GenerateNewFromParameters(*params, key_gen_config);
+  ASSERT_THAT(handle, IsOk());
+  ASSERT_THAT((*handle)->Validate(), IsOk());
+  EXPECT_THAT((*handle)->GetPrimary().GetKey()->GetParameters(), Eq(*params));
+
+  Configuration config;
+  ASSERT_THAT(
+      (internal::ConfigurationImpl::AddPrimitiveGetter<Aead,
+                                                       XChaCha20Poly1305Key>(
+          GetPrimitiveForXChaCha20Poly1305Key, config)),
+      IsOk());
+  ASSERT_THAT(internal::ConfigurationImpl::AddPrimitiveWrapper(
+                  absl::make_unique<AeadWrapper>(), config),
+              IsOk());
+
+  absl::StatusOr<std::unique_ptr<Aead>> aead =
+      (*handle)->GetPrimitive<Aead>(config);
+  ASSERT_THAT(aead, IsOk());
+
+  // Check that encrypt/decrypt works.
+  const std::string plaintext = "plaintext";
+  const std::string aad = "aad";
+  absl::StatusOr<std::string> encryption = (*aead)->Encrypt(plaintext, aad);
+  ASSERT_THAT(encryption, IsOk());
+  absl::StatusOr<std::string> decryption = (*aead)->Decrypt(*encryption, aad);
+  ASSERT_THAT(decryption, IsOk());
+  EXPECT_EQ(*decryption, plaintext);
+}
+
+TEST_F(KeysetHandleTest,
+       GetPrimitiveWithBespokeConfigUsingMultipleKeysPrimitiveGettersSucceeds) {
+  if (!internal::IsBoringSsl()) {
+    GTEST_SKIP() << "XChaCha20-Poly1305 is not supported when OpenSSL is used";
+  }
+  Registry::Reset();
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+  absl::StatusOr<XChaCha20Poly1305Parameters> params =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kNoPrefix);
+  ASSERT_THAT(params, IsOk());
+
+  KeyGenConfiguration key_gen_config;
+  ASSERT_THAT(internal::KeyGenConfigurationImpl::AddKeyCreator<
+                  XChaCha20Poly1305Parameters>(CreateXChaCha20Poly1305Key,
+                                               key_gen_config),
+              IsOk());
+
+  KeysetHandleBuilder::Entry entry0 =
+      KeysetHandleBuilder::Entry::CreateFromCopyableParams(*params,
+                                                           KeyStatus::kEnabled,
+                                                           /*is_primary=*/true);
+
+  KeysetHandleBuilder::Entry entry1 =
+      KeysetHandleBuilder::Entry::CreateFromCopyableParams(
+          *params, KeyStatus::kEnabled, /*is_primary=*/false);
+
+  absl::StatusOr<KeysetHandle> handle = KeysetHandleBuilder()
+                                            .AddEntry(std::move(entry0))
+                                            .AddEntry(std::move(entry1))
+                                            .Build(key_gen_config);
+  ASSERT_THAT(handle, IsOk());
+  ASSERT_THAT(*handle, SizeIs(2));
+
+  ASSERT_THAT(handle->Validate(), IsOk());
+  EXPECT_THAT(handle->GetPrimary().GetKey()->GetParameters(), Eq(*params));
+
+  KeysetHandle::Entry expected_entry1 = (*handle)[1];
+  EXPECT_THAT(expected_entry1.IsPrimary(), IsFalse());
+  EXPECT_THAT(expected_entry1.GetKey()->GetParameters(), Eq(*params));
+
+  Configuration config;
+  ASSERT_THAT(
+      (internal::ConfigurationImpl::AddPrimitiveGetter<Aead,
+                                                       XChaCha20Poly1305Key>(
+          GetPrimitiveForXChaCha20Poly1305Key, config)),
+      IsOk());
+  ASSERT_THAT(internal::ConfigurationImpl::AddPrimitiveWrapper(
+                  absl::make_unique<AeadWrapper>(), config),
+              IsOk());
+
+  absl::StatusOr<std::unique_ptr<Aead>> aead =
+      handle->GetPrimitive<Aead>(config);
+  ASSERT_THAT(aead, IsOk());
+
+  // Check that encrypt/decrypt works.
+  const std::string plaintext = "plaintext";
+  const std::string aad = "aad";
+  absl::StatusOr<std::string> encryption = (*aead)->Encrypt(plaintext, aad);
+  ASSERT_THAT(encryption, IsOk());
+  absl::StatusOr<std::string> decryption = (*aead)->Decrypt(*encryption, aad);
+  ASSERT_THAT(decryption, IsOk());
+  EXPECT_EQ(*decryption, plaintext);
+}
+
+TEST_F(KeysetHandleTest,
+       GetPrimitiveWithBespokeConfigMultipleKeysMixedPrimitiveGettersSucceeds) {
+  if (!internal::IsBoringSsl()) {
+    GTEST_SKIP() << "XChaCha20-Poly1305 is not supported when OpenSSL is used";
+  }
+  Registry::Reset();
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+  absl::StatusOr<XChaCha20Poly1305Parameters> xchacha_params =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kNoPrefix);
+  ASSERT_THAT(xchacha_params, IsOk());
+
+  absl::StatusOr<AesGcmParameters> aes_gcm_params =
+      AesGcmParameters::Builder()
+          .SetKeySizeInBytes(16)
+          .SetIvSizeInBytes(12)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesGcmParameters::Variant::kNoPrefix)
+          .Build();
+  ASSERT_THAT(aes_gcm_params, IsOk());
+
+  KeyGenConfiguration key_gen_config;
+  ASSERT_THAT(internal::KeyGenConfigurationImpl::AddKeyCreator<
+                  XChaCha20Poly1305Parameters>(CreateXChaCha20Poly1305Key,
+                                               key_gen_config),
+              IsOk());
+  ASSERT_THAT(internal::KeyGenConfigurationImpl::AddKeyTypeManager(
+                  absl::make_unique<AesGcmKeyManager>(), key_gen_config),
+              IsOk());
+
+  KeysetHandleBuilder::Entry entry0 =
+      KeysetHandleBuilder::Entry::CreateFromCopyableParams(*xchacha_params,
+                                                           KeyStatus::kEnabled,
+                                                           /*is_primary=*/true);
+
+  KeysetHandleBuilder::Entry entry1 =
+      KeysetHandleBuilder::Entry::CreateFromCopyableParams(
+          *aes_gcm_params, KeyStatus::kEnabled, /*is_primary=*/false);
+
+  absl::StatusOr<KeysetHandle> handle = KeysetHandleBuilder()
+                                            .AddEntry(std::move(entry0))
+                                            .AddEntry(std::move(entry1))
+                                            .Build(key_gen_config);
+  ASSERT_THAT(handle, IsOk());
+  ASSERT_THAT(*handle, SizeIs(2));
+
+  ASSERT_THAT(handle->Validate(), IsOk());
+  EXPECT_THAT(handle->GetPrimary().GetKey()->GetParameters(),
+              Eq(*xchacha_params));
+
+  KeysetHandle::Entry expected_entry1 = (*handle)[1];
+  EXPECT_THAT(expected_entry1.IsPrimary(), IsFalse());
+  EXPECT_THAT(expected_entry1.GetKey()->GetParameters(), Eq(*aes_gcm_params));
+
+  Configuration config;
+  ASSERT_THAT(
+      (internal::ConfigurationImpl::AddPrimitiveGetter<Aead,
+                                                       XChaCha20Poly1305Key>(
+          GetPrimitiveForXChaCha20Poly1305Key, config)),
+      IsOk());
+  ASSERT_THAT(internal::ConfigurationImpl::AddKeyTypeManager(
+                  absl::make_unique<AesGcmKeyManager>(), config),
+              IsOk());
+  ASSERT_THAT(internal::ConfigurationImpl::AddPrimitiveWrapper(
+                  absl::make_unique<AeadWrapper>(), config),
+              IsOk());
+
+  absl::StatusOr<std::unique_ptr<Aead>> aead =
+      handle->GetPrimitive<Aead>(config);
+  EXPECT_THAT(aead, IsOk());
+
+  // Check that encrypt/decrypt works.
+  const std::string plaintext = "plaintext";
+  const std::string aad = "aad";
+  absl::StatusOr<std::string> encryption = (*aead)->Encrypt(plaintext, aad);
+  ASSERT_THAT(encryption, IsOk());
+  absl::StatusOr<std::string> decryption = (*aead)->Decrypt(*encryption, aad);
+  ASSERT_THAT(decryption, IsOk());
+  EXPECT_EQ(*decryption, plaintext);
+}
+
+TEST_F(KeysetHandleTest, GetPrimitiveWithBespokeConfigNoPrimitiveGetterFails) {
+  Registry::Reset();
+  absl::StatusOr<XChaCha20Poly1305Parameters> params =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kNoPrefix);
+
+  KeyGenConfiguration key_gen_config;
+  ASSERT_THAT(internal::KeyGenConfigurationImpl::AddKeyCreator<
+                  XChaCha20Poly1305Parameters>(CreateXChaCha20Poly1305Key,
+                                               key_gen_config),
+              IsOk());
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+      KeysetHandle::GenerateNewFromParameters(*params, key_gen_config);
+  EXPECT_THAT(handle, IsOk());
+  EXPECT_THAT((*handle)->GetPrimary().GetKey()->GetParameters(), Eq(*params));
+
+  Configuration config;
+  ASSERT_THAT(internal::ConfigurationImpl::AddPrimitiveWrapper(
+                  absl::make_unique<AeadWrapper>(), config),
+              IsOk());
+
+  EXPECT_THAT((*handle)->GetPrimitive<Aead>(config).status(),
+              StatusIs(absl::StatusCode::kNotFound));
+}
+
 TEST_F(KeysetHandleTest, GetPrimitiveWithConfigFips1402) {
   if (!internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP() << "Only test in FIPS mode";
   }
 
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(),
                                 KeyGenConfigFips140_2());
   ASSERT_THAT(handle, IsOk());
@@ -1050,7 +1329,7 @@ TEST_F(KeysetHandleTest, GetPrimitiveWithConfigFips1402FailsWithNonFipsHandle) {
   }
 
   Keyset keyset;
-  AesGcmSivKey key_proto;
+  AesGcmSivKeyProto key_proto;
   key_proto.set_key_value(subtle::Random::GetRandomBytes(16));
   test::AddTinkKey(AeadKeyTemplates::Aes256GcmSiv().type_url(), /*key_id=*/13,
                    key_proto, KeyStatusType::ENABLED, KeyData::SYMMETRIC,
@@ -1083,7 +1362,8 @@ TEST_F(KeysetHandleTest, GetPrimitiveNullptrKeyManager) {
 // NOLINTBEGIN(whitespace/line_length) (Formatted when commented in)
 // TINK-PENDING-REMOVAL-IN-3.0.0-START
 TEST_F(KeysetHandleTest, GetPrimitiveCustomKeyManager) {
-  auto handle_result = KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(),
+  auto handle_result =
+  KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(),
                                                  KeyGenConfigGlobalRegistry());
   ASSERT_TRUE(handle_result.ok()) << handle_result.status();
   std::unique_ptr<KeysetHandle> handle = std::move(handle_result.value());
@@ -1137,7 +1417,7 @@ TEST_F(KeysetHandleTest, ReadNoSecretWithAnnotations) {
   const absl::flat_hash_map<std::string, std::string> kAnnotations = {
       {"key1", "value1"}, {"key2", "value2"}};
   Keyset keyset = GetPublicTestKeyset();
-  util::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
       KeysetHandle::ReadNoSecret(keyset.SerializeAsString(), kAnnotations);
   ASSERT_THAT(keyset_handle, IsOk());
   auto primitive_wrapper = absl::make_unique<MockAeadPrimitiveWrapper>();
@@ -1418,6 +1698,182 @@ TEST_F(KeysetHandleTest, GetEntryFromMultipleKeyKeyset) {
   EXPECT_THAT(entry2.GetKey()->GetParameters().HasIdRequirement(), IsFalse());
 }
 
+TEST_F(KeysetHandleTest, IdenticalEntriesAreEqual) {
+  RestrictedData key_bytes(32);
+  absl::StatusOr<XChaCha20Poly1305Key> key = XChaCha20Poly1305Key::Create(
+      XChaCha20Poly1305Parameters::Variant::kNoPrefix, key_bytes,
+      /*id_requirement=*/absl::nullopt, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  KeysetHandleBuilder::Entry builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/true);
+  builder_entry.SetFixedId(123);
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder().AddEntry(std::move(builder_entry)).Build();
+  ASSERT_THAT(handle.status(), IsOk());
+  ASSERT_THAT(handle->Validate(), IsOk());
+
+  KeysetHandleBuilder::Entry other_builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/true);
+  other_builder_entry.SetFixedId(123);
+  absl::StatusOr<KeysetHandle> other_handle =
+      KeysetHandleBuilder().AddEntry(std::move(other_builder_entry)).Build();
+  ASSERT_THAT(other_handle.status(), IsOk());
+  ASSERT_THAT(other_handle->Validate(), IsOk());
+
+  EXPECT_THAT((*handle)[0] == (*other_handle)[0], IsTrue());
+  EXPECT_THAT((*handle)[0] != (*other_handle)[0], IsFalse());
+}
+
+TEST_F(KeysetHandleTest, EntriesWithDifferentKeysAreNotEqual) {
+  RestrictedData key_bytes(32);
+  absl::StatusOr<XChaCha20Poly1305Key> key = XChaCha20Poly1305Key::Create(
+      XChaCha20Poly1305Parameters::Variant::kNoPrefix, key_bytes,
+      /*id_requirement=*/absl::nullopt, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  RestrictedData other_key_bytes(32);
+  absl::StatusOr<XChaCha20Poly1305Key> other_key = XChaCha20Poly1305Key::Create(
+      XChaCha20Poly1305Parameters::Variant::kNoPrefix, other_key_bytes,
+      /*id_requirement=*/absl::nullopt, GetPartialKeyAccess());
+  ASSERT_THAT(other_key, IsOk());
+
+  KeysetHandleBuilder::Entry builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/true);
+  builder_entry.SetFixedId(123);
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder().AddEntry(std::move(builder_entry)).Build();
+  ASSERT_THAT(handle.status(), IsOk());
+  ASSERT_THAT(handle->Validate(), IsOk());
+
+  KeysetHandleBuilder::Entry other_builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *other_key, KeyStatus::kEnabled, /*is_primary=*/true);
+  other_builder_entry.SetFixedId(123);
+  absl::StatusOr<KeysetHandle> other_handle =
+      KeysetHandleBuilder().AddEntry(std::move(other_builder_entry)).Build();
+  ASSERT_THAT(other_handle.status(), IsOk());
+  ASSERT_THAT(other_handle->Validate(), IsOk());
+
+  EXPECT_THAT((*handle)[0] != (*other_handle)[0], IsTrue());
+  EXPECT_THAT((*handle)[0] == (*other_handle)[0], IsFalse());
+}
+
+TEST_F(KeysetHandleTest, EntriesWithDifferentIdsAreNotEqual) {
+  RestrictedData key_bytes(32);
+  absl::StatusOr<XChaCha20Poly1305Key> key = XChaCha20Poly1305Key::Create(
+      XChaCha20Poly1305Parameters::Variant::kNoPrefix, key_bytes,
+      /*id_requirement=*/absl::nullopt, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  KeysetHandleBuilder::Entry builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/true);
+  builder_entry.SetFixedId(123);
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder().AddEntry(std::move(builder_entry)).Build();
+  ASSERT_THAT(handle.status(), IsOk());
+  ASSERT_THAT(handle->Validate(), IsOk());
+
+  KeysetHandleBuilder::Entry other_builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/true);
+  other_builder_entry.SetFixedId(456);
+  absl::StatusOr<KeysetHandle> other_handle =
+      KeysetHandleBuilder().AddEntry(std::move(other_builder_entry)).Build();
+  ASSERT_THAT(other_handle.status(), IsOk());
+  ASSERT_THAT(other_handle->Validate(), IsOk());
+
+  EXPECT_THAT((*handle)[0] != (*other_handle)[0], IsTrue());
+  EXPECT_THAT((*handle)[0] == (*other_handle)[0], IsFalse());
+}
+
+TEST_F(KeysetHandleTest, EntriesWithDifferentStatusesAreNotEqual) {
+  RestrictedData key_bytes(32);
+  absl::StatusOr<XChaCha20Poly1305Key> key = XChaCha20Poly1305Key::Create(
+      XChaCha20Poly1305Parameters::Variant::kNoPrefix, key_bytes,
+      /*id_requirement=*/absl::nullopt, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  KeysetHandleBuilder::Entry primary_builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/true);
+  primary_builder_entry.SetFixedId(123);
+  KeysetHandleBuilder::Entry builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/false);
+  builder_entry.SetFixedId(456);
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder()
+          .AddEntry(std::move(primary_builder_entry))
+          .AddEntry(std::move(builder_entry))
+          .Build();
+  ASSERT_THAT(handle.status(), IsOk());
+  ASSERT_THAT(handle->Validate(), IsOk());
+
+  KeysetHandleBuilder::Entry other_primary_builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/true);
+  other_primary_builder_entry.SetFixedId(123);
+  // Primary keys must be enabled, so we need to compare non-primary keys.
+  KeysetHandleBuilder::Entry other_builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kDisabled, /*is_primary=*/false);
+  other_builder_entry.SetFixedId(456);
+  absl::StatusOr<KeysetHandle> other_handle =
+      KeysetHandleBuilder()
+          .AddEntry(std::move(other_primary_builder_entry))
+          .AddEntry(std::move(other_builder_entry))
+          .Build();
+  ASSERT_THAT(other_handle.status(), IsOk());
+  ASSERT_THAT(other_handle->Validate(), IsOk());
+
+  EXPECT_THAT((*handle)[1] != (*other_handle)[1], IsTrue());
+  EXPECT_THAT((*handle)[1] == (*other_handle)[1], IsFalse());
+}
+
+TEST_F(KeysetHandleTest, PrimaryAndNonPrimaryEntriesAreNotEqual) {
+  RestrictedData key_bytes(32);
+  absl::StatusOr<XChaCha20Poly1305Key> key = XChaCha20Poly1305Key::Create(
+      XChaCha20Poly1305Parameters::Variant::kNoPrefix, key_bytes,
+      /*id_requirement=*/absl::nullopt, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  KeysetHandleBuilder::Entry builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/true);
+  builder_entry.SetFixedId(123);
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder().AddEntry(std::move(builder_entry)).Build();
+  ASSERT_THAT(handle.status(), IsOk());
+  ASSERT_THAT(handle->Validate(), IsOk());
+  ASSERT_THAT((*handle)[0].IsPrimary(), IsTrue());
+
+  KeysetHandleBuilder::Entry other_builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/false);
+  other_builder_entry.SetFixedId(123);
+  // Need primary entry for the keyset to build.
+  KeysetHandleBuilder::Entry primary_builder_entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+          *key, KeyStatus::kEnabled, /*is_primary=*/true);
+  primary_builder_entry.SetFixedId(456);
+  absl::StatusOr<KeysetHandle> other_handle =
+      KeysetHandleBuilder()
+          .AddEntry(std::move(primary_builder_entry))
+          .AddEntry(std::move(other_builder_entry))
+          .Build();
+  ASSERT_THAT(other_handle.status(), IsOk());
+  ASSERT_THAT(other_handle->Validate(), IsOk());
+  ASSERT_THAT((*other_handle)[1].IsPrimary(), IsFalse());
+
+  EXPECT_THAT((*handle)[0] != (*other_handle)[1], IsTrue());
+  EXPECT_THAT((*handle)[0] == (*other_handle)[1], IsFalse());
+}
+
 TEST_F(KeysetHandleDeathTest, EntryWithIndexOutOfBoundsCrashes) {
   Keyset keyset;
   Keyset::Key key;
@@ -1485,7 +1941,7 @@ TEST_F(KeysetHandleTest, GetPrimary) {
   ASSERT_THAT(handle->Validate(), IsOk());
   ASSERT_THAT(*handle, SizeIs(3));
 
-  util::StatusOr<KeysetHandle::Entry> primary = handle->GetPrimary();
+  absl::StatusOr<KeysetHandle::Entry> primary = handle->GetPrimary();
   ASSERT_THAT(primary, IsOk());
 
   EXPECT_THAT(primary->GetId(), Eq(33));

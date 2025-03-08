@@ -54,7 +54,7 @@ const int CryptoFormat::kRawPrefixSize;
 const absl::string_view CryptoFormat::kRawPrefix = "";
 
 // static
-crypto::tink::util::StatusOr<std::string> CryptoFormat::GetOutputPrefix(
+absl::StatusOr<std::string> CryptoFormat::GetOutputPrefix(
     const google::crypto::tink::KeysetInfo::KeyInfo& key_info) {
   static_assert(sizeof(key_info.key_id() == sizeof(uint32_t )), "");
   switch (key_info.output_prefix_type()) {
@@ -77,7 +77,7 @@ crypto::tink::util::StatusOr<std::string> CryptoFormat::GetOutputPrefix(
     case OutputPrefixType::RAW:
       return std::string(kRawPrefix);
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "The given key has invalid OutputPrefixType.");
   }
 }

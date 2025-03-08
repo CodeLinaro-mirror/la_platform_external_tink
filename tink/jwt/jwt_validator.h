@@ -44,13 +44,13 @@ class JwtValidator {
   JwtValidator(JwtValidator&& other) = default;
   JwtValidator& operator=(JwtValidator&& other) = default;
 
-  util::Status Validate(crypto::tink::RawJwt const& raw_jwt) const;
+  absl::Status Validate(crypto::tink::RawJwt const& raw_jwt) const;
 
  private:
-  util::Status ValidateTimestamps(crypto::tink::RawJwt const& raw_jwt) const;
-  util::Status ValidateTypeHeader(crypto::tink::RawJwt const& raw_jwt) const;
-  util::Status ValidateIssuer(crypto::tink::RawJwt const& raw_jwt) const;
-  util::Status ValidateAudiences(crypto::tink::RawJwt const& raw_jwt) const;
+  absl::Status ValidateTimestamps(crypto::tink::RawJwt const& raw_jwt) const;
+  absl::Status ValidateTypeHeader(crypto::tink::RawJwt const& raw_jwt) const;
+  absl::Status ValidateIssuer(crypto::tink::RawJwt const& raw_jwt) const;
+  absl::Status ValidateAudiences(crypto::tink::RawJwt const& raw_jwt) const;
   explicit JwtValidator(const JwtValidatorBuilder& builder);
   friend class JwtValidatorBuilder;
   absl::optional<std::string> expected_type_header_;
@@ -89,7 +89,7 @@ class JwtValidatorBuilder {
   JwtValidatorBuilder& SetClockSkew(absl::Duration clock_skew);
   JwtValidatorBuilder& SetFixedNow(absl::Time fixed_now);
 
-  util::StatusOr<JwtValidator> Build();
+  absl::StatusOr<JwtValidator> Build();
 
  private:
   friend class JwtValidator;

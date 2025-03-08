@@ -88,17 +88,17 @@ class AesCtrHmacStreaming : public NonceBasedStreamingAead {
 
   static constexpr int kHmacKeySizeInBytes = 32;
 
-  static util::StatusOr<std::unique_ptr<AesCtrHmacStreaming>> New(
+  static absl::StatusOr<std::unique_ptr<AesCtrHmacStreaming>> New(
       Params params);
 
   static constexpr crypto::tink::internal::FipsCompatibility kFipsStatus =
       crypto::tink::internal::FipsCompatibility::kNotFips;
 
  protected:
-  util::StatusOr<std::unique_ptr<StreamSegmentEncrypter>> NewSegmentEncrypter(
+  absl::StatusOr<std::unique_ptr<StreamSegmentEncrypter>> NewSegmentEncrypter(
       absl::string_view associated_data) const override;
 
-  util::StatusOr<std::unique_ptr<StreamSegmentDecrypter>> NewSegmentDecrypter(
+  absl::StatusOr<std::unique_ptr<StreamSegmentDecrypter>> NewSegmentDecrypter(
       absl::string_view associated_data) const override;
 
  private:
@@ -109,12 +109,12 @@ class AesCtrHmacStreaming : public NonceBasedStreamingAead {
 class AesCtrHmacStreamSegmentEncrypter : public StreamSegmentEncrypter {
  public:
   // A factory.
-  static util::StatusOr<std::unique_ptr<StreamSegmentEncrypter>> New(
+  static absl::StatusOr<std::unique_ptr<StreamSegmentEncrypter>> New(
       const AesCtrHmacStreaming::Params& params,
       absl::string_view associated_data);
 
   // Overridden methods of StreamSegmentEncrypter.
-  util::Status EncryptSegment(const std::vector<uint8_t>& plaintext,
+  absl::Status EncryptSegment(const std::vector<uint8_t>& plaintext,
                               bool is_last_segment,
                               std::vector<uint8_t>* ciphertext_buffer) override;
 
@@ -163,14 +163,14 @@ class AesCtrHmacStreamSegmentEncrypter : public StreamSegmentEncrypter {
 class AesCtrHmacStreamSegmentDecrypter : public StreamSegmentDecrypter {
  public:
   // A factory.
-  static util::StatusOr<std::unique_ptr<StreamSegmentDecrypter>> New(
+  static absl::StatusOr<std::unique_ptr<StreamSegmentDecrypter>> New(
       const AesCtrHmacStreaming::Params& params,
       absl::string_view associated_data);
 
   // Overridden methods of StreamSegmentDecrypter.
-  util::Status Init(const std::vector<uint8_t>& header) override;
+  absl::Status Init(const std::vector<uint8_t>& header) override;
 
-  util::Status DecryptSegment(const std::vector<uint8_t>& ciphertext,
+  absl::Status DecryptSegment(const std::vector<uint8_t>& ciphertext,
                               int64_t segment_number, bool is_last_segment,
                               std::vector<uint8_t>* plaintext_buffer) override;
 

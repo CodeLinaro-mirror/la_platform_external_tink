@@ -1,4 +1,4 @@
-// Copyright 2019 Google Inc.
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #include "tink/internal/fips_utils.h"
 #include "tink/internal/ssl_unique_ptr.h"
 #include "tink/public_key_sign.h"
+#include "tink/signature/ed25519_private_key.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/statusor.h"
 
@@ -36,21 +37,40 @@ namespace subtle {
 
 class Ed25519SignBoringSsl : public PublicKeySign {
  public:
-  static crypto::tink::util::StatusOr<std::unique_ptr<PublicKeySign>> New(
-      util::SecretData private_key);
+  // Creates a new PublicKeySign. private-key must be the concatenation of the
+  // Ed25519 private key material with the public key material (following the
+  // OpenSSL/BoringSSL API).
+  static absl::StatusOr<std::unique_ptr<PublicKeySign>> New(
+      util::SecretData private_key) {
+    return New(private_key, "", "");
+  }
+
+  static absl::StatusOr<std::unique_ptr<PublicKeySign>> New(
+      const Ed25519PrivateKey& key);
 
   // Computes the signature for 'data'.
-  crypto::tink::util::StatusOr<std::string> Sign(
-      absl::string_view data) const override;
+  absl::StatusOr<std::string> Sign(absl::string_view data) const override;
 
   static constexpr crypto::tink::internal::FipsCompatibility kFipsStatus =
       crypto::tink::internal::FipsCompatibility::kNotFips;
 
  private:
-  explicit Ed25519SignBoringSsl(internal::SslUniquePtr<EVP_PKEY> priv_key)
-      : priv_key_(std::move(priv_key)) {}
+  static absl::StatusOr<std::unique_ptr<PublicKeySign>> New(
+      util::SecretData private_key, absl::string_view output_prefix,
+      absl::string_view message_suffix);
+
+  explicit Ed25519SignBoringSsl(internal::SslUniquePtr<EVP_PKEY> priv_key,
+                                absl::string_view output_prefix,
+                                absl::string_view message_suffix)
+      : priv_key_(std::move(priv_key)),
+        output_prefix_(output_prefix),
+        message_suffix_(message_suffix) {}
+
+  absl::StatusOr<std::string> SignWithoutPrefix(absl::string_view data) const;
 
   const internal::SslUniquePtr<EVP_PKEY> priv_key_;
+  const std::string output_prefix_;
+  const std::string message_suffix_;
 };
 
 }  // namespace subtle

@@ -17,15 +17,17 @@
 #ifndef TINK_INTERNAL_LEGACY_PROTO_KEY_H_
 #define TINK_INTERNAL_LEGACY_PROTO_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 
+#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "tink/internal/proto_key_serialization.h"
 #include "tink/key.h"
 #include "tink/parameters.h"
 #include "tink/secret_key_access_token.h"
-#include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
 
 namespace crypto {
@@ -57,6 +59,10 @@ class UnusableLegacyProtoParameters : public Parameters {
 
   bool operator==(const Parameters& other) const override;
 
+  std::unique_ptr<Parameters> Clone() const override {
+    return std::make_unique<UnusableLegacyProtoParameters>(*this);
+  }
+
  private:
   std::string type_url_;
   google::crypto::tink::OutputPrefixType output_prefix_type_;
@@ -73,7 +79,7 @@ class LegacyProtoKey : public Key {
 
   // Creates `LegacyProtoKey` object from `serialization`.  Requires `token` if
   // the key material type is either SYMMETRIC or ASYMMETRIC_PRIVATE.
-  static util::StatusOr<LegacyProtoKey> Create(
+  static absl::StatusOr<LegacyProtoKey> Create(
       ProtoKeySerialization serialization,
       absl::optional<SecretKeyAccessToken> token);
 
@@ -81,22 +87,28 @@ class LegacyProtoKey : public Key {
     return unusable_proto_parameters_;
   }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return serialization_.IdRequirement();
   }
 
   bool operator==(const Key& other) const override;
 
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<LegacyProtoKey>(*this);
+  };
+
   // Returns `ProtoKeySerialization` pointer for this object.  Requires `token`
   // if the key material type is either SYMMETRIC or ASYMMETRIC_PRIVATE.
-  util::StatusOr<const ProtoKeySerialization*> Serialization(
+  absl::StatusOr<const ProtoKeySerialization*> Serialization(
       absl::optional<SecretKeyAccessToken> token) const;
 
  private:
-  explicit LegacyProtoKey(ProtoKeySerialization serialization)
+  explicit LegacyProtoKey(const ProtoKeySerialization& serialization)
       : serialization_(serialization),
-        unusable_proto_parameters_(serialization.TypeUrl(),
-                                   serialization.GetOutputPrefixType()) {}
+        unusable_proto_parameters_(
+            serialization.TypeUrl(),
+            static_cast<google::crypto::tink::OutputPrefixType>(
+                serialization.GetOutputPrefixTypeEnum())) {}
 
   ProtoKeySerialization serialization_;
   UnusableLegacyProtoParameters unusable_proto_parameters_;

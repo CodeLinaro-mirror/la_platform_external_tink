@@ -118,19 +118,19 @@ class TestKeyFactory : public KeyFactory {
  public:
   explicit TestKeyFactory(const std::string& key_type) : key_type_(key_type) {}
 
-  util::StatusOr<std::unique_ptr<portable_proto::MessageLite>> NewKey(
+  absl::StatusOr<std::unique_ptr<portable_proto::MessageLite>> NewKey(
       const MessageLite& key_format) const override {
-    return util::Status(absl::StatusCode::kUnknown,
+    return absl::Status(absl::StatusCode::kUnknown,
                         "TestKeyFactory cannot produce a key");
   }
 
-  util::StatusOr<std::unique_ptr<portable_proto::MessageLite>> NewKey(
+  absl::StatusOr<std::unique_ptr<portable_proto::MessageLite>> NewKey(
       absl::string_view serialized_key_format) const override {
-    return util::Status(absl::StatusCode::kUnknown,
+    return absl::Status(absl::StatusCode::kUnknown,
                         "TestKeyFactory cannot produce a key");
   }
 
-  util::StatusOr<std::unique_ptr<KeyData>> NewKeyData(
+  absl::StatusOr<std::unique_ptr<KeyData>> NewKeyData(
       absl::string_view serialized_key_format) const override {
     auto key_data = absl::make_unique<KeyData>();
     key_data->set_type_url(key_type_);
@@ -147,15 +147,15 @@ class TestAeadKeyManager : public KeyManager<Aead> {
   explicit TestAeadKeyManager(const std::string& key_type)
       : key_type_(key_type), key_factory_(key_type) {}
 
-  util::StatusOr<std::unique_ptr<Aead>> GetPrimitive(
+  absl::StatusOr<std::unique_ptr<Aead>> GetPrimitive(
       const KeyData& key) const override {
     std::unique_ptr<Aead> aead(new DummyAead(key_type_));
     return std::move(aead);
   }
 
-  util::StatusOr<std::unique_ptr<Aead>> GetPrimitive(
+  absl::StatusOr<std::unique_ptr<Aead>> GetPrimitive(
       const MessageLite& key) const override {
-    return util::Status(absl::StatusCode::kUnknown,
+    return absl::Status(absl::StatusCode::kUnknown,
                         "TestKeyFactory cannot construct an aead");
   }
 
@@ -188,7 +188,7 @@ class ExampleKeyTypeManager : public KeyTypeManager<AesGcmKey, AesGcmKeyFormat,
  public:
   class AeadFactory : public PrimitiveFactory<Aead> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<Aead>> Create(
+    absl::StatusOr<std::unique_ptr<Aead>> Create(
         const AesGcmKey& key) const override {
       // Ignore the key and returned one with a fixed size for this test.
       return {subtle::AesGcmBoringSsl::New(
@@ -198,7 +198,7 @@ class ExampleKeyTypeManager : public KeyTypeManager<AesGcmKey, AesGcmKeyFormat,
 
   class AeadVariantFactory : public PrimitiveFactory<AeadVariant> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<AeadVariant>> Create(
+    absl::StatusOr<std::unique_ptr<AeadVariant>> Create(
         const AesGcmKey& key) const override {
       return absl::make_unique<AeadVariant>(key.key_value());
     }
@@ -217,28 +217,28 @@ class ExampleKeyTypeManager : public KeyTypeManager<AesGcmKey, AesGcmKeyFormat,
 
   const std::string& get_key_type() const override { return kKeyType; }
 
-  crypto::tink::util::Status ValidateKey(const AesGcmKey& key) const override {
-    return util::OkStatus();
+  absl::Status ValidateKey(const AesGcmKey& key) const override {
+    return absl::OkStatus();
   }
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const AesGcmKeyFormat& key_format) const override {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
-  crypto::tink::util::StatusOr<AesGcmKey> CreateKey(
+  absl::StatusOr<AesGcmKey> CreateKey(
       const AesGcmKeyFormat& key_format) const override {
     AesGcmKey result;
     result.set_key_value(subtle::Random::GetRandomBytes(key_format.key_size()));
     return result;
   }
 
-  crypto::tink::util::StatusOr<AesGcmKey> DeriveKey(
+  absl::StatusOr<AesGcmKey> DeriveKey(
       const AesGcmKeyFormat& key_format,
       InputStream* input_stream) const override {
     // Note: in an actual key type manager we need to do more work, e.g., test
     // that the generated key is long enough.
-    crypto::tink::util::StatusOr<std::string> randomness =
+    absl::StatusOr<std::string> randomness =
         ReadBytesFromStream(key_format.key_size(), input_stream);
     if (!randomness.status().ok()) {
       return randomness.status();
@@ -262,14 +262,14 @@ class TestWrapper : public PrimitiveWrapper<P, Q> {
   TestWrapper() = default;
   crypto::tink::util::StatusOr<std::unique_ptr<Q>> Wrap(
       std::unique_ptr<PrimitiveSet<P>> primitive_set) const override {
-    return util::Status(absl::StatusCode::kUnimplemented,
+    return absl::Status(absl::StatusCode::kUnimplemented,
                         "This is a test wrapper.");
   }
 };
 
 class AeadVariantWrapper : public PrimitiveWrapper<AeadVariant, AeadVariant> {
  public:
-  crypto::tink::util::StatusOr<std::unique_ptr<AeadVariant>> Wrap(
+  absl::StatusOr<std::unique_ptr<AeadVariant>> Wrap(
       std::unique_ptr<PrimitiveSet<AeadVariant>> primitive_set) const override {
     return absl::make_unique<AeadVariant>(
         primitive_set->get_primary()->get_primitive().get());
@@ -279,7 +279,7 @@ class AeadVariantWrapper : public PrimitiveWrapper<AeadVariant, AeadVariant> {
 class AeadVariantToStringWrapper
     : public PrimitiveWrapper<AeadVariant, std::string> {
  public:
-  crypto::tink::util::StatusOr<std::unique_ptr<std::string>> Wrap(
+  absl::StatusOr<std::unique_ptr<std::string>> Wrap(
       std::unique_ptr<PrimitiveSet<AeadVariant>> primitive_set) const override {
     return absl::make_unique<std::string>(
         primitive_set->get_primary()->get_primitive().get());
@@ -290,7 +290,7 @@ void register_test_managers(const std::string& key_type_prefix,
                             int manager_count) {
   for (int i = 0; i < manager_count; i++) {
     std::string key_type = key_type_prefix + std::to_string(i);
-    util::Status status = Registry::RegisterKeyManager(
+    absl::Status status = Registry::RegisterKeyManager(
         absl::make_unique<TestAeadKeyManager>(key_type),
         /* new_key_allowed= */ true);
     EXPECT_TRUE(status.ok()) << status;
@@ -315,7 +315,7 @@ TEST_F(RegistryTest, testRegisterKeyManagerMoreRestrictiveNewKeyAllowed) {
 
   // Register the key manager with new_key_allowed == true and verify that
   // new key data can be created.
-  util::Status status = Registry::RegisterKeyManager(
+  absl::Status status = Registry::RegisterKeyManager(
       absl::make_unique<TestAeadKeyManager>(key_type),
       /* new_key_allowed= */ true);
   EXPECT_TRUE(status.ok()) << status;
@@ -345,7 +345,7 @@ TEST_F(RegistryTest, testRegisterKeyManagerLessRestrictiveNewKeyAllowed) {
   key_template.set_type_url(key_type);
 
   // Register the key manager with new_key_allowed == false.
-  util::Status status = Registry::RegisterKeyManager(
+  absl::Status status = Registry::RegisterKeyManager(
       absl::make_unique<TestAeadKeyManager>(key_type),
       /* new_key_allowed= */ false);
   EXPECT_TRUE(status.ok()) << status;
@@ -481,7 +481,7 @@ TEST_F(RegistryTest, GetKeyManagerRemainsValid) {
                   absl::make_unique<TestAeadKeyManager>(key_type), true),
               IsOk());
 
-  crypto::tink::util::StatusOr<const KeyManager<Aead>*> key_manager =
+  absl::StatusOr<const KeyManager<Aead>*> key_manager =
       Registry::get_key_manager<Aead>(key_type);
   ASSERT_THAT(key_manager, IsOk());
   EXPECT_THAT(Registry::RegisterKeyManager(
@@ -522,7 +522,7 @@ TEST_F(RegistryTest, testGettingPrimitives) {
   keyset.set_primary_key_id(key_id_3);
 
   // Register key managers.
-  util::Status status;
+  absl::Status status;
   status = Registry::RegisterKeyManager(
       absl::make_unique<TestAeadKeyManager>(key_type_1), true);
   EXPECT_TRUE(status.ok()) << status;
@@ -559,7 +559,7 @@ TEST_F(RegistryTest, testNewKeyData) {
   std::string key_type_3 = "yet/another/keytype";
 
   // Register key managers.
-  util::Status status;
+  absl::Status status;
   status = Registry::RegisterKeyManager(
       absl::make_unique<TestAeadKeyManager>(key_type_1),
       /*new_key_allowed=*/true);
@@ -730,7 +730,7 @@ TEST_F(RegistryTest, RegisterDifferentWrappers) {
   EXPECT_TRUE(
       Registry::RegisterPrimitiveWrapper(absl::make_unique<AeadWrapper>())
           .ok());
-  util::Status result = Registry::RegisterPrimitiveWrapper(
+  absl::Status result = Registry::RegisterPrimitiveWrapper(
       absl::make_unique<TestWrapper<Aead>>());
   EXPECT_FALSE(result.ok());
   EXPECT_EQ(absl::StatusCode::kAlreadyExists, result.code());
@@ -755,7 +755,7 @@ TEST_F(RegistryTest, NoWrapperRegistered) {
       Registry::RegisterPrimitiveWrapper(absl::make_unique<TestWrapper<Mac>>())
           .ok());
 
-  crypto::tink::util::StatusOr<std::unique_ptr<Aead>> result =
+  absl::StatusOr<std::unique_ptr<Aead>> result =
       Registry::Wrap<Aead>(absl::make_unique<PrimitiveSet<Aead>>());
   EXPECT_FALSE(result.ok());
   EXPECT_EQ(absl::StatusCode::kNotFound, result.status().code());
@@ -770,7 +770,7 @@ TEST_F(RegistryTest, WrapperFails) {
       Registry::RegisterPrimitiveWrapper(absl::make_unique<TestWrapper<Aead>>())
           .ok());
 
-  crypto::tink::util::StatusOr<std::unique_ptr<Aead>> result =
+  absl::StatusOr<std::unique_ptr<Aead>> result =
       Registry::Wrap<Aead>(absl::make_unique<PrimitiveSet<Aead>>());
   EXPECT_FALSE(result.ok());
   EXPECT_PRED_FORMAT2(testing::IsSubstring, "This is a test wrapper",
@@ -873,7 +873,7 @@ TEST_F(RegistryTest, KeysetWrappingTest) {
                   absl::make_unique<AeadVariantWrapper>()),
               IsOk());
 
-  crypto::tink::util::StatusOr<std::unique_ptr<AeadVariant>> aead_variant =
+  absl::StatusOr<std::unique_ptr<AeadVariant>> aead_variant =
       RegistryImpl::GlobalInstance().WrapKeyset<AeadVariant>(
           keyset, /*annotations=*/{});
   EXPECT_THAT(aead_variant, IsOk());
@@ -898,7 +898,7 @@ TEST_F(RegistryTest, TransformingKeysetWrappingTest) {
                   absl::make_unique<AeadVariantToStringWrapper>()),
               IsOk());
 
-  crypto::tink::util::StatusOr<std::unique_ptr<std::string>> string_primitive =
+  absl::StatusOr<std::unique_ptr<std::string>> string_primitive =
       RegistryImpl::GlobalInstance().WrapKeyset<std::string>(
           keyset, /*annotations=*/{});
   EXPECT_THAT(string_primitive, IsOk());
@@ -1067,7 +1067,7 @@ TEST_F(RegistryTest, GetKeyManagerRemainsValidForKeyTypeManagers) {
                   absl::make_unique<ExampleKeyTypeManager>(), true),
               IsOk());
 
-  crypto::tink::util::StatusOr<const KeyManager<Aead>*> key_manager =
+  absl::StatusOr<const KeyManager<Aead>*> key_manager =
       Registry::get_key_manager<Aead>(ExampleKeyTypeManager().get_key_type());
   ASSERT_THAT(key_manager, IsOk());
   EXPECT_THAT(Registry::RegisterKeyTypeManager(
@@ -1300,16 +1300,16 @@ class TestPrivateKeyTypeManager
  public:
   class PrivatePrimitiveAFactory : public PrimitiveFactory<PrivatePrimitiveA> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<PrivatePrimitiveA>> Create(
+    absl::StatusOr<std::unique_ptr<PrivatePrimitiveA>> Create(
         const EcdsaPrivateKey& key) const override {
-      return util::Status(absl::StatusCode::kUnimplemented, "Not implemented");
+      return absl::Status(absl::StatusCode::kUnimplemented, "Not implemented");
     }
   };
   class PrivatePrimitiveBFactory : public PrimitiveFactory<PrivatePrimitiveB> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<PrivatePrimitiveB>> Create(
+    absl::StatusOr<std::unique_ptr<PrivatePrimitiveB>> Create(
         const EcdsaPrivateKey& key) const override {
-      return util::Status(absl::StatusCode::kUnimplemented, "Not implemented");
+      return absl::Status(absl::StatusCode::kUnimplemented, "Not implemented");
     }
   };
 
@@ -1323,18 +1323,16 @@ class TestPrivateKeyTypeManager
   }
 
   uint32_t get_version() const override { return 0; }
-  crypto::tink::util::Status ValidateKey(
-      const EcdsaPrivateKey& key) const override {
-    return crypto::tink::util::OkStatus();
+  absl::Status ValidateKey(const EcdsaPrivateKey& key) const override {
+    return absl::OkStatus();
   }
-  crypto::tink::util::Status ValidateKeyFormat(
-      const EcdsaKeyFormat& key) const override {
-    return crypto::tink::util::OkStatus();
+  absl::Status ValidateKeyFormat(const EcdsaKeyFormat& key) const override {
+    return absl::OkStatus();
   }
 
   const std::string& get_key_type() const override { return kKeyType; }
 
-  crypto::tink::util::StatusOr<EcdsaPrivateKey> CreateKey(
+  absl::StatusOr<EcdsaPrivateKey> CreateKey(
       const EcdsaKeyFormat& key_format) const override {
     EcdsaPublicKey public_key;
     *public_key.mutable_params() = key_format.params();
@@ -1343,7 +1341,7 @@ class TestPrivateKeyTypeManager
     return result;
   }
 
-  crypto::tink::util::StatusOr<EcdsaPublicKey> GetPublicKey(
+  absl::StatusOr<EcdsaPublicKey> GetPublicKey(
       const EcdsaPrivateKey& private_key) const override {
     return private_key.public_key();
   }
@@ -1370,16 +1368,16 @@ class TestPublicKeyTypeManager
  public:
   class PublicPrimitiveAFactory : public PrimitiveFactory<PublicPrimitiveA> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicPrimitiveA>> Create(
+    absl::StatusOr<std::unique_ptr<PublicPrimitiveA>> Create(
         const EcdsaPublicKey& key) const override {
-      return util::Status(absl::StatusCode::kUnimplemented, "Not implemented");
+      return absl::Status(absl::StatusCode::kUnimplemented, "Not implemented");
     }
   };
   class PublicPrimitiveBFactory : public PrimitiveFactory<PublicPrimitiveB> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicPrimitiveB>> Create(
+    absl::StatusOr<std::unique_ptr<PublicPrimitiveB>> Create(
         const EcdsaPublicKey& key) const override {
-      return util::Status(absl::StatusCode::kUnimplemented, "Not implemented");
+      return absl::Status(absl::StatusCode::kUnimplemented, "Not implemented");
     }
   };
 
@@ -1393,9 +1391,8 @@ class TestPublicKeyTypeManager
   }
 
   uint32_t get_version() const override { return 0; }
-  crypto::tink::util::Status ValidateKey(
-      const EcdsaPublicKey& key) const override {
-    return crypto::tink::util::OkStatus();
+  absl::Status ValidateKey(const EcdsaPublicKey& key) const override {
+    return absl::OkStatus();
   }
 
   const std::string& get_key_type() const override { return kKeyType; }
@@ -1429,7 +1426,7 @@ TEST_F(RegistryTest, RegisterAsymmetricKeyManagers) {
                     "not available";
   }
 
-  crypto::tink::util::Status status = Registry::RegisterAsymmetricKeyManagers(
+  absl::Status status = Registry::RegisterAsymmetricKeyManagers(
       CreateTestPrivateKeyManagerFipsCompatible(),
       CreateTestPublicKeyManagerFipsCompatible(), true);
   ASSERT_TRUE(status.ok()) << status;
@@ -1446,7 +1443,7 @@ TEST_F(RegistryTest, AsymmetricMoreRestrictiveNewKey) {
                   CreateTestPublicKeyManagerFipsCompatible(), true)
                   .ok());
 
-  crypto::tink::util::Status status = Registry::RegisterAsymmetricKeyManagers(
+  absl::Status status = Registry::RegisterAsymmetricKeyManagers(
       CreateTestPrivateKeyManagerFipsCompatible(),
       CreateTestPublicKeyManagerFipsCompatible(), false);
   ASSERT_TRUE(status.ok()) << status;
@@ -1462,7 +1459,7 @@ TEST_F(RegistryTest, AsymmetricSameNewKey) {
                   CreateTestPrivateKeyManagerFipsCompatible(),
                   CreateTestPublicKeyManagerFipsCompatible(), true)
                   .ok());
-  crypto::tink::util::Status status = Registry::RegisterAsymmetricKeyManagers(
+  absl::Status status = Registry::RegisterAsymmetricKeyManagers(
       CreateTestPrivateKeyManagerFipsCompatible(),
       CreateTestPublicKeyManagerFipsCompatible(), true);
   ASSERT_TRUE(status.ok()) << status;
@@ -1483,7 +1480,7 @@ TEST_F(RegistryTest, AsymmetricLessRestrictiveGivesError) {
                     "not available";
   }
 
-  crypto::tink::util::Status status = Registry::RegisterAsymmetricKeyManagers(
+  absl::Status status = Registry::RegisterAsymmetricKeyManagers(
       CreateTestPrivateKeyManagerFipsCompatible(),
       CreateTestPublicKeyManagerFipsCompatible(), false);
   ASSERT_TRUE(status.ok()) << status;
@@ -1509,11 +1506,11 @@ TEST_F(RegistryTest, RegisterAsymmetricKeyManagersGetKeyManagerStaysValid) {
                   CreateTestPublicKeyManagerFipsCompatible(), true),
               IsOk());
 
-  crypto::tink::util::StatusOr<const KeyManager<PrivatePrimitiveA>*>
-      private_key_manager = Registry::get_key_manager<PrivatePrimitiveA>(
+  absl::StatusOr<const KeyManager<PrivatePrimitiveA>*> private_key_manager =
+      Registry::get_key_manager<PrivatePrimitiveA>(
           TestPrivateKeyTypeManager().get_key_type());
-  crypto::tink::util::StatusOr<const KeyManager<PublicPrimitiveA>*>
-      public_key_manager = Registry::get_key_manager<PublicPrimitiveA>(
+  absl::StatusOr<const KeyManager<PublicPrimitiveA>*> public_key_manager =
+      Registry::get_key_manager<PublicPrimitiveA>(
           TestPublicKeyTypeManager().get_key_type());
 
   ASSERT_THAT(Registry::RegisterAsymmetricKeyManagers(
@@ -1564,7 +1561,7 @@ TEST_F(RegistryTest, AsymmetricGetPrimitiveA) {
                   CreateTestPrivateKeyManagerFipsCompatible(),
                   CreateTestPublicKeyManagerFipsCompatible(), true)
                   .ok());
-  crypto::tink::util::StatusOr<const KeyManager<PrivatePrimitiveA>*> km =
+  absl::StatusOr<const KeyManager<PrivatePrimitiveA>*> km =
       Registry::get_key_manager<PrivatePrimitiveA>(
           TestPrivateKeyTypeManager().get_key_type());
   ASSERT_TRUE(km.ok()) << km.status();
@@ -1582,7 +1579,7 @@ TEST_F(RegistryTest, AsymmetricGetPrimitiveB) {
                   CreateTestPrivateKeyManagerFipsCompatible(),
                   CreateTestPublicKeyManagerFipsCompatible(), true)
                   .ok());
-  crypto::tink::util::StatusOr<const KeyManager<PrivatePrimitiveB>*> km =
+  absl::StatusOr<const KeyManager<PrivatePrimitiveB>*> km =
       Registry::get_key_manager<PrivatePrimitiveB>(
           TestPrivateKeyTypeManager().get_key_type());
   ASSERT_TRUE(km.ok()) << km.status();
@@ -1600,7 +1597,7 @@ TEST_F(RegistryTest, AsymmetricGetPublicPrimitiveA) {
                   CreateTestPrivateKeyManagerFipsCompatible(),
                   CreateTestPublicKeyManagerFipsCompatible(), true)
                   .ok());
-  crypto::tink::util::StatusOr<const KeyManager<PublicPrimitiveA>*> km =
+  absl::StatusOr<const KeyManager<PublicPrimitiveA>*> km =
       Registry::get_key_manager<PublicPrimitiveA>(
           TestPublicKeyTypeManager().get_key_type());
   ASSERT_TRUE(km.ok()) << km.status();
@@ -1618,7 +1615,7 @@ TEST_F(RegistryTest, AsymmetricGetPublicPrimitiveB) {
                   CreateTestPrivateKeyManagerFipsCompatible(),
                   CreateTestPublicKeyManagerFipsCompatible(), true)
                   .ok());
-  crypto::tink::util::StatusOr<const KeyManager<PublicPrimitiveB>*> km =
+  absl::StatusOr<const KeyManager<PublicPrimitiveB>*> km =
       Registry::get_key_manager<PublicPrimitiveB>(
           TestPublicKeyTypeManager().get_key_type());
   ASSERT_TRUE(km.ok()) << km.status();
@@ -1636,7 +1633,7 @@ TEST_F(RegistryTest, AsymmetricGetWrongPrimitiveError) {
                   CreateTestPrivateKeyManagerFipsCompatible(),
                   CreateTestPublicKeyManagerFipsCompatible(), true)
                   .ok());
-  crypto::tink::util::StatusOr<const KeyManager<PublicPrimitiveA>*> km =
+  absl::StatusOr<const KeyManager<PublicPrimitiveA>*> km =
       Registry::get_key_manager<PublicPrimitiveA>(
           TestPrivateKeyTypeManager().get_key_type());
   EXPECT_THAT(km.status(),
@@ -1708,7 +1705,7 @@ TEST_F(RegistryTest, AsymmetricGetPublicKeyData) {
                     "not available";
   }
 
-  crypto::tink::util::Status status = Registry::RegisterAsymmetricKeyManagers(
+  absl::Status status = Registry::RegisterAsymmetricKeyManagers(
       CreateTestPrivateKeyManagerFipsCompatible(),
       CreateTestPublicKeyManagerFipsCompatible(), true);
   EcdsaPrivateKey private_key;
@@ -1807,17 +1804,16 @@ class DelegatingKeyTypeManager
 
   const std::string& get_key_type() const override { return kKeyType; }
 
-  crypto::tink::util::Status ValidateKey(
-      const EcdsaPrivateKey& key) const override {
-    return util::OkStatus();
+  absl::Status ValidateKey(const EcdsaPrivateKey& key) const override {
+    return absl::OkStatus();
   }
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const EcdsaKeyFormat& key_format) const override {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
-  crypto::tink::util::StatusOr<EcdsaPrivateKey> CreateKey(
+  absl::StatusOr<EcdsaPrivateKey> CreateKey(
       const EcdsaKeyFormat& key_format) const override {
     AesGcmKeyFormat format;
     KeyTemplate key_template;
@@ -1827,11 +1823,11 @@ class DelegatingKeyTypeManager
     auto result = registry_->NewKeyData(key_template);
     if (!result.ok()) return result.status();
     // Return a string we can check for.
-    return util::Status(absl::StatusCode::kDeadlineExceeded,
+    return absl::Status(absl::StatusCode::kDeadlineExceeded,
                         "CreateKey worked");
   }
 
-  crypto::tink::util::StatusOr<EcdsaPrivateKey> DeriveKey(
+  absl::StatusOr<EcdsaPrivateKey> DeriveKey(
       const EcdsaKeyFormat& key_format,
       InputStream* input_stream) const override {
     AesGcmKeyFormat format;
@@ -1843,11 +1839,11 @@ class DelegatingKeyTypeManager
     auto result = registry_->DeriveKey(key_template, input_stream);
     if (!result.ok()) return result.status();
     // Return a string we can check for.
-    return util::Status(absl::StatusCode::kDeadlineExceeded,
+    return absl::Status(absl::StatusCode::kDeadlineExceeded,
                         "DeriveKey worked");
   }
 
-  crypto::tink::util::StatusOr<EcdsaPublicKey> GetPublicKey(
+  absl::StatusOr<EcdsaPublicKey> GetPublicKey(
       const EcdsaPrivateKey& private_key) const override {
     AesGcmKeyFormat format;
     KeyTemplate key_template;
@@ -1857,7 +1853,7 @@ class DelegatingKeyTypeManager
     auto result = registry_->NewKeyData(key_template);
     if (!result.ok()) return result.status();
     // Return a string we can check for.
-    return util::Status(absl::StatusCode::kDeadlineExceeded,
+    return absl::Status(absl::StatusCode::kDeadlineExceeded,
                         "GetPublicKey worked");
   }
 

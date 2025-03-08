@@ -49,7 +49,7 @@ namespace {
 // Before returning, resizes 'output' accordingly, to reflect
 // the actual number of bytes read.
 
-util::Status ReadFromStream(InputStream* input_stream, int count,
+absl::Status ReadFromStream(InputStream* input_stream, int count,
                             std::vector<uint8_t>* output) {
   if (count <= 0 || input_stream == nullptr || output == nullptr) {
     return Status(absl::StatusCode::kInternal, "Illegal read from a stream");
@@ -75,13 +75,13 @@ util::Status ReadFromStream(InputStream* input_stream, int count,
   if (read_bytes > needed_bytes) {
     input_stream->BackUp(read_bytes - needed_bytes);
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // anonymous namespace
 
 // static
-StatusOr<std::unique_ptr<InputStream>> StreamingAeadDecryptingStream::New(
+absl::StatusOr<std::unique_ptr<InputStream>> StreamingAeadDecryptingStream::New(
     std::unique_ptr<StreamSegmentDecrypter> segment_decrypter,
     std::unique_ptr<InputStream> ciphertext_source) {
   if (segment_decrypter == nullptr) {
@@ -111,11 +111,11 @@ StatusOr<std::unique_ptr<InputStream>> StreamingAeadDecryptingStream::New(
   dec_stream->read_last_segment_ = false;
   dec_stream->count_backedup_ = first_segment_size;
   dec_stream->pt_buffer_offset_ = 0;
-  dec_stream->status_ = util::OkStatus();
+  dec_stream->status_ = absl::OkStatus();
   return {std::move(dec_stream)};
 }
 
-StatusOr<int> StreamingAeadDecryptingStream::Next(const void** data) {
+absl::StatusOr<int> StreamingAeadDecryptingStream::Next(const void** data) {
   if (!status_.ok()) return status_;
 
   // The first call to Next().

@@ -20,7 +20,6 @@
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
@@ -40,14 +39,15 @@ using crypto::tink::util::StatusOr;
 using google::crypto::tink::JwtEcdsaPublicKey;
 using google::crypto::tink::JwtEcdsaAlgorithm;
 
-StatusOr<std::unique_ptr<JwtPublicKeyVerifyInternal>>
+absl::StatusOr<std::unique_ptr<JwtPublicKeyVerifyInternal>>
 JwtEcdsaVerifyKeyManager::PublicKeyVerifyFactory::Create(
     const JwtEcdsaPublicKey& jwt_ecdsa_public_key) const {
-  StatusOr<std::string> name = AlgorithmName(jwt_ecdsa_public_key.algorithm());
+  absl::StatusOr<std::string> name =
+      AlgorithmName(jwt_ecdsa_public_key.algorithm());
   if (!name.ok()) {
     return name.status();
   }
-  util::StatusOr<std::unique_ptr<PublicKeyVerify>> verify =
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verify =
       raw_key_manager_.GetPrimitive<PublicKeyVerify>(jwt_ecdsa_public_key);
   if (!verify.ok()) {
     return verify.status();
@@ -56,10 +56,11 @@ JwtEcdsaVerifyKeyManager::PublicKeyVerifyFactory::Create(
   if (jwt_ecdsa_public_key.has_custom_kid()) {
     custom_kid = jwt_ecdsa_public_key.custom_kid().value();
   }
-  std::unique_ptr<JwtPublicKeyVerifyInternal> jwt_public_key_verify =
-      absl::make_unique<jwt_internal::JwtPublicKeyVerifyImpl>(
-          *std::move(verify), *name, custom_kid);
-  return std::move(jwt_public_key_verify);
+  if (custom_kid.has_value()) {
+    return jwt_internal::JwtPublicKeyVerifyImpl::RawWithCustomKid(
+        *std::move(verify), *name, *custom_kid);
+  }
+  return jwt_internal::JwtPublicKeyVerifyImpl::Raw(*std::move(verify), *name);
 }
 
 uint32_t JwtEcdsaVerifyKeyManager::get_version() const {
@@ -80,7 +81,7 @@ Status JwtEcdsaVerifyKeyManager::ValidateKey(
   return raw_key_manager_.ValidateKey(key);
 }
 
-StatusOr<std::string> JwtEcdsaVerifyKeyManager::AlgorithmName(
+absl::StatusOr<std::string> JwtEcdsaVerifyKeyManager::AlgorithmName(
     const JwtEcdsaAlgorithm& algorithm) {
   switch (algorithm) {
     case JwtEcdsaAlgorithm::ES256:

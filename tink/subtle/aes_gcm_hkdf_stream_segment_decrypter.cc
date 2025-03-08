@@ -61,21 +61,21 @@ void BigEndianStore32(uint8_t dst[4], uint32_t val) {
   std::memcpy(dst, &val, sizeof(val));
 }
 
-util::Status Validate(const AesGcmHkdfStreamSegmentDecrypter::Params& params) {
+absl::Status Validate(const AesGcmHkdfStreamSegmentDecrypter::Params& params) {
   if (!(params.hkdf_hash == SHA1 || params.hkdf_hash == SHA256 ||
         params.hkdf_hash == SHA512)) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "unsupported hkdf_hash");
   }
   if (params.derived_key_size != 16 && params.derived_key_size != 32) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "derived_key_size must be 16 or 32");
   }
   if (params.ikm.size() < 16 || params.ikm.size() < params.derived_key_size) {
-    return util::Status(absl::StatusCode::kInvalidArgument, "ikm too small");
+    return absl::Status(absl::StatusCode::kInvalidArgument, "ikm too small");
   }
   if (params.ciphertext_offset < 0) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "ciphertext_offset must be non-negative");
   }
   int header_size = 1 + params.derived_key_size +
@@ -83,10 +83,10 @@ util::Status Validate(const AesGcmHkdfStreamSegmentDecrypter::Params& params) {
   if (params.ciphertext_segment_size <=
       params.ciphertext_offset + header_size +
           AesGcmHkdfStreamSegmentEncrypter::kTagSizeInBytes) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "ciphertext_segment_size too small");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -103,7 +103,7 @@ AesGcmHkdfStreamSegmentDecrypter::AesGcmHkdfStreamSegmentDecrypter(
                    AesGcmHkdfStreamSegmentEncrypter::kNoncePrefixSizeInBytes) {}
 
 // static
-util::StatusOr<std::unique_ptr<StreamSegmentDecrypter>>
+absl::StatusOr<std::unique_ptr<StreamSegmentDecrypter>>
 AesGcmHkdfStreamSegmentDecrypter::New(Params params) {
   auto status = Validate(params);
   if (!status.ok()) {
@@ -113,19 +113,19 @@ AesGcmHkdfStreamSegmentDecrypter::New(Params params) {
       new AesGcmHkdfStreamSegmentDecrypter(std::move(params)))};
 }
 
-util::Status AesGcmHkdfStreamSegmentDecrypter::Init(
+absl::Status AesGcmHkdfStreamSegmentDecrypter::Init(
     const std::vector<uint8_t>& header) {
   if (is_initialized_) {
-    return util::Status(absl::StatusCode::kFailedPrecondition,
+    return absl::Status(absl::StatusCode::kFailedPrecondition,
                         "decrypter already initialized");
   }
   if (header.size() != header_size_) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("wrong header size, expected ", header_size_, " bytes"));
   }
   if (header[0] != header_size_) {
-    return util::Status(absl::StatusCode::kInvalidArgument, "corrupted header");
+    return absl::Status(absl::StatusCode::kInvalidArgument, "corrupted header");
   }
 
   // Extract salt and nonce_prefix.
@@ -140,7 +140,7 @@ util::Status AesGcmHkdfStreamSegmentDecrypter::Init(
                nonce_prefix_.begin());
 
   // Derive symmetric key.
-  util::StatusOr<util::SecretData> key = Hkdf::ComputeHkdf(
+  absl::StatusOr<util::SecretData> key = Hkdf::ComputeHkdf(
       hkdf_hash_, ikm_,
       absl::string_view(reinterpret_cast<const char*>(salt_.data()),
                         derived_key_size_),
@@ -149,14 +149,14 @@ util::Status AesGcmHkdfStreamSegmentDecrypter::Init(
     return key.status();
   }
 
-  util::StatusOr<std::unique_ptr<internal::SslOneShotAead>> aead_ptr =
+  absl::StatusOr<std::unique_ptr<internal::SslOneShotAead>> aead_ptr =
       internal::CreateAesGcmOneShotCrypter(*key);
   if (!aead_ptr.ok()) {
     return aead_ptr.status();
   }
   aead_ = *std::move(aead_ptr);
   is_initialized_ = true;
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 int AesGcmHkdfStreamSegmentDecrypter::get_plaintext_segment_size() const {
@@ -164,29 +164,29 @@ int AesGcmHkdfStreamSegmentDecrypter::get_plaintext_segment_size() const {
          AesGcmHkdfStreamSegmentEncrypter::kTagSizeInBytes;
 }
 
-util::Status AesGcmHkdfStreamSegmentDecrypter::DecryptSegment(
+absl::Status AesGcmHkdfStreamSegmentDecrypter::DecryptSegment(
     const std::vector<uint8_t>& ciphertext, int64_t segment_number,
     bool is_last_segment, std::vector<uint8_t>* plaintext_buffer) {
   if (!is_initialized_) {
-    return util::Status(absl::StatusCode::kFailedPrecondition,
+    return absl::Status(absl::StatusCode::kFailedPrecondition,
                         "decrypter not initialized");
   }
   if (ciphertext.size() > get_ciphertext_segment_size()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "ciphertext too long");
   }
   if (ciphertext.size() < AesGcmHkdfStreamSegmentEncrypter::kTagSizeInBytes) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "ciphertext too short");
   }
   if (plaintext_buffer == nullptr) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "plaintext_buffer must be non-null");
   }
   if (segment_number > std::numeric_limits<uint32_t>::max() ||
       (segment_number == std::numeric_limits<uint32_t>::max() &&
        !is_last_segment)) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "too many segments");
   }
 
@@ -202,7 +202,7 @@ util::Status AesGcmHkdfStreamSegmentDecrypter::DecryptSegment(
       static_cast<uint32_t>(segment_number));
   iv.back() = is_last_segment ? 1 : 0;
 
-  util::StatusOr<uint64_t> written_bytes = aead_->Decrypt(
+  absl::StatusOr<uint64_t> written_bytes = aead_->Decrypt(
       absl::string_view(reinterpret_cast<const char*>(ciphertext.data()),
                         ciphertext.size()),
       /*associated_data=*/absl::string_view(""),
@@ -212,7 +212,7 @@ util::Status AesGcmHkdfStreamSegmentDecrypter::DecryptSegment(
   if (!written_bytes.ok()) {
     return written_bytes.status();
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace subtle

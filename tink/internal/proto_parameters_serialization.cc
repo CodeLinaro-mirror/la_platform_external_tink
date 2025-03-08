@@ -16,13 +16,15 @@
 
 #include "tink/internal/proto_parameters_serialization.h"
 
+#include <sys/stat.h>
+
 #include <string>
 
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "tink/internal/tink_proto_structs.h"
 #include "tink/internal/util.h"
-#include "tink/util/status.h"
-#include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
 
 namespace crypto {
@@ -30,27 +32,40 @@ namespace tink {
 namespace internal {
 
 using ::google::crypto::tink::KeyTemplate;
-using ::google::crypto::tink::OutputPrefixType;
 
-util::StatusOr<ProtoParametersSerialization>
+absl::StatusOr<ProtoParametersSerialization>
 ProtoParametersSerialization::Create(absl::string_view type_url,
-                                     OutputPrefixType output_prefix_type,
+                                     OutputPrefixTypeEnum output_prefix_type,
                                      absl::string_view serialized_proto) {
   if (!IsPrintableAscii(type_url)) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Non-printable ASCII character in type URL.");
   }
-  KeyTemplate key_template;
-  key_template.set_type_url(std::string(type_url));
-  key_template.set_output_prefix_type(output_prefix_type);
-  key_template.set_value(std::string(serialized_proto));
+  KeyTemplateStruct key_template;
+  key_template.type_url = std::string(type_url);
+  key_template.output_prefix_type = output_prefix_type;
+  key_template.value = std::string(serialized_proto);
   return ProtoParametersSerialization(key_template);
 }
 
-util::StatusOr<ProtoParametersSerialization>
+absl::StatusOr<ProtoParametersSerialization>
 ProtoParametersSerialization::Create(KeyTemplate key_template) {
   if (!IsPrintableAscii(key_template.type_url())) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
+                        "Non-printable ASCII character in type URL.");
+  }
+  KeyTemplateStruct key_template_struct;
+  key_template_struct.type_url = key_template.type_url();
+  key_template_struct.output_prefix_type =
+      static_cast<OutputPrefixTypeEnum>(key_template.output_prefix_type());
+  key_template_struct.value = key_template.value();
+  return ProtoParametersSerialization(key_template_struct);
+}
+
+absl::StatusOr<ProtoParametersSerialization>
+ProtoParametersSerialization::Create(const KeyTemplateStruct& key_template) {
+  if (!IsPrintableAscii(key_template.type_url)) {
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Non-printable ASCII character in type URL.");
   }
   return ProtoParametersSerialization(key_template);
@@ -63,14 +78,14 @@ bool ProtoParametersSerialization::EqualsWithPotentialFalseNegatives(
   if (that == nullptr) {
     return false;
   }
-  if (key_template_.type_url() != that->key_template_.type_url()) {
+  if (key_template_.type_url != that->key_template_.type_url) {
     return false;
   }
-  if (key_template_.output_prefix_type() !=
-      that->key_template_.output_prefix_type()) {
+  if (key_template_.output_prefix_type !=
+      that->key_template_.output_prefix_type) {
     return false;
   }
-  if (key_template_.value() != that->key_template_.value()) {
+  if (key_template_.value != that->key_template_.value) {
     return false;
   }
   if (object_identifier_ != that->object_identifier_) {

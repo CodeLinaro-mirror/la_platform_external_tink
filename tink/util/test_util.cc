@@ -33,6 +33,7 @@
 
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
@@ -62,14 +63,13 @@
 #include "proto/tink.pb.h"
 #include "proto/xchacha20_poly1305.pb.h"
 
-using crypto::tink::util::Enums;
-using crypto::tink::util::Status;
-using google::crypto::tink::AesGcmKeyFormat;
-using google::crypto::tink::EcdsaPrivateKey;
-using google::crypto::tink::EciesAeadHkdfPrivateKey;
-using google::crypto::tink::Ed25519PrivateKey;
-using google::crypto::tink::Keyset;
-using google::crypto::tink::OutputPrefixType;
+using ::crypto::tink::util::Enums;
+using ::crypto::tink::util::Status;
+using ::google::crypto::tink::AesGcmKeyFormat;
+using EcdsaPrivateKeyProto = ::google::crypto::tink::EcdsaPrivateKey;
+using ::google::crypto::tink::EciesAeadHkdfPrivateKey;
+using ::google::crypto::tink::Keyset;
+using ::google::crypto::tink::OutputPrefixType;
 
 namespace crypto {
 namespace tink {
@@ -87,25 +87,12 @@ std::string ReadTestFile(absl::string_view filename) {
   return buffer.str();
 }
 
-util::StatusOr<std::string> HexDecode(absl::string_view hex) {
-  if (hex.size() % 2 != 0) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
-                        "Input has odd size.");
-  }
-  std::string decoded(hex.size() / 2, static_cast<char>(0));
-  for (size_t i = 0; i < hex.size(); ++i) {
-    char c = hex[i];
-    char val;
-    if ('0' <= c && c <= '9')
-      val = c - '0';
-    else if ('a' <= c && c <= 'f')
-      val = c - 'a' + 10;
-    else if ('A' <= c && c <= 'F')
-      val = c - 'A' + 10;
-    else
-      return util::Status(absl::StatusCode::kInvalidArgument,
-                          "Not hexadecimal");
-    decoded[i / 2] = (decoded[i / 2] << 4) | val;
+absl::StatusOr<std::string> HexDecode(absl::string_view hex) {
+  std::string decoded;
+  const bool result = absl::HexStringToBytes(hex, &decoded);
+  if (!result) {
+    return absl::Status(absl::StatusCode::kInvalidArgument,
+                        absl::StrCat("Failed to decode hex: ", hex));
   }
   return decoded;
 }
@@ -170,8 +157,8 @@ void AddTinkKey(const std::string& key_type, uint32_t key_id,
                 google::crypto::tink::KeyStatusType key_status,
                 google::crypto::tink::KeyData::KeyMaterialType material_type,
                 google::crypto::tink::Keyset* keyset) {
-  AddKey(key_type, key_id, key, OutputPrefixType::TINK,
-         key_status, material_type, keyset);
+  AddKey(key_type, key_id, key, OutputPrefixType::TINK, key_status,
+         material_type, keyset);
 }
 
 void AddLegacyKey(const std::string& key_type, uint32_t key_id,
@@ -179,8 +166,8 @@ void AddLegacyKey(const std::string& key_type, uint32_t key_id,
                   google::crypto::tink::KeyStatusType key_status,
                   google::crypto::tink::KeyData::KeyMaterialType material_type,
                   google::crypto::tink::Keyset* keyset) {
-  AddKey(key_type, key_id, key, OutputPrefixType::LEGACY,
-         key_status, material_type, keyset);
+  AddKey(key_type, key_id, key, OutputPrefixType::LEGACY, key_status,
+         material_type, keyset);
 }
 
 void AddRawKey(const std::string& key_type, uint32_t key_id,
@@ -188,20 +175,16 @@ void AddRawKey(const std::string& key_type, uint32_t key_id,
                google::crypto::tink::KeyStatusType key_status,
                google::crypto::tink::KeyData::KeyMaterialType material_type,
                google::crypto::tink::Keyset* keyset) {
-  AddKey(key_type, key_id, key, OutputPrefixType::RAW,
-         key_status, material_type, keyset);
+  AddKey(key_type, key_id, key, OutputPrefixType::RAW, key_status,
+         material_type, keyset);
 }
 
 EciesAeadHkdfPrivateKey GetEciesAesGcmHkdfTestKey(
-    subtle::EllipticCurveType curve_type,
-    subtle::EcPointFormat ec_point_format,
-    subtle::HashType hash_type,
-    uint32_t aes_gcm_key_size) {
+    subtle::EllipticCurveType curve_type, subtle::EcPointFormat ec_point_format,
+    subtle::HashType hash_type, uint32_t aes_gcm_key_size) {
   return GetEciesAesGcmHkdfTestKey(
-      Enums::SubtleToProto(curve_type),
-      Enums::SubtleToProto(ec_point_format),
-      Enums::SubtleToProto(hash_type),
-      aes_gcm_key_size);
+      Enums::SubtleToProto(curve_type), Enums::SubtleToProto(ec_point_format),
+      Enums::SubtleToProto(hash_type), aes_gcm_key_size);
 }
 
 EciesAeadHkdfPrivateKey GetEciesAeadHkdfTestKey(
@@ -211,8 +194,7 @@ EciesAeadHkdfPrivateKey GetEciesAeadHkdfTestKey(
   auto test_key = internal::NewEcKey(Enums::ProtoToSubtle(curve_type)).value();
   EciesAeadHkdfPrivateKey ecies_key;
   ecies_key.set_version(0);
-  ecies_key.set_key_value(
-      std::string(util::SecretDataAsStringView(test_key.priv)));
+  ecies_key.set_key_value(util::SecretDataAsStringView(test_key.priv));
   auto public_key = ecies_key.mutable_public_key();
   public_key->set_version(0);
   public_key->set_x(test_key.pub_x);
@@ -309,7 +291,7 @@ google::crypto::tink::EciesAeadHkdfPrivateKey GetEciesAesSivHkdfTestKey(
   return ecies_key;
 }
 
-EcdsaPrivateKey GetEcdsaTestPrivateKey(
+EcdsaPrivateKeyProto GetEcdsaTestPrivateKey(
     subtle::EllipticCurveType curve_type, subtle::HashType hash_type,
     subtle::EcdsaSignatureEncoding encoding) {
   return GetEcdsaTestPrivateKey(Enums::SubtleToProto(curve_type),
@@ -317,15 +299,14 @@ EcdsaPrivateKey GetEcdsaTestPrivateKey(
                                 Enums::SubtleToProto(encoding));
 }
 
-EcdsaPrivateKey GetEcdsaTestPrivateKey(
+EcdsaPrivateKeyProto GetEcdsaTestPrivateKey(
     google::crypto::tink::EllipticCurveType curve_type,
     google::crypto::tink::HashType hash_type,
     google::crypto::tink::EcdsaSignatureEncoding encoding) {
   auto test_key = internal::NewEcKey(Enums::ProtoToSubtle(curve_type)).value();
-  EcdsaPrivateKey ecdsa_key;
+  EcdsaPrivateKeyProto ecdsa_key;
   ecdsa_key.set_version(0);
-  ecdsa_key.set_key_value(
-      std::string(util::SecretDataAsStringView(test_key.priv)));
+  ecdsa_key.set_key_value(util::SecretDataAsStringView(test_key.priv));
   auto public_key = ecdsa_key.mutable_public_key();
   public_key->set_version(0);
   public_key->set_x(test_key.pub_x);
@@ -337,20 +318,7 @@ EcdsaPrivateKey GetEcdsaTestPrivateKey(
   return ecdsa_key;
 }
 
-Ed25519PrivateKey GetEd25519TestPrivateKey() {
-  auto test_key = internal::NewEd25519Key().value();
-  Ed25519PrivateKey ed25519_key;
-  ed25519_key.set_version(0);
-  ed25519_key.set_key_value(test_key->private_key);
-
-  auto public_key = ed25519_key.mutable_public_key();
-  public_key->set_version(0);
-  public_key->set_key_value(test_key->public_key);
-
-  return ed25519_key;
-}
-
-util::Status ZTestUniformString(absl::string_view bytes) {
+absl::Status ZTestUniformString(absl::string_view bytes) {
   double expected = bytes.size() * 8.0 / 2.0;
   double stddev = std::sqrt(static_cast<double>(bytes.size()) * 8.0 / 4.0);
   uint64_t num_set_bits = 0;
@@ -363,9 +331,9 @@ util::Status ZTestUniformString(absl::string_view bytes) {
   }
   // Check that the number of bits is within 10 stddevs.
   if (abs(static_cast<double>(num_set_bits) - expected) < 10.0 * stddev) {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
-  return util::Status(
+  return absl::Status(
       absl::StatusCode::kInternal,
       absl::StrCat("Z test for uniformly distributed variable out of bounds; "
                    "Actual number of set bits was ",
@@ -383,10 +351,10 @@ std::string Rotate(absl::string_view bytes) {
   return result;
 }
 
-util::Status ZTestCrosscorrelationUniformStrings(absl::string_view bytes1,
+absl::Status ZTestCrosscorrelationUniformStrings(absl::string_view bytes1,
                                                  absl::string_view bytes2) {
   if (bytes1.size() != bytes2.size()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Strings are not of equal length");
   }
   std::string crossed(bytes1.size(), '\0');
@@ -396,7 +364,7 @@ util::Status ZTestCrosscorrelationUniformStrings(absl::string_view bytes1,
   return ZTestUniformString(crossed);
 }
 
-util::Status ZTestAutocorrelationUniformString(absl::string_view bytes) {
+absl::Status ZTestAutocorrelationUniformString(absl::string_view bytes) {
   std::string rotated(bytes);
   std::vector<int> violations;
   for (int i = 1; i < bytes.size() * 8; i++) {
@@ -407,9 +375,9 @@ util::Status ZTestAutocorrelationUniformString(absl::string_view bytes) {
     }
   }
   if (violations.empty()) {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
-  return util::Status(
+  return absl::Status(
       absl::StatusCode::kInternal,
       absl::StrCat("Autocorrelation exceeded 10 standard deviation at ",
                    violations.size(),

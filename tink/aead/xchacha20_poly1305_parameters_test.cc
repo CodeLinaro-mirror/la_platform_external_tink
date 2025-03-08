@@ -16,6 +16,8 @@
 
 #include "tink/aead/xchacha20_poly1305_parameters.h"
 
+#include <utility>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
@@ -52,7 +54,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(XChaCha20Poly1305ParametersTest, Create) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<XChaCha20Poly1305Parameters> parameters =
+  absl::StatusOr<XChaCha20Poly1305Parameters> parameters =
       XChaCha20Poly1305Parameters::Create(test_case.variant);
   ASSERT_THAT(parameters, IsOk());
 
@@ -69,37 +71,75 @@ TEST(XChaCha20Poly1305ParametersTest, CreateWithInvalidVariantFails) {
 }
 
 TEST(XChaCha20Poly1305ParametersTest, CopyConstructor) {
-  util::StatusOr<XChaCha20Poly1305Parameters> parameters =
+  absl::StatusOr<XChaCha20Poly1305Parameters> parameters =
       XChaCha20Poly1305Parameters::Create(
           XChaCha20Poly1305Parameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
   XChaCha20Poly1305Parameters copy(*parameters);
+
   EXPECT_THAT(copy.GetVariant(),
               Eq(XChaCha20Poly1305Parameters::Variant::kTink));
   EXPECT_THAT(copy.HasIdRequirement(), IsTrue());
 }
 
 TEST(XChaCha20Poly1305ParametersTest, CopyAssignment) {
-  util::StatusOr<XChaCha20Poly1305Parameters> parameters =
+  absl::StatusOr<XChaCha20Poly1305Parameters> parameters =
       XChaCha20Poly1305Parameters::Create(
           XChaCha20Poly1305Parameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
-  XChaCha20Poly1305Parameters copy = *parameters;
-  EXPECT_THAT(copy.GetVariant(),
+  absl::StatusOr<XChaCha20Poly1305Parameters> copy =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kNoPrefix);
+  ASSERT_THAT(copy, IsOk());
+
+  *copy = *parameters;
+
+  EXPECT_THAT(copy->GetVariant(),
               Eq(XChaCha20Poly1305Parameters::Variant::kTink));
-  EXPECT_THAT(copy.HasIdRequirement(), IsTrue());
+  EXPECT_THAT(copy->HasIdRequirement(), IsTrue());
+}
+
+TEST(XChaCha20Poly1305ParametersTest, MoveConstructor) {
+  absl::StatusOr<XChaCha20Poly1305Parameters> parameters =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  XChaCha20Poly1305Parameters move(std::move(*parameters));
+
+  EXPECT_THAT(move.GetVariant(),
+              Eq(XChaCha20Poly1305Parameters::Variant::kTink));
+  EXPECT_THAT(move.HasIdRequirement(), IsTrue());
+}
+
+TEST(XChaCha20Poly1305ParametersTest, MoveAssignment) {
+  absl::StatusOr<XChaCha20Poly1305Parameters> parameters =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  absl::StatusOr<XChaCha20Poly1305Parameters> move =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kNoPrefix);
+  ASSERT_THAT(move, IsOk());
+
+  *move = std::move(*parameters);
+
+  EXPECT_THAT(move->GetVariant(),
+              Eq(XChaCha20Poly1305Parameters::Variant::kTink));
+  EXPECT_THAT(move->HasIdRequirement(), IsTrue());
 }
 
 TEST_P(XChaCha20Poly1305ParametersTest, ParametersEquals) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<XChaCha20Poly1305Parameters> parameters =
+  absl::StatusOr<XChaCha20Poly1305Parameters> parameters =
       XChaCha20Poly1305Parameters::Create(test_case.variant);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<XChaCha20Poly1305Parameters> other_parameters =
+  absl::StatusOr<XChaCha20Poly1305Parameters> other_parameters =
       XChaCha20Poly1305Parameters::Create(test_case.variant);
   ASSERT_THAT(other_parameters, IsOk());
 
@@ -110,12 +150,12 @@ TEST_P(XChaCha20Poly1305ParametersTest, ParametersEquals) {
 }
 
 TEST(XChaCha20Poly1305ParametersTest, DifferentVariantNotEqual) {
-  util::StatusOr<XChaCha20Poly1305Parameters> parameters =
+  absl::StatusOr<XChaCha20Poly1305Parameters> parameters =
       XChaCha20Poly1305Parameters::Create(
           XChaCha20Poly1305Parameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<XChaCha20Poly1305Parameters> other_parameters =
+  absl::StatusOr<XChaCha20Poly1305Parameters> other_parameters =
       XChaCha20Poly1305Parameters::Create(
           XChaCha20Poly1305Parameters::Variant::kNoPrefix);
   ASSERT_THAT(other_parameters, IsOk());

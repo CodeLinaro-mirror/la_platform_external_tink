@@ -16,36 +16,31 @@
 
 #include "tink/internal/legacy_proto_key.h"
 
-#include <string>
-
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/types/optional.h"
 #include "tink/internal/proto_key_serialization.h"
+#include "tink/internal/tink_proto_structs.h"
 #include "tink/key.h"
 #include "tink/parameters.h"
 #include "tink/secret_key_access_token.h"
-#include "tink/util/status.h"
-#include "tink/util/statusor.h"
-#include "proto/tink.pb.h"
 
 namespace crypto {
 namespace tink {
 namespace internal {
 namespace {
 
-using ::google::crypto::tink::KeyData;
-
-util::Status CheckKeyAccess(KeyData::KeyMaterialType key_material_type,
+absl::Status CheckKeyAccess(KeyMaterialTypeEnum key_material_type,
                             absl::optional<SecretKeyAccessToken> token) {
-  if (key_material_type == KeyData::SYMMETRIC ||
-      key_material_type == KeyData::ASYMMETRIC_PRIVATE) {
+  if (key_material_type == KeyMaterialTypeEnum::kSymmetric ||
+      key_material_type == KeyMaterialTypeEnum::kAsymmetricPrivate) {
     if (!token.has_value()) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kPermissionDenied,
           "Missing secret key access token for legacy proto key.");
     }
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -60,11 +55,11 @@ bool UnusableLegacyProtoParameters::operator==(const Parameters& other) const {
          output_prefix_type_ == that->output_prefix_type_;
 }
 
-util::StatusOr<LegacyProtoKey> LegacyProtoKey::Create(
+absl::StatusOr<LegacyProtoKey> LegacyProtoKey::Create(
     ProtoKeySerialization serialization,
     absl::optional<SecretKeyAccessToken> token) {
-  util::Status access_check_status =
-      CheckKeyAccess(serialization.KeyMaterialType(), token);
+  absl::Status access_check_status =
+      CheckKeyAccess(serialization.GetKeyMaterialTypeEnum(), token);
   if (!access_check_status.ok()) {
     return access_check_status;
   }
@@ -79,10 +74,10 @@ bool LegacyProtoKey::operator==(const Key& other) const {
   return serialization_.EqualsWithPotentialFalseNegatives(that->serialization_);
 }
 
-util::StatusOr<const ProtoKeySerialization*> LegacyProtoKey::Serialization(
+absl::StatusOr<const ProtoKeySerialization*> LegacyProtoKey::Serialization(
     absl::optional<SecretKeyAccessToken> token) const {
-  util::Status access_check_status =
-      CheckKeyAccess(serialization_.KeyMaterialType(), token);
+  absl::Status access_check_status =
+      CheckKeyAccess(serialization_.GetKeyMaterialTypeEnum(), token);
   if (!access_check_status.ok()) {
     return access_check_status;
   }

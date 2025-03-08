@@ -17,16 +17,21 @@
 #ifndef TINK_AEAD_CHACHA20_POLY1305_PROTO_SERIALIZATION_H_
 #define TINK_AEAD_CHACHA20_POLY1305_PROTO_SERIALIZATION_H_
 
+#include "tink/aead/internal/chacha20_poly1305_proto_serialization_impl.h"
+#include "tink/internal/mutable_serialization_registry.h"
 #include "tink/util/status.h"
 
 namespace crypto {
 namespace tink {
 
 // Registers proto parsers and serializers for ChaCha20-Poly1305 parameters and
-// keys.
-crypto::tink::util::Status RegisterChaCha20Poly1305ProtoSerialization();
+// keys into global serialization registry.
+inline absl::Status RegisterChaCha20Poly1305ProtoSerialization() {
+  return internal::
+      RegisterChaCha20Poly1305ProtoSerializationWithMutableRegistry(
+          internal::MutableSerializationRegistry::GlobalInstance());
+}
 
 }  // namespace tink
 }  // namespace crypto
-
 #endif  // TINK_AEAD_CHACHA20_POLY1305_PROTO_SERIALIZATION_H_

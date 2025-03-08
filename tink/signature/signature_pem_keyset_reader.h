@@ -32,16 +32,15 @@ namespace crypto {
 namespace tink {
 
 // Type of key.
-//
-// Currently, PEM_EC only supports PublicKeyVerify.
 enum PemKeyType { PEM_RSA, PEM_EC };
 
 // Algorithm to use with this key.
 enum PemAlgorithm {
   RSASSA_PSS,
   RSASSA_PKCS1,
-  ECDSA_IEEE,  // NIST_P256 curve with IEEE_P1363 encoding
-  ECDSA_DER  // NIST_P256 curve with DER encoding
+  ECDSA_IEEE,  // NIST curve (P256, P384, P521) with IEEE_P1363 encoding
+  ECDSA_DER,  // NIST curve (P256, P384, P521) with DER encoding
+  ED25519,
 };
 
 // Common set of parameters for the PEM key.
@@ -60,9 +59,14 @@ struct PemKey {
 };
 
 // Base class for parsing PEM-encoded keys (RFC 7468) into a keyset.
+//
+// For RSA public keys, only OID "rsaEncryption" is supported. The OIDs
+// "id-RSASSA-PSS", "sha256WithRSAEncryption",
+// "sha384WithRSAEncryption" and "sha512WithRSAEncryption" are not supported.
+// See RFC 4055 Section 1.2 and Section 5 for a discussion of these OIDs.
 class SignaturePemKeysetReader : public KeysetReader {
  public:
-  util::StatusOr<std::unique_ptr<::google::crypto::tink::EncryptedKeyset>>
+  absl::StatusOr<std::unique_ptr<::google::crypto::tink::EncryptedKeyset>>
   ReadEncrypted() override;
 
  protected:
@@ -78,14 +82,14 @@ class SignaturePemKeysetReader : public KeysetReader {
 //
 // std::string some_public_key_pem = ...;
 // PemKeyType key_type = ...;
+// PemAlgorithm algorithm = ...;
 // size_t key_size_in_bits = ...;
 // HashType hash_type = ...;
-// PemAlgorithm algorithm = ...;
 //
 // auto builder = SignaturePemKeysetReaderBuilder(
-//     PemKeysetReaderBuilder::PemReaderType::PUBLIC_KEY_VERIFY);
+//     SignaturePemKeysetReaderBuilder::PemReaderType::PUBLIC_KEY_VERIFY);
 // builder.Add(
-//     {.serialized_key = some_rsa_public_key_pem,
+//     {.serialized_key = some_public_key_pem,
 //      .parameters = {
 //          .key_type = key_type,
 //          .algorithm = algorithm,
@@ -111,7 +115,7 @@ class SignaturePemKeysetReaderBuilder {
 
   // Creates an instance of keyset reader based on `pem_reader_type_`, to parse
   // the PEM-encoded keys in `pem_serialized_keys_`.
-  util::StatusOr<std::unique_ptr<KeysetReader>> Build();
+  absl::StatusOr<std::unique_ptr<KeysetReader>> Build();
 
  private:
   // List of keys as PEM serialized items.
@@ -123,7 +127,7 @@ class SignaturePemKeysetReaderBuilder {
 // Keyset reader for PEM keys that support the PublicKeySign principal.
 class PublicKeySignPemKeysetReader : public SignaturePemKeysetReader {
  public:
-  util::StatusOr<std::unique_ptr<::google::crypto::tink::Keyset>> Read()
+  absl::StatusOr<std::unique_ptr<::google::crypto::tink::Keyset>> Read()
       override;
 
  private:
@@ -138,7 +142,7 @@ class PublicKeySignPemKeysetReader : public SignaturePemKeysetReader {
 // Keyset reader for PEM keys that support the PublicKeyVerify principal.
 class PublicKeyVerifyPemKeysetReader : public SignaturePemKeysetReader {
  public:
-  util::StatusOr<std::unique_ptr<::google::crypto::tink::Keyset>> Read()
+  absl::StatusOr<std::unique_ptr<::google::crypto::tink::Keyset>> Read()
       override;
 
  private:

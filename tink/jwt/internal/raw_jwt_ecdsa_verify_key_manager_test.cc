@@ -24,16 +24,13 @@
 #include "absl/status/status.h"
 #include "tink/internal/ec_util.h"
 #include "tink/jwt/internal/raw_jwt_ecdsa_sign_key_manager.h"
-#include "tink/public_key_sign.h"
 #include "tink/public_key_verify.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/ecdsa_sign_boringssl.h"
 #include "tink/util/enums.h"
 #include "tink/util/secret_data.h"
-#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
-#include "tink/util/test_util.h"
 #include "proto/ecdsa.pb.h"
 #include "proto/jwt_ecdsa.pb.h"
 #include "proto/tink.pb.h"
@@ -108,18 +105,18 @@ TEST(EcdsaSignKeyManagerTest, Create) {
   ec_key.pub_y = public_key.y();
   ec_key.priv = util::SecretDataFromStringView(private_key.key_value());
 
-  util::StatusOr<std::unique_ptr<subtle::EcdsaSignBoringSsl>> direct_signer =
+  absl::StatusOr<std::unique_ptr<subtle::EcdsaSignBoringSsl>> direct_signer =
       subtle::EcdsaSignBoringSsl::New(
           ec_key, Enums::ProtoToSubtle(HashType::SHA256),
           subtle::EcdsaSignatureEncoding::IEEE_P1363);
   ASSERT_THAT(direct_signer, IsOk());
 
-  util::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
       RawJwtEcdsaVerifyKeyManager().GetPrimitive<PublicKeyVerify>(public_key);
   ASSERT_THAT(verifier, IsOk());
 
   std::string message = "Some message";
-  util::StatusOr<std::string> sig = (*direct_signer)->Sign(message);
+  absl::StatusOr<std::string> sig = (*direct_signer)->Sign(message);
   ASSERT_THAT(sig, IsOk());
   EXPECT_THAT((*verifier)->Verify(*sig, message), IsOk());
 }
@@ -127,7 +124,7 @@ TEST(EcdsaSignKeyManagerTest, Create) {
 TEST(EcdsaSignKeyManagerTest, CreateDifferentPrivateKey) {
   JwtEcdsaPrivateKey private_key = CreateValidEs256PrivateKey();
   // Note: we create a new key in the next line.
-  util::StatusOr<JwtEcdsaPublicKey> public_key =
+  absl::StatusOr<JwtEcdsaPublicKey> public_key =
       RawJwtEcdsaSignKeyManager().GetPublicKey(CreateValidEs256PrivateKey());
 
   internal::EcKey ec_key;
@@ -136,18 +133,18 @@ TEST(EcdsaSignKeyManagerTest, CreateDifferentPrivateKey) {
   ec_key.pub_y = public_key->y();
   ec_key.priv = util::SecretDataFromStringView(private_key.key_value());
 
-  util::StatusOr<std::unique_ptr<subtle::EcdsaSignBoringSsl>> direct_signer =
+  absl::StatusOr<std::unique_ptr<subtle::EcdsaSignBoringSsl>> direct_signer =
       subtle::EcdsaSignBoringSsl::New(
           ec_key, Enums::ProtoToSubtle(HashType::SHA256),
           subtle::EcdsaSignatureEncoding::IEEE_P1363);
   ASSERT_THAT(direct_signer, IsOk());
 
-  util::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
       RawJwtEcdsaVerifyKeyManager().GetPrimitive<PublicKeyVerify>(*public_key);
   ASSERT_THAT(verifier, IsOk());
 
   std::string message = "Some message";
-  util::StatusOr<std::string> sig = (*direct_signer)->Sign(message);
+  absl::StatusOr<std::string> sig = (*direct_signer)->Sign(message);
   ASSERT_THAT(sig, IsOk());
   EXPECT_THAT((*verifier)->Verify(*sig, message), Not(IsOk()));
 }

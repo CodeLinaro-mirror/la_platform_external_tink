@@ -17,6 +17,8 @@
 #ifndef TINK_JWT_JWT_ECDSA_PUBLIC_KEY_H_
 #define TINK_JWT_JWT_ECDSA_PUBLIC_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -53,10 +55,10 @@ class JwtEcdsaPublicKey : public JwtSignaturePublicKey {
     Builder& SetCustomKid(absl::string_view custom_kid);
 
     // Creates JWT ECDSA public key object from this builder.
-    util::StatusOr<JwtEcdsaPublicKey> Build(PartialKeyAccessToken token);
+    absl::StatusOr<JwtEcdsaPublicKey> Build(PartialKeyAccessToken token);
 
    private:
-    util::StatusOr<absl::optional<std::string>> ComputeKid();
+    absl::StatusOr<absl::optional<std::string>> ComputeKid();
 
     absl::optional<JwtEcdsaParameters> parameters_;
     absl::optional<EcPoint> public_point_;
@@ -78,13 +80,17 @@ class JwtEcdsaPublicKey : public JwtSignaturePublicKey {
     return parameters_;
   }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   absl::optional<std::string> GetKid() const override { return kid_; }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<JwtEcdsaPublicKey>(*this);
+  }
 
  private:
   JwtEcdsaPublicKey(const JwtEcdsaParameters& parameters,

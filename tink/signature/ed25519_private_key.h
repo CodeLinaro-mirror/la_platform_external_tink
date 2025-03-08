@@ -17,9 +17,12 @@
 #ifndef TINK_SIGNATURE_ED25519_PRIVATE_KEY_H_
 #define TINK_SIGNATURE_ED25519_PRIVATE_KEY_H_
 
+#include <memory>
+
 #include "tink/key.h"
 #include "tink/partial_key_access_token.h"
 #include "tink/restricted_data.h"
+#include "tink/signature/ed25519_parameters.h"
 #include "tink/signature/ed25519_public_key.h"
 #include "tink/signature/signature_private_key.h"
 #include "tink/util/statusor.h"
@@ -38,7 +41,7 @@ class Ed25519PrivateKey : public SignaturePrivateKey {
   // Creates a new Ed25519 private key from `private_key_bytes`. Returns an
   // error if `public_key` does not belong to the same key pair as
   // `private_key_bytes`.
-  static util::StatusOr<Ed25519PrivateKey> Create(
+  static absl::StatusOr<Ed25519PrivateKey> Create(
       const Ed25519PublicKey& public_key,
       const RestrictedData& private_key_bytes, PartialKeyAccessToken token);
 
@@ -48,7 +51,14 @@ class Ed25519PrivateKey : public SignaturePrivateKey {
 
   const Ed25519PublicKey& GetPublicKey() const override { return public_key_; }
 
+  const Ed25519Parameters& GetParameters() const override {
+    return public_key_.GetParameters();
+  }
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<Ed25519PrivateKey>(*this);
+  };
 
  private:
   explicit Ed25519PrivateKey(const Ed25519PublicKey& public_key,

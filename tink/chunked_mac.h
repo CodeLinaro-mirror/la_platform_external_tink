@@ -40,12 +40,12 @@ class ChunkedMacComputation {
   // arbitrary slicing of the input data is allowed):
   //   1.  Update("ab"),  Update("cd"), Update("ef")
   //   2.  Update("abc"), Update("def")
-  virtual util::Status Update(absl::string_view data) = 0;
+  virtual absl::Status Update(absl::string_view data) = 0;
 
   // Finalizes the MAC computation and returns the authentication tag.
   // After this method has been called, this object can no longer be used.
   // Requires exclusive access.
-  virtual util::StatusOr<std::string> ComputeMac() = 0;
+  virtual absl::StatusOr<std::string> ComputeMac() = 0;
 
   virtual ~ChunkedMacComputation() = default;
 };
@@ -63,12 +63,12 @@ class ChunkedMacVerification {
   // arbitrary slicing of the input data is allowed):
   //   1.  Update("ab"),  Update("cd"), Update("ef")
   //   2.  Update("abc"), Update("def")
-  virtual util::Status Update(absl::string_view data) = 0;
+  virtual absl::Status Update(absl::string_view data) = 0;
 
   // Finalizes the MAC computation and returns OK if the tag is successfully
   // verified.  Otherwise, returns an error status.  After this method has been
   // called, this object can no longer be used.  Requires exclusive access.
-  virtual util::Status VerifyMac() = 0;
+  virtual absl::Status VerifyMac() = 0;
 
   virtual ~ChunkedMacVerification() = default;
 };
@@ -81,13 +81,13 @@ class ChunkedMac {
   // Creates an instance of a single Chunked MAC computation.  Note that a
   // `ChunkedMac` object does not need to outlive the `ChunkedMacComputation`
   // objects that it creates.
-  virtual util::StatusOr<std::unique_ptr<ChunkedMacComputation>>
+  virtual absl::StatusOr<std::unique_ptr<ChunkedMacComputation>>
   CreateComputation() const = 0;
 
   // Creates an instance of a single Chunked MAC verification.  Note that a
   // `ChunkedMac` object does not need to outlive the `ChunkedMacVerification`
   // objects that it creates.
-  virtual util::StatusOr<std::unique_ptr<ChunkedMacVerification>>
+  virtual absl::StatusOr<std::unique_ptr<ChunkedMacVerification>>
   CreateVerification(absl::string_view tag) const = 0;
 
   virtual ~ChunkedMac() = default;

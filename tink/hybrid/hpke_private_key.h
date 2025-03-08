@@ -17,6 +17,9 @@
 #ifndef TINK_HYBRID_HPKE_PRIVATE_KEY_H_
 #define TINK_HYBRID_HPKE_PRIVATE_KEY_H_
 
+#include <memory>
+
+#include "tink/hybrid/hpke_parameters.h"
 #include "tink/hybrid/hpke_public_key.h"
 #include "tink/hybrid/hybrid_private_key.h"
 #include "tink/key.h"
@@ -40,7 +43,7 @@ class HpkePrivateKey : public HybridPrivateKey {
   // Creates a new HPKE private key from `private_key_bytes`. Returns an
   // error if `public_key` does not belong to the same key pair as
   // `private_key_bytes`.
-  static util::StatusOr<HpkePrivateKey> Create(
+  static absl::StatusOr<HpkePrivateKey> Create(
       const HpkePublicKey& public_key, const RestrictedData& private_key_bytes,
       PartialKeyAccessToken token);
 
@@ -50,7 +53,15 @@ class HpkePrivateKey : public HybridPrivateKey {
 
   const HpkePublicKey& GetPublicKey() const override { return public_key_; }
 
+  const HpkeParameters& GetParameters() const override {
+    return GetPublicKey().GetParameters();
+  }
+
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<HpkePrivateKey>(*this);
+  }
 
  private:
   explicit HpkePrivateKey(const HpkePublicKey& public_key,

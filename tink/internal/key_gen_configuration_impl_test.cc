@@ -25,19 +25,25 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "tink/aead/aead_key_templates.h"
+#include "tink/aead/aes_gcm_key.h"
+#include "tink/aead/aes_gcm_parameters.h"
 #include "tink/core/key_manager_impl.h"
 #include "tink/core/key_type_manager.h"
 #include "tink/core/private_key_type_manager.h"
 #include "tink/core/template_util.h"
 #include "tink/input_stream.h"
 #include "tink/internal/key_type_info_store.h"
+#include "tink/key.h"
 #include "tink/key_gen_configuration.h"
 #include "tink/key_manager.h"
 #include "tink/keyset_handle.h"
+#include "tink/partial_key_access.h"
 #include "tink/public_key_sign.h"
 #include "tink/public_key_verify.h"
 #include "tink/registry.h"
+#include "tink/restricted_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
@@ -53,13 +59,15 @@ namespace {
 
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
-using ::google::crypto::tink::AesGcmKey;
+using AesGcmKeyProto = ::google::crypto::tink::AesGcmKey;
 using ::google::crypto::tink::AesGcmKeyFormat;
 using ::google::crypto::tink::KeyData;
 using ::google::crypto::tink::RsaSsaPssKeyFormat;
 using ::google::crypto::tink::RsaSsaPssParams;
-using ::google::crypto::tink::RsaSsaPssPrivateKey;
-using ::google::crypto::tink::RsaSsaPssPublicKey;
+using RsaSsaPssPrivateKeyProto = ::google::crypto::tink::RsaSsaPssPrivateKey;
+using RsaSsaPssPublicKeyProto = ::google::crypto::tink::RsaSsaPssPublicKey;
+using ::testing::Eq;
+using ::testing::NotNull;
 
 class FakePrimitive {
  public:
@@ -71,12 +79,13 @@ class FakePrimitive {
 };
 
 class FakeKeyTypeManager
-    : public KeyTypeManager<AesGcmKey, AesGcmKeyFormat, List<FakePrimitive>> {
+    : public KeyTypeManager<AesGcmKeyProto, AesGcmKeyFormat,
+                            List<FakePrimitive>> {
  public:
   class FakePrimitiveFactory : public PrimitiveFactory<FakePrimitive> {
    public:
-    util::StatusOr<std::unique_ptr<FakePrimitive>> Create(
-        const AesGcmKey& key) const override {
+    absl::StatusOr<std::unique_ptr<FakePrimitive>> Create(
+        const AesGcmKeyProto& key) const override {
       return absl::make_unique<FakePrimitive>(key.key_value());
     }
   };
@@ -92,30 +101,41 @@ class FakeKeyTypeManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  util::Status ValidateKey(const AesGcmKey& key) const override {
-    return util::OkStatus();
+  absl::Status ValidateKey(const AesGcmKeyProto& key) const override {
+    return absl::OkStatus();
   }
 
-  util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const AesGcmKeyFormat& key_format) const override {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
-  util::StatusOr<AesGcmKey> CreateKey(
+  absl::StatusOr<AesGcmKeyProto> CreateKey(
       const AesGcmKeyFormat& key_format) const override {
-    return AesGcmKey();
+    return AesGcmKeyProto();
   }
 
-  util::StatusOr<AesGcmKey> DeriveKey(
+  absl::StatusOr<AesGcmKeyProto> DeriveKey(
       const AesGcmKeyFormat& key_format,
       InputStream* input_stream) const override {
-    return AesGcmKey();
+    return AesGcmKeyProto();
   }
 
  private:
   const std::string key_type_ =
       "type.googleapis.com/google.crypto.tink.AesGcmKey";
 };
+
+absl::StatusOr<std::unique_ptr<crypto::tink::AesGcmKey>> CreateAesGcmKey(
+    const AesGcmParameters& params, absl::optional<int> id_requirement) {
+  RestrictedData secret = RestrictedData(params.KeySizeInBytes());
+  absl::StatusOr<crypto::tink::AesGcmKey> key = crypto::tink::AesGcmKey::Create(
+      params, secret, id_requirement, GetPartialKeyAccess());
+  if (!key.ok()) {
+    return key.status();
+  }
+  return absl::make_unique<crypto::tink::AesGcmKey>(*key);
+}
 
 TEST(KeyGenConfigurationImplTest, AddKeyTypeManager) {
   KeyGenConfiguration config;
@@ -129,6 +149,13 @@ TEST(KeyGenConfigurationImplTest, AddLegacyKeyManager) {
   FakeKeyTypeManager manager;
   EXPECT_THAT(KeyGenConfigurationImpl::AddLegacyKeyManager(
                   MakeKeyManager<FakePrimitive>(&manager), config),
+              IsOk());
+}
+
+TEST(KeyGenConfigurationImplTest, AddKeyCreator) {
+  KeyGenConfiguration config;
+  EXPECT_THAT(KeyGenConfigurationImpl::AddKeyCreator<AesGcmParameters>(
+                  CreateAesGcmKey, config),
               IsOk());
 }
 
@@ -148,13 +175,13 @@ TEST(KeyGenConfigurationImplTest, GetKeyTypeManager) {
               IsOk());
 
   std::string type_url = FakeKeyTypeManager().get_key_type();
-  util::StatusOr<const KeyTypeInfoStore*> store =
+  absl::StatusOr<const KeyTypeInfoStore*> store =
       KeyGenConfigurationImpl::GetKeyTypeInfoStore(config);
   ASSERT_THAT(store, IsOk());
-  util::StatusOr<const KeyTypeInfoStore::Info*> info = (*store)->Get(type_url);
+  absl::StatusOr<const KeyTypeInfoStore::Info*> info = (*store)->Get(type_url);
   ASSERT_THAT(info, IsOk());
 
-  util::StatusOr<const KeyManager<FakePrimitive>*> key_manager =
+  absl::StatusOr<const KeyManager<FakePrimitive>*> key_manager =
       (*info)->get_key_manager<FakePrimitive>(type_url);
   ASSERT_THAT(key_manager, IsOk());
   EXPECT_EQ((*key_manager)->get_key_type(), type_url);
@@ -167,22 +194,71 @@ TEST(KeyGenConfigurationImplTest, GetLegacyKeyManager) {
                   MakeKeyManager<FakePrimitive>(&manager), config),
               IsOk());
 
-  util::StatusOr<const KeyTypeInfoStore*> store =
+  absl::StatusOr<const KeyTypeInfoStore*> store =
       KeyGenConfigurationImpl::GetKeyTypeInfoStore(config);
   ASSERT_THAT(store, IsOk());
   std::string type_url = FakeKeyTypeManager().get_key_type();
-  util::StatusOr<const KeyTypeInfoStore::Info*> info = (*store)->Get(type_url);
+  absl::StatusOr<const KeyTypeInfoStore::Info*> info = (*store)->Get(type_url);
   ASSERT_THAT(info, IsOk());
 
-  util::StatusOr<const KeyManager<FakePrimitive>*> key_manager =
+  absl::StatusOr<const KeyManager<FakePrimitive>*> key_manager =
       (*info)->get_key_manager<FakePrimitive>(type_url);
   ASSERT_THAT(key_manager, IsOk());
   EXPECT_EQ((*key_manager)->get_key_type(), type_url);
 }
 
+TEST(KeyGenConfigurationImplTest, CreateKey) {
+  KeyGenConfiguration config;
+  ASSERT_THAT(KeyGenConfigurationImpl::AddKeyCreator<AesGcmParameters>(
+                  CreateAesGcmKey, config),
+              IsOk());
+
+  absl::StatusOr<AesGcmParameters> aes_gcm_params =
+      AesGcmParameters::Builder()
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesGcmParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(aes_gcm_params, IsOk());
+
+  absl::StatusOr<std::unique_ptr<Key>> generic_key =
+      KeyGenConfigurationImpl::CreateKey(*aes_gcm_params,
+                                         /*id_requirement=*/0x02030400, config);
+  ASSERT_THAT(generic_key, IsOk());
+  const crypto::tink::AesGcmKey* aes_gcm_key =
+      dynamic_cast<const crypto::tink::AesGcmKey*>(generic_key->get());
+
+  ASSERT_THAT(aes_gcm_key, NotNull());
+  EXPECT_THAT(aes_gcm_key->GetIdRequirement(), Eq(0x02030400));
+  EXPECT_THAT(aes_gcm_key->GetOutputPrefix(),
+              Eq(std::string("\x01\x02\x03\x04\x00", 5)));
+  EXPECT_THAT(aes_gcm_key->GetParameters(), Eq(*aes_gcm_params));
+  EXPECT_THAT(aes_gcm_key->GetKeyBytes(GetPartialKeyAccess()).size(), Eq(32));
+}
+
+TEST(KeyGenConfigurationImplTest, CreateKeyWithMissingKeyCreatorFails) {
+  KeyGenConfiguration config;
+
+  absl::StatusOr<AesGcmParameters> aes_gcm_params =
+      AesGcmParameters::Builder()
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesGcmParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(aes_gcm_params, IsOk());
+
+  EXPECT_THAT(
+      KeyGenConfigurationImpl::CreateKey(*aes_gcm_params,
+                                         /*id_requirement=*/0x02030400, config)
+          .status(),
+      StatusIs(absl::StatusCode::kUnimplemented));
+}
+
 TEST(KeyGenConfigurationImplTest, GetMissingKeyManagerFails) {
   KeyGenConfiguration config;
-  util::StatusOr<const KeyTypeInfoStore*> store =
+  absl::StatusOr<const KeyTypeInfoStore*> store =
       KeyGenConfigurationImpl::GetKeyTypeInfoStore(config);
   ASSERT_THAT(store, IsOk());
   EXPECT_THAT((*store)->Get("i.do.not.exist").status(),
@@ -190,13 +266,14 @@ TEST(KeyGenConfigurationImplTest, GetMissingKeyManagerFails) {
 }
 
 class FakeSignKeyManager
-    : public PrivateKeyTypeManager<RsaSsaPssPrivateKey, RsaSsaPssKeyFormat,
-                                   RsaSsaPssPublicKey, List<PublicKeySign>> {
+    : public PrivateKeyTypeManager<RsaSsaPssPrivateKeyProto, RsaSsaPssKeyFormat,
+                                   RsaSsaPssPublicKeyProto,
+                                   List<PublicKeySign>> {
  public:
   class PublicKeySignFactory : public PrimitiveFactory<PublicKeySign> {
    public:
-    util::StatusOr<std::unique_ptr<PublicKeySign>> Create(
-        const RsaSsaPssPrivateKey& key) const override {
+    absl::StatusOr<std::unique_ptr<PublicKeySign>> Create(
+        const RsaSsaPssPrivateKeyProto& key) const override {
       return {absl::make_unique<test::DummyPublicKeySign>("a public key sign")};
     }
   };
@@ -212,28 +289,28 @@ class FakeSignKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  util::Status ValidateKey(const RsaSsaPssPrivateKey& key) const override {
-    return util::OkStatus();
+  absl::Status ValidateKey(const RsaSsaPssPrivateKeyProto& key) const override {
+    return absl::OkStatus();
   }
 
-  util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const RsaSsaPssKeyFormat& key_format) const override {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
-  util::StatusOr<RsaSsaPssPrivateKey> CreateKey(
+  absl::StatusOr<RsaSsaPssPrivateKeyProto> CreateKey(
       const RsaSsaPssKeyFormat& key_format) const override {
-    return RsaSsaPssPrivateKey();
+    return RsaSsaPssPrivateKeyProto();
   }
 
-  util::StatusOr<RsaSsaPssPrivateKey> DeriveKey(
+  absl::StatusOr<RsaSsaPssPrivateKeyProto> DeriveKey(
       const RsaSsaPssKeyFormat& key_format,
       InputStream* input_stream) const override {
-    return RsaSsaPssPrivateKey();
+    return RsaSsaPssPrivateKeyProto();
   }
 
-  util::StatusOr<RsaSsaPssPublicKey> GetPublicKey(
-      const RsaSsaPssPrivateKey& private_key) const override {
+  absl::StatusOr<RsaSsaPssPublicKeyProto> GetPublicKey(
+      const RsaSsaPssPrivateKeyProto& private_key) const override {
     return private_key.public_key();
   }
 
@@ -242,12 +319,13 @@ class FakeSignKeyManager
 };
 
 class FakeVerifyKeyManager
-    : public KeyTypeManager<RsaSsaPssPublicKey, void, List<PublicKeyVerify>> {
+    : public KeyTypeManager<RsaSsaPssPublicKeyProto, void,
+                            List<PublicKeyVerify>> {
  public:
   class PublicKeyVerifyFactory : public PrimitiveFactory<PublicKeyVerify> {
    public:
-    util::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
-        const RsaSsaPssPublicKey& key) const override {
+    absl::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
+        const RsaSsaPssPublicKeyProto& key) const override {
       return {
           absl::make_unique<test::DummyPublicKeyVerify>("a public key verify")};
     }
@@ -264,12 +342,12 @@ class FakeVerifyKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  util::Status ValidateKey(const RsaSsaPssPublicKey& key) const override {
-    return util::OkStatus();
+  absl::Status ValidateKey(const RsaSsaPssPublicKeyProto& key) const override {
+    return absl::OkStatus();
   }
 
-  util::Status ValidateParams(const RsaSsaPssParams& params) const {
-    return util::OkStatus();
+  absl::Status ValidateParams(const RsaSsaPssParams& params) const {
+    return absl::OkStatus();
   }
 
  private:
@@ -293,28 +371,28 @@ TEST(KeyGenConfigurationImplTest, GetAsymmetricKeyManagers) {
 
   {
     std::string type_url = FakeSignKeyManager().get_key_type();
-    util::StatusOr<const KeyTypeInfoStore*> store =
+    absl::StatusOr<const KeyTypeInfoStore*> store =
         KeyGenConfigurationImpl::GetKeyTypeInfoStore(config);
     ASSERT_THAT(store, IsOk());
-    util::StatusOr<const KeyTypeInfoStore::Info*> info =
+    absl::StatusOr<const KeyTypeInfoStore::Info*> info =
         (*store)->Get(type_url);
     ASSERT_THAT(info, IsOk());
 
-    util::StatusOr<const KeyManager<PublicKeySign>*> key_manager =
+    absl::StatusOr<const KeyManager<PublicKeySign>*> key_manager =
         (*info)->get_key_manager<PublicKeySign>(type_url);
     ASSERT_THAT(key_manager, IsOk());
     EXPECT_EQ((*key_manager)->get_key_type(), type_url);
   }
   {
     std::string type_url = FakeVerifyKeyManager().get_key_type();
-    util::StatusOr<const KeyTypeInfoStore*> store =
+    absl::StatusOr<const KeyTypeInfoStore*> store =
         KeyGenConfigurationImpl::GetKeyTypeInfoStore(config);
     ASSERT_THAT(store, IsOk());
-    util::StatusOr<const KeyTypeInfoStore::Info*> info =
+    absl::StatusOr<const KeyTypeInfoStore::Info*> info =
         (*store)->Get(type_url);
     ASSERT_THAT(info, IsOk());
 
-    util::StatusOr<const KeyManager<PublicKeyVerify>*> key_manager =
+    absl::StatusOr<const KeyManager<PublicKeyVerify>*> key_manager =
         (*info)->get_key_manager<PublicKeyVerify>(type_url);
     ASSERT_THAT(key_manager, IsOk());
     EXPECT_EQ((*key_manager)->get_key_type(), type_url);
@@ -338,6 +416,9 @@ TEST(KeyGenConfigurationImplTest, GlobalRegistryMode) {
   FakeKeyTypeManager manager;
   EXPECT_THAT(KeyGenConfigurationImpl::AddLegacyKeyManager(
                   MakeKeyManager<FakePrimitive>(&manager), config),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(KeyGenConfigurationImpl::AddKeyCreator<AesGcmParameters>(
+                  CreateAesGcmKey, config),
               StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(KeyGenConfigurationImpl::GetKeyTypeInfoStore(config).status(),
               StatusIs(absl::StatusCode::kFailedPrecondition));

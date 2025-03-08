@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -187,7 +187,7 @@ const char* Enums::HashName(pb::HashType hash_type) {
 }
 
 // static
-util::StatusOr<int> Enums::HashLength(pb::HashType hash_type) {
+absl::StatusOr<int> Enums::HashLength(pb::HashType hash_type) {
   switch (hash_type) {
     case pb::HashType::SHA224:
       return 28;
@@ -198,7 +198,7 @@ util::StatusOr<int> Enums::HashLength(pb::HashType hash_type) {
     case pb::HashType::SHA512:
       return 64;
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           absl::StrCat("Unsupported hashing algorithm ",
                                        util::Enums::HashName(hash_type)));
   }
@@ -232,6 +232,8 @@ const char* Enums::OutputPrefixName(pb::OutputPrefixType output_prefix_type) {
       return "RAW";
     case pb::OutputPrefixType::CRUNCHY:
       return "CRUNCHY";
+    case pb::OutputPrefixType::WITH_ID_REQUIREMENT:
+      return "WITH_ID_REQUIREMENT";
     default:
       return "UNKNOWN_PREFIX";
   }
@@ -270,6 +272,8 @@ pb::OutputPrefixType Enums::OutputPrefix(absl::string_view name) {
   if (name == "LEGACY") return pb::OutputPrefixType::LEGACY;
   if (name == "RAW") return pb::OutputPrefixType::RAW;
   if (name == "CRUNCHY") return pb::OutputPrefixType::CRUNCHY;
+  if (name == "WITH_ID_REQUIREMENT")
+    return pb::OutputPrefixType::WITH_ID_REQUIREMENT;
   return pb::OutputPrefixType::UNKNOWN_PREFIX;
 }
 

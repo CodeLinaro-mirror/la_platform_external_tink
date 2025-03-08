@@ -29,6 +29,7 @@ namespace internal {
 // Values from https://www.rfc-editor.org/rfc/rfc9180.html#section-7.1.
 enum class HpkeKem {
   kUnknownKem = 0x0,
+  kP256HkdfSha256 = 0x10,
   kX25519HkdfSha256 = 0x20,
 };
 
@@ -53,11 +54,11 @@ struct HpkeParams {
 };
 
 // Converts a google::crypto::tink::HpkeParams proto to an HpkeParams struct.
-util::StatusOr<HpkeParams> HpkeParamsProtoToStruct(
+absl::StatusOr<HpkeParams> HpkeParamsProtoToStruct(
     google::crypto::tink::HpkeParams params);
 
 // Returns the encapsulated key length (in bytes) for the specified `kem`.
-util::StatusOr<int32_t> HpkeEncapsulatedKeyLength(
+absl::StatusOr<int32_t> HpkeEncapsulatedKeyLength(
     google::crypto::tink::HpkeKem kem);
 
 }  // namespace internal

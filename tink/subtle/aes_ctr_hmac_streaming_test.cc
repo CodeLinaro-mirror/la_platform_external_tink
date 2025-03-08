@@ -27,7 +27,6 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "tink/config/tink_fips.h"
 #include "tink/internal/test_random_access_stream.h"
@@ -545,7 +544,7 @@ TEST(AesCtrHmacStreamingTest, SizeIsNotAuthenticated) {
     GTEST_SKIP() << "Not supported in FIPS-only mode";
   }
   AesCtrHmacStreaming::Params params = ValidParams();
-  util::StatusOr<std::unique_ptr<AesCtrHmacStreaming>> streaming_aead =
+  absl::StatusOr<std::unique_ptr<AesCtrHmacStreaming>> streaming_aead =
       AesCtrHmacStreaming::New(std::move(params));
   ASSERT_THAT(streaming_aead.status(), IsOk());
 
@@ -553,7 +552,7 @@ TEST(AesCtrHmacStreamingTest, SizeIsNotAuthenticated) {
   // The header is 40 = 0x28 bytes for this key and Tink verifies that the
   // ciphertext starts with 0x28 in the first byte.
   std::string wrong_ciphertext =
-      absl::StrCat(absl::HexStringToBytes("28"),
+      absl::StrCat(test::HexDecodeOrDie("28"),
                    "some arbitrary text which does not matter at all but needs "
                    "to be at least of length 40 bytes");
   absl::StatusOr<std::unique_ptr<RandomAccessStream>> plaintext_stream =

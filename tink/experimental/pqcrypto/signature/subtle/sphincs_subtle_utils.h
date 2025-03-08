@@ -125,22 +125,21 @@ class SphincsKeyPair {
 // This is an utility function that generates a new Sphincs key pair based on
 // Sphincs specific parameters. This function is expected to be called from
 // a key manager class.
-crypto::tink::util::StatusOr<SphincsKeyPair> GenerateSphincsKeyPair(
+absl::StatusOr<SphincsKeyPair> GenerateSphincsKeyPair(
     SphincsParamsPqclean params);
 
 // Validates whether the private key size is safe to use for sphincs signature.
-crypto::tink::util::Status ValidatePrivateKeySize(int32_t key_size);
+absl::Status ValidatePrivateKeySize(int32_t key_size);
 
 // Validates whether the public key size is safe to use for sphincs signature.
-crypto::tink::util::Status ValidatePublicKeySize(int32_t key_size);
+absl::Status ValidatePublicKeySize(int32_t key_size);
 
 // Validates whether the parameters are safe to use for sphincs signature.
-crypto::tink::util::Status ValidateParams(SphincsParamsPqclean params);
-
+absl::Status ValidateParams(SphincsParamsPqclean params);
 
 // Convert the sphincs private key size to the appropriate index in the
 // pqclean functions array.
-crypto::tink::util::StatusOr<int32_t> SphincsKeySizeToIndex(int32_t key_size);
+absl::StatusOr<int32_t> SphincsKeySizeToIndex(int32_t key_size);
 
 }  // namespace subtle
 }  // namespace tink

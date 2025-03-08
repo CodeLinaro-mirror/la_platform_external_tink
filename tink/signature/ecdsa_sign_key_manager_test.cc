@@ -26,11 +26,17 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
+#include "tink/config/global_registry.h"
 #include "tink/internal/ec_util.h"
 #include "tink/internal/ssl_util.h"
+#include "tink/key_status.h"
+#include "tink/keyset_handle.h"
 #include "tink/public_key_sign.h"
 #include "tink/public_key_verify.h"
 #include "tink/signature/ecdsa_verify_key_manager.h"
+#include "tink/signature/internal/testing/ecdsa_test_vectors.h"
+#include "tink/signature/internal/testing/signature_test_vector.h"
+#include "tink/signature/signature_config.h"
 #include "tink/subtle/ecdsa_verify_boringssl.h"
 #include "tink/util/enums.h"
 #include "tink/util/istream_input_stream.h"
@@ -50,8 +56,8 @@ using ::crypto::tink::util::Enums;
 using ::crypto::tink::util::StatusOr;
 using ::google::crypto::tink::EcdsaKeyFormat;
 using ::google::crypto::tink::EcdsaParams;
-using ::google::crypto::tink::EcdsaPrivateKey;
-using ::google::crypto::tink::EcdsaPublicKey;
+using EcdsaPrivateKeyProto = ::google::crypto::tink::EcdsaPrivateKey;
+using EcdsaPublicKeyProto = ::google::crypto::tink::EcdsaPublicKey;
 using ::google::crypto::tink::EcdsaSignatureEncoding;
 using ::google::crypto::tink::EllipticCurveType;
 using ::google::crypto::tink::HashType;
@@ -129,9 +135,10 @@ TEST(EcdsaSignKeyManagerTest, ValidateKeyFormatBadHashP521) {
 
 TEST(EcdsaSignKeyManagerTest, CreateKey) {
   EcdsaKeyFormat format = CreateValidKeyFormat();
-  StatusOr<EcdsaPrivateKey> key_or = EcdsaSignKeyManager().CreateKey(format);
+  absl::StatusOr<EcdsaPrivateKeyProto> key_or =
+      EcdsaSignKeyManager().CreateKey(format);
   ASSERT_THAT(key_or, IsOk());
-  EcdsaPrivateKey key = key_or.value();
+  EcdsaPrivateKeyProto key = key_or.value();
 
   EXPECT_THAT(key.version(), Eq(0));
 
@@ -150,23 +157,24 @@ TEST(EcdsaSignKeyManagerTest, CreateKey) {
 
 TEST(EcdsaSignKeyManagerTest, CreateKeyValid) {
   EcdsaKeyFormat format = CreateValidKeyFormat();
-  StatusOr<EcdsaPrivateKey> key_or = EcdsaSignKeyManager().CreateKey(format);
+  absl::StatusOr<EcdsaPrivateKeyProto> key_or =
+      EcdsaSignKeyManager().CreateKey(format);
   ASSERT_THAT(key_or, IsOk());
   EXPECT_THAT(EcdsaSignKeyManager().ValidateKey(key_or.value()), IsOk());
 }
 
-EcdsaPrivateKey CreateValidKey() {
+EcdsaPrivateKeyProto CreateValidKey() {
   EcdsaKeyFormat format = CreateValidKeyFormat();
   return EcdsaSignKeyManager().CreateKey(format).value();
 }
 
 TEST(EcdsaSignKeyManagerTest, ValidateKey) {
-  EcdsaPrivateKey key = CreateValidKey();
+  EcdsaPrivateKeyProto key = CreateValidKey();
   EXPECT_THAT(EcdsaSignKeyManager().ValidateKey(key), IsOk());
 }
 
 TEST(EcdsaSignKeyManagerTest, ValidateKeyBadHashP256) {
-  EcdsaPrivateKey key = CreateValidKey();
+  EcdsaPrivateKeyProto key = CreateValidKey();
   EcdsaParams* params = key.mutable_public_key()->mutable_params();
   params->set_curve(EllipticCurveType::NIST_P256);
   params->set_hash_type(HashType::SHA512);
@@ -176,7 +184,7 @@ TEST(EcdsaSignKeyManagerTest, ValidateKeyBadHashP256) {
 }
 
 TEST(EcdsaSignKeyManagerTest, ValidateKeyBadHashP384) {
-  EcdsaPrivateKey key = CreateValidKey();
+  EcdsaPrivateKeyProto key = CreateValidKey();
   EcdsaParams* params = key.mutable_public_key()->mutable_params();
   params->set_curve(EllipticCurveType::NIST_P384);
   params->set_hash_type(HashType::SHA256);
@@ -186,7 +194,7 @@ TEST(EcdsaSignKeyManagerTest, ValidateKeyBadHashP384) {
 }
 
 TEST(EcdsaSignKeyManagerTest, ValidateKeyBadHashP521) {
-  EcdsaPrivateKey key = CreateValidKey();
+  EcdsaPrivateKeyProto key = CreateValidKey();
   EcdsaParams* params = key.mutable_public_key()->mutable_params();
   params->set_curve(EllipticCurveType::NIST_P521);
   params->set_hash_type(HashType::SHA256);
@@ -196,12 +204,12 @@ TEST(EcdsaSignKeyManagerTest, ValidateKeyBadHashP521) {
 }
 
 TEST(EcdsaSignKeyManagerTest, GetPublicKey) {
-  EcdsaPrivateKey key = CreateValidKey();
-  StatusOr<EcdsaPublicKey> public_key_or =
+  EcdsaPrivateKeyProto key = CreateValidKey();
+  absl::StatusOr<EcdsaPublicKeyProto> public_key_or =
       EcdsaSignKeyManager().GetPublicKey(key);
 
   ASSERT_THAT(public_key_or, IsOk());
-  EcdsaPublicKey public_key = public_key_or.value();
+  EcdsaPublicKeyProto public_key = public_key_or.value();
 
   EXPECT_THAT(public_key.version(), Eq(key.public_key().version()));
   EXPECT_THAT(public_key.params().hash_type(),
@@ -216,8 +224,8 @@ TEST(EcdsaSignKeyManagerTest, GetPublicKey) {
 }
 
 TEST(EcdsaSignKeyManagerTest, Create) {
-  EcdsaPrivateKey private_key = CreateValidKey();
-  EcdsaPublicKey public_key =
+  EcdsaPrivateKeyProto private_key = CreateValidKey();
+  EcdsaPublicKeyProto public_key =
       EcdsaSignKeyManager().GetPublicKey(private_key).value();
 
   auto signer_or =
@@ -240,9 +248,9 @@ TEST(EcdsaSignKeyManagerTest, Create) {
 }
 
 TEST(EcdsaSignKeyManagerTest, CreateDifferentKey) {
-  EcdsaPrivateKey private_key = CreateValidKey();
+  EcdsaPrivateKeyProto private_key = CreateValidKey();
   // Note: we create a new key in the next line.
-  EcdsaPublicKey public_key =
+  EcdsaPublicKeyProto public_key =
       EcdsaSignKeyManager().GetPublicKey(CreateValidKey()).value();
 
   auto signer_or =
@@ -286,19 +294,19 @@ TEST(EcdsaSignKeyManagerTest, DeriveKeySignVerifySucceedsWithBoringSsl) {
   util::IstreamInputStream input_stream{
       absl::make_unique<std::stringstream>("0123456789abcdef0123456789abcdef")};
 
-  util::StatusOr<EcdsaPrivateKey> key =
+  absl::StatusOr<EcdsaPrivateKeyProto> key =
       EcdsaSignKeyManager().DeriveKey(format, &input_stream);
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<std::unique_ptr<PublicKeySign>> signer =
+  absl::StatusOr<std::unique_ptr<PublicKeySign>> signer =
       EcdsaSignKeyManager().GetPrimitive<PublicKeySign>(*key);
   ASSERT_THAT(signer, IsOk());
 
   constexpr absl::string_view kMessage = "Some message";
-  util::StatusOr<std::string> signature = (*signer)->Sign(kMessage);
+  absl::StatusOr<std::string> signature = (*signer)->Sign(kMessage);
   ASSERT_THAT(signature, IsOk());
 
-  util::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
       EcdsaVerifyKeyManager().GetPrimitive<PublicKeyVerify>(key->public_key());
   ASSERT_THAT(verifier, IsOk());
   EXPECT_THAT((*verifier)->Verify(*signature, kMessage), IsOk());
@@ -408,12 +416,87 @@ TEST_P(NistCurveParamsDeriveTest, TestVectors) {
   util::IstreamInputStream input_stream{
       absl::make_unique<std::stringstream>(std::get<1>(GetParam()))};
 
-  util::StatusOr<EcdsaPrivateKey> private_key =
+  absl::StatusOr<EcdsaPrivateKeyProto> private_key =
       EcdsaSignKeyManager().DeriveKey(key_format, &input_stream);
   ASSERT_THAT(private_key, IsOk());
   EXPECT_THAT(private_key->key_value(),
               Eq(test::HexDecodeOrDie(std::get<2>(GetParam()))));
 }
+
+using EcdsaSignKeyManagerTestVectorTest =
+    testing::TestWithParam<internal::SignatureTestVector>;
+
+// Ecdsa is randomized, so we can compute the signature.
+TEST_P(EcdsaSignKeyManagerTestVectorTest, VerifySignatureInTestVector) {
+  ASSERT_THAT(SignatureConfig::Register(), IsOk());
+  const internal::SignatureTestVector& param = GetParam();
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder()
+          .AddEntry(KeysetHandleBuilder::Entry::CreateFromKey(
+              param.signature_private_key, KeyStatus::kEnabled,
+              /*is_primary=*/true))
+          .Build();
+  ASSERT_THAT(handle, IsOk());
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
+      handle->GetPublicKeysetHandle(KeyGenConfigGlobalRegistry());
+  ASSERT_THAT(public_handle, IsOk());
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      (*public_handle)->GetPrimitive<PublicKeyVerify>(ConfigGlobalRegistry());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT((*verifier)->Verify(param.signature, param.message), IsOk());
+}
+
+TEST_P(EcdsaSignKeyManagerTestVectorTest, VerifyFreshSignature) {
+  ASSERT_THAT(SignatureConfig::Register(), IsOk());
+  const internal::SignatureTestVector& param = GetParam();
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder()
+          .AddEntry(KeysetHandleBuilder::Entry::CreateFromKey(
+              param.signature_private_key, KeyStatus::kEnabled,
+              /*is_primary=*/true))
+          .Build();
+  ASSERT_THAT(handle, IsOk());
+  absl::StatusOr<std::unique_ptr<PublicKeySign>> signer =
+      handle->GetPrimitive<PublicKeySign>(ConfigGlobalRegistry());
+  ASSERT_THAT(signer, IsOk());
+  absl::StatusOr<std::string> fresh_signature = (*signer)->Sign("some message");
+  ASSERT_THAT(fresh_signature, IsOk());
+
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
+      handle->GetPublicKeysetHandle(KeyGenConfigGlobalRegistry());
+  ASSERT_THAT(public_handle, IsOk());
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      (*public_handle)->GetPrimitive<PublicKeyVerify>(ConfigGlobalRegistry());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT((*verifier)->Verify(*fresh_signature, "some message"), IsOk());
+}
+
+TEST_P(EcdsaSignKeyManagerTestVectorTest, VerifyWrongMessage) {
+  ASSERT_THAT(SignatureConfig::Register(), IsOk());
+  const internal::SignatureTestVector& param = GetParam();
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder()
+          .AddEntry(KeysetHandleBuilder::Entry::CreateFromKey(
+              param.signature_private_key, KeyStatus::kEnabled,
+              /*is_primary=*/true))
+          .Build();
+  ASSERT_THAT(handle, IsOk());
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
+      handle->GetPublicKeysetHandle(KeyGenConfigGlobalRegistry());
+  ASSERT_THAT(public_handle, IsOk());
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      (*public_handle)->GetPrimitive<PublicKeyVerify>(ConfigGlobalRegistry());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT(
+      (*verifier)->Verify(param.signature, absl::StrCat("x", param.message)),
+      Not(IsOk()));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    EcdsaSignKeyManagerTestVectorTest,
+    EcdsaSignKeyManagerTestVectorTest,
+    testing::ValuesIn(internal::CreateEcdsaTestVectors()));
+
 
 }  // namespace
 }  // namespace tink

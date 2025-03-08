@@ -27,8 +27,6 @@
 #include "tink/internal/fips_utils.h"
 #include "tink/public_key_sign.h"
 #include "tink/util/constants.h"
-#include "tink/util/errors.h"
-#include "tink/util/protobuf_helper.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "proto/jwt_rsa_ssa_pkcs1.pb.h"
@@ -44,7 +42,7 @@ class RawJwtRsaSsaPkcs1SignKeyManager
           google::crypto::tink::JwtRsaSsaPkcs1PublicKey, List<PublicKeySign>> {
  public:
   class PublicKeySignFactory : public PrimitiveFactory<PublicKeySign> {
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicKeySign>> Create(
+    absl::StatusOr<std::unique_ptr<PublicKeySign>> Create(
         const google::crypto::tink::JwtRsaSsaPkcs1PrivateKey& private_key)
         const override;
   };
@@ -61,20 +59,20 @@ class RawJwtRsaSsaPkcs1SignKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::JwtRsaSsaPkcs1PrivateKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::JwtRsaSsaPkcs1KeyFormat& key_format)
       const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::JwtRsaSsaPkcs1PrivateKey>
-  CreateKey(const google::crypto::tink::JwtRsaSsaPkcs1KeyFormat& key_format)
+  absl::StatusOr<google::crypto::tink::JwtRsaSsaPkcs1PrivateKey> CreateKey(
+      const google::crypto::tink::JwtRsaSsaPkcs1KeyFormat& key_format)
       const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::JwtRsaSsaPkcs1PublicKey>
-  GetPublicKey(const google::crypto::tink::JwtRsaSsaPkcs1PrivateKey&
-                   private_key) const override {
+  absl::StatusOr<google::crypto::tink::JwtRsaSsaPkcs1PublicKey> GetPublicKey(
+      const google::crypto::tink::JwtRsaSsaPkcs1PrivateKey& private_key)
+      const override {
     return private_key.public_key();
   }
 

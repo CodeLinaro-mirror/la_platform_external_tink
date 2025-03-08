@@ -16,19 +16,21 @@
 
 #include "tink/signature/rsa_ssa_pss_public_key.h"
 
+#include <memory>
 #include <string>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "tink/big_integer.h"
+#include "tink/key.h"
 #include "tink/partial_key_access.h"
 #include "tink/signature/rsa_ssa_pss_parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
+#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
@@ -91,7 +93,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(RsaSsaPssPublicKeyTest, CreatePublicKeySucceeds) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<RsaSsaPssParameters> parameters =
+  absl::StatusOr<RsaSsaPssParameters> parameters =
       RsaSsaPssParameters::Builder()
           .SetModulusSizeInBits(test_case.modulus_size_in_bits)
           .SetPublicExponent(kF4)
@@ -102,8 +104,8 @@ TEST_P(RsaSsaPssPublicKeyTest, CreatePublicKeySucceeds) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  BigInteger modulus(absl::HexStringToBytes(kHex2048BitRsaModulus));
-  util::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
+  BigInteger modulus(test::HexDecodeOrDie(kHex2048BitRsaModulus));
+  absl::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
       *parameters, modulus, test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
 
@@ -114,7 +116,7 @@ TEST_P(RsaSsaPssPublicKeyTest, CreatePublicKeySucceeds) {
 }
 
 TEST(RsaSsaPssPublicKeyTest, CreateWithNonMatchingModulusSizeFails) {
-  util::StatusOr<RsaSsaPssParameters> parameters =
+  absl::StatusOr<RsaSsaPssParameters> parameters =
       RsaSsaPssParameters::Builder()
           .SetModulusSizeInBits(3072)
           .SetPublicExponent(kF4)
@@ -125,8 +127,8 @@ TEST(RsaSsaPssPublicKeyTest, CreateWithNonMatchingModulusSizeFails) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  BigInteger modulus(absl::HexStringToBytes(kHex2048BitRsaModulus));
-  util::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
+  BigInteger modulus(test::HexDecodeOrDie(kHex2048BitRsaModulus));
+  absl::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
       *parameters, modulus,
       /*id_requirement=*/absl::nullopt, GetPartialKeyAccess());
   EXPECT_THAT(public_key.status(),
@@ -134,7 +136,7 @@ TEST(RsaSsaPssPublicKeyTest, CreateWithNonMatchingModulusSizeFails) {
 }
 
 TEST(Ed25519PublicKeyTest, CreateKeyWithInvalidIdRequirementFails) {
-  util::StatusOr<RsaSsaPssParameters> no_prefix_parameters =
+  absl::StatusOr<RsaSsaPssParameters> no_prefix_parameters =
       RsaSsaPssParameters::Builder()
           .SetModulusSizeInBits(2048)
           .SetPublicExponent(kF4)
@@ -145,7 +147,7 @@ TEST(Ed25519PublicKeyTest, CreateKeyWithInvalidIdRequirementFails) {
           .Build();
   ASSERT_THAT(no_prefix_parameters, IsOk());
 
-  util::StatusOr<RsaSsaPssParameters> tink_parameters =
+  absl::StatusOr<RsaSsaPssParameters> tink_parameters =
       RsaSsaPssParameters::Builder()
           .SetModulusSizeInBits(2048)
           .SetPublicExponent(kF4)
@@ -156,7 +158,7 @@ TEST(Ed25519PublicKeyTest, CreateKeyWithInvalidIdRequirementFails) {
           .Build();
   ASSERT_THAT(tink_parameters, IsOk());
 
-  BigInteger modulus(absl::HexStringToBytes(kHex2048BitRsaModulus));
+  BigInteger modulus(test::HexDecodeOrDie(kHex2048BitRsaModulus));
 
   EXPECT_THAT(
       RsaSsaPssPublicKey::Create(*no_prefix_parameters, modulus,
@@ -174,7 +176,7 @@ TEST(Ed25519PublicKeyTest, CreateKeyWithInvalidIdRequirementFails) {
 TEST_P(RsaSsaPssPublicKeyTest, KeyEquals) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<RsaSsaPssParameters> parameters =
+  absl::StatusOr<RsaSsaPssParameters> parameters =
       RsaSsaPssParameters::Builder()
           .SetModulusSizeInBits(test_case.modulus_size_in_bits)
           .SetPublicExponent(kF4)
@@ -185,12 +187,12 @@ TEST_P(RsaSsaPssPublicKeyTest, KeyEquals) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  BigInteger modulus(absl::HexStringToBytes(kHex2048BitRsaModulus));
-  util::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
+  BigInteger modulus(test::HexDecodeOrDie(kHex2048BitRsaModulus));
+  absl::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
       *parameters, modulus, test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
 
-  util::StatusOr<RsaSsaPssPublicKey> other_public_key =
+  absl::StatusOr<RsaSsaPssPublicKey> other_public_key =
       RsaSsaPssPublicKey::Create(*parameters, modulus, test_case.id_requirement,
                                  GetPartialKeyAccess());
   ASSERT_THAT(other_public_key, IsOk());
@@ -202,7 +204,7 @@ TEST_P(RsaSsaPssPublicKeyTest, KeyEquals) {
 }
 
 TEST(RsaSsaPssPublicKeyTest, DifferentParametersNotEqual) {
-  util::StatusOr<RsaSsaPssParameters> tink_parameters =
+  absl::StatusOr<RsaSsaPssParameters> tink_parameters =
       RsaSsaPssParameters::Builder()
           .SetModulusSizeInBits(2048)
           .SetPublicExponent(kF4)
@@ -213,7 +215,7 @@ TEST(RsaSsaPssPublicKeyTest, DifferentParametersNotEqual) {
           .Build();
   ASSERT_THAT(tink_parameters, IsOk());
 
-  util::StatusOr<RsaSsaPssParameters> crunchy_parameters =
+  absl::StatusOr<RsaSsaPssParameters> crunchy_parameters =
       RsaSsaPssParameters::Builder()
           .SetModulusSizeInBits(2048)
           .SetPublicExponent(kF4)
@@ -224,12 +226,12 @@ TEST(RsaSsaPssPublicKeyTest, DifferentParametersNotEqual) {
           .Build();
   ASSERT_THAT(crunchy_parameters, IsOk());
 
-  BigInteger modulus(absl::HexStringToBytes(kHex2048BitRsaModulus));
-  util::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
+  BigInteger modulus(test::HexDecodeOrDie(kHex2048BitRsaModulus));
+  absl::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
       *tink_parameters, modulus,
       /*id_requirement=*/0x02030400, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
-  util::StatusOr<RsaSsaPssPublicKey> other_public_key =
+  absl::StatusOr<RsaSsaPssPublicKey> other_public_key =
       RsaSsaPssPublicKey::Create(*crunchy_parameters, modulus,
                                  /*id_requirement=*/0x02030400,
                                  GetPartialKeyAccess());
@@ -242,7 +244,7 @@ TEST(RsaSsaPssPublicKeyTest, DifferentParametersNotEqual) {
 }
 
 TEST(RsaSsaPssPublicKeyTest, DifferentModulusNotEqual) {
-  util::StatusOr<RsaSsaPssParameters> parameters =
+  absl::StatusOr<RsaSsaPssParameters> parameters =
       RsaSsaPssParameters::Builder()
           .SetModulusSizeInBits(2048)
           .SetPublicExponent(kF4)
@@ -253,7 +255,7 @@ TEST(RsaSsaPssPublicKeyTest, DifferentModulusNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  std::string other_modulus_bytes = absl::HexStringToBytes(
+  std::string other_modulus_bytes = test::HexDecodeOrDie(
       "00c684aef47bc201764a663acdf22e67140410b3d201533b6ccaebf86eda3d81a1230a1c"
       "c5ce2c9e4e102d107f2418d9386f1d3734eb922629b4e7ef464f79fcac53744702a147c1"
       "ef8dafc8eb366284d3419d98e8cf176ccb7f65bada528c222956900e1ec0c2f21e83e3ee"
@@ -263,14 +265,14 @@ TEST(RsaSsaPssPublicKeyTest, DifferentModulusNotEqual) {
       "c53d46f1a5ec25df1ddd94780a8f51f88ffb32337f05395dec93267802db95243f1b62cc"
       "3dd8118d2d");
 
-  BigInteger modulus(absl::HexStringToBytes(kHex2048BitRsaModulus));
+  BigInteger modulus(test::HexDecodeOrDie(kHex2048BitRsaModulus));
   BigInteger other_modulus(other_modulus_bytes);
 
-  util::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
+  absl::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
       *parameters, modulus,
       /*id_requirement=*/absl::nullopt, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
-  util::StatusOr<RsaSsaPssPublicKey> other_public_key =
+  absl::StatusOr<RsaSsaPssPublicKey> other_public_key =
       RsaSsaPssPublicKey::Create(*parameters, other_modulus,
                                  /*id_requirement=*/absl::nullopt,
                                  GetPartialKeyAccess());
@@ -283,7 +285,7 @@ TEST(RsaSsaPssPublicKeyTest, DifferentModulusNotEqual) {
 }
 
 TEST(RsaSsaPssPublicKeyTest, DifferentIdRequirementNotEqual) {
-  util::StatusOr<RsaSsaPssParameters> tink_parameters =
+  absl::StatusOr<RsaSsaPssParameters> tink_parameters =
       RsaSsaPssParameters::Builder()
           .SetModulusSizeInBits(2048)
           .SetPublicExponent(kF4)
@@ -294,12 +296,12 @@ TEST(RsaSsaPssPublicKeyTest, DifferentIdRequirementNotEqual) {
           .Build();
   ASSERT_THAT(tink_parameters, IsOk());
 
-  BigInteger modulus(absl::HexStringToBytes(kHex2048BitRsaModulus));
-  util::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
+  BigInteger modulus(test::HexDecodeOrDie(kHex2048BitRsaModulus));
+  absl::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
       *tink_parameters, modulus,
       /*id_requirement=*/0x02030400, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
-  util::StatusOr<RsaSsaPssPublicKey> other_public_key =
+  absl::StatusOr<RsaSsaPssPublicKey> other_public_key =
       RsaSsaPssPublicKey::Create(*tink_parameters, modulus,
                                  /*id_requirement=*/0x01020304,
                                  GetPartialKeyAccess());
@@ -312,7 +314,7 @@ TEST(RsaSsaPssPublicKeyTest, DifferentIdRequirementNotEqual) {
 }
 
 TEST(RsaSsaPssPublicKeyTest, PaddedWithZerosModulusEqual) {
-  util::StatusOr<RsaSsaPssParameters> tink_parameters =
+  absl::StatusOr<RsaSsaPssParameters> tink_parameters =
       RsaSsaPssParameters::Builder()
           .SetModulusSizeInBits(2048)
           .SetPublicExponent(kF4)
@@ -323,17 +325,17 @@ TEST(RsaSsaPssPublicKeyTest, PaddedWithZerosModulusEqual) {
           .Build();
   ASSERT_THAT(tink_parameters, IsOk());
 
-  BigInteger modulus(absl::HexStringToBytes(kHex2048BitRsaModulus));
+  BigInteger modulus(test::HexDecodeOrDie(kHex2048BitRsaModulus));
   BigInteger padded_with_zeros_modulus(
-      absl::HexStringToBytes("000000" + std::string(kHex2048BitRsaModulus)));
+      test::HexDecodeOrDie("000000" + std::string(kHex2048BitRsaModulus)));
   ASSERT_THAT(modulus, Eq(padded_with_zeros_modulus));
 
-  util::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
+  absl::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
       *tink_parameters, modulus,
       /*id_requirement=*/0x02030400, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
 
-  util::StatusOr<RsaSsaPssPublicKey> other_public_key =
+  absl::StatusOr<RsaSsaPssPublicKey> other_public_key =
       RsaSsaPssPublicKey::Create(*tink_parameters, padded_with_zeros_modulus,
                                  /*id_requirement=*/0x02030400,
                                  GetPartialKeyAccess());
@@ -344,6 +346,31 @@ TEST(RsaSsaPssPublicKeyTest, PaddedWithZerosModulusEqual) {
   EXPECT_FALSE(*public_key != *other_public_key);
   EXPECT_FALSE(*other_public_key != *public_key);
 }
+
+TEST(RsaSsaPssPublicKeyTest, Clone) {
+  absl::StatusOr<RsaSsaPssParameters> parameters =
+      RsaSsaPssParameters::Builder()
+          .SetModulusSizeInBits(2048)
+          .SetPublicExponent(kF4)
+          .SetSigHashType(RsaSsaPssParameters::HashType::kSha256)
+          .SetMgf1HashType(RsaSsaPssParameters::HashType::kSha256)
+          .SetSaltLengthInBytes(32)
+          .SetVariant(RsaSsaPssParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  BigInteger modulus(test::HexDecodeOrDie(kHex2048BitRsaModulus));
+
+  absl::StatusOr<RsaSsaPssPublicKey> public_key = RsaSsaPssPublicKey::Create(
+      *parameters, modulus,
+      /*id_requirement=*/0x02030400, GetPartialKeyAccess());
+  ASSERT_THAT(public_key, IsOk());
+
+  // CLone the key
+  std::unique_ptr<Key> cloned_key = public_key->Clone();
+  ASSERT_THAT(*cloned_key, Eq(*public_key));
+}
+
 }  // namespace
 }  // namespace tink
 }  // namespace crypto

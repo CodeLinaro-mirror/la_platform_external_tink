@@ -42,13 +42,12 @@ class SharedRandomAccessStream : public crypto::tink::RandomAccessStream {
 
   ~SharedRandomAccessStream() override = default;
 
-  crypto::tink::util::Status PRead(
-      int64_t position, int count,
-      crypto::tink::util::Buffer* dest_buffer) override {
+  absl::Status PRead(int64_t position, int count,
+                     crypto::tink::util::Buffer* dest_buffer) override {
     return random_access_stream_->PRead(position, count, dest_buffer);
   }
 
-  crypto::tink::util::StatusOr<int64_t> size() override {
+  absl::StatusOr<int64_t> size() override {
     return random_access_stream_->size();
   }
 

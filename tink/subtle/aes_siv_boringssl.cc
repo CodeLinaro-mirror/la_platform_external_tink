@@ -33,7 +33,10 @@
 #include "tink/aead/internal/aead_util.h"
 #include "tink/deterministic_aead.h"
 #include "tink/internal/aes_util.h"
+#include "tink/internal/call_with_core_dump_protection.h"
+#include "tink/internal/dfsan_forwarders.h"
 #include "tink/internal/fips_utils.h"
+#include "tink/internal/secret_buffer.h"
 #include "tink/subtle/subtle_util.h"
 #include "tink/util/errors.h"
 #include "tink/util/secret_data.h"
@@ -45,12 +48,17 @@ namespace tink {
 namespace subtle {
 namespace {
 
-crypto::tink::util::StatusOr<util::SecretUniquePtr<AES_KEY>> InitializeAesKey(
+using crypto::tink::internal::CallWithCoreDumpProtection;
+using crypto::tink::internal::SafeCryptoMemEquals;
+
+absl::StatusOr<util::SecretUniquePtr<AES_KEY>> InitializeAesKey(
     absl::Span<const uint8_t> key) {
   util::SecretUniquePtr<AES_KEY> aes_key = util::MakeSecretUniquePtr<AES_KEY>();
-  if (AES_set_encrypt_key(reinterpret_cast<const uint8_t*>(key.data()),
-                          8 * key.size(), aes_key.get()) != 0) {
-    return util::Status(absl::StatusCode::kInternal,
+  if (CallWithCoreDumpProtection([&]() {
+        return AES_set_encrypt_key(reinterpret_cast<const uint8_t*>(key.data()),
+                                   8 * key.size(), aes_key.get());
+      }) != 0) {
+    return absl::Status(absl::StatusCode::kInternal,
                         "could not initialize aes key");
   }
   return std::move(aes_key);
@@ -59,13 +67,13 @@ crypto::tink::util::StatusOr<util::SecretUniquePtr<AES_KEY>> InitializeAesKey(
 }  // namespace
 
 // static
-crypto::tink::util::StatusOr<std::unique_ptr<DeterministicAead>>
-AesSivBoringSsl::New(const util::SecretData& key) {
+absl::StatusOr<std::unique_ptr<DeterministicAead>> AesSivBoringSsl::New(
+    const util::SecretData& key) {
   auto status = internal::CheckFipsCompatibility<AesSivBoringSsl>();
   if (!status.ok()) return status;
 
   if (!IsValidKeySizeInBytes(key.size())) {
-    return util::Status(absl::StatusCode::kInvalidArgument, "invalid key size");
+    return absl::Status(absl::StatusCode::kInvalidArgument, "invalid key size");
   }
   auto k1_or = InitializeAesKey(absl::MakeSpan(key).subspan(0, key.size() / 2));
   if (!k1_or.ok()) {
@@ -82,16 +90,18 @@ AesSivBoringSsl::New(const util::SecretData& key) {
 }
 
 util::SecretData AesSivBoringSsl::ComputeCmacK1() const {
-  util::SecretData cmac_k1(kBlockSize, 0);
-  EncryptBlock(cmac_k1.data(), cmac_k1.data());
-  MultiplyByX(cmac_k1.data());
-  return cmac_k1;
+  internal::SecretBuffer cmac_k1(kBlockSize, 0);
+  CallWithCoreDumpProtection([&]() {
+    EncryptBlock(cmac_k1.data(), cmac_k1.data());
+    MultiplyByX(cmac_k1.data());
+  });
+  return util::internal::AsSecretData(std::move(cmac_k1));
 }
 
 util::SecretData AesSivBoringSsl::ComputeCmacK2() const {
-  util::SecretData cmac_k2(cmac_k1_);
-  MultiplyByX(cmac_k2.data());
-  return cmac_k2;
+  internal::SecretBuffer cmac_k2 = util::internal::AsSecretBuffer(cmac_k1_);
+  CallWithCoreDumpProtection([&]() { MultiplyByX(cmac_k2.data()); });
+  return util::internal::AsSecretData(cmac_k2);
 }
 
 void AesSivBoringSsl::EncryptBlock(const uint8_t in[kBlockSize],
@@ -106,8 +116,7 @@ void AesSivBoringSsl::MultiplyByX(uint8_t block[kBlockSize]) {
   for (size_t i = 0; i < kBlockSize - 1; ++i) {
     block[i] = (block[i] << 1) | (block[i + 1] >> 7);
   }
-  block[kBlockSize - 1] =
-      (block[kBlockSize - 1] << 1) ^ carry;
+  block[kBlockSize - 1] = (block[kBlockSize - 1] << 1) ^ carry;
 }
 
 // static
@@ -175,7 +184,7 @@ void AesSivBoringSsl::CmacLong(absl::Span<const uint8_t> data,
 
 void AesSivBoringSsl::S2v(absl::Span<const uint8_t> aad,
                           absl::Span<const uint8_t> msg,
-                          uint8_t siv[kBlockSize]) const {
+                          uint8_t* siv) const {
   // This stuff could be precomputed.
   uint8_t block[kBlockSize];
   std::fill(std::begin(block), std::end(block), 0);
@@ -198,7 +207,7 @@ void AesSivBoringSsl::S2v(absl::Span<const uint8_t> aad,
   }
 }
 
-util::Status AesSivBoringSsl::AesCtrCrypt(absl::string_view in,
+absl::Status AesSivBoringSsl::AesCtrCrypt(absl::string_view in,
                                           const uint8_t siv[kBlockSize],
                                           const AES_KEY* key,
                                           absl::Span<char> out) const {
@@ -209,54 +218,86 @@ util::Status AesSivBoringSsl::AesCtrCrypt(absl::string_view in,
   return internal::AesCtr128Crypt(in, iv, key, out);
 }
 
-util::StatusOr<std::string> AesSivBoringSsl::EncryptDeterministically(
+absl::StatusOr<std::string> AesSivBoringSsl::EncryptDeterministically(
     absl::string_view plaintext, absl::string_view associated_data) const {
-  uint8_t siv[kBlockSize];
-  S2v(absl::MakeSpan(reinterpret_cast<const uint8_t*>(associated_data.data()),
-                     associated_data.size()),
-      absl::MakeSpan(reinterpret_cast<const uint8_t*>(plaintext.data()),
-                     plaintext.size()),
-      siv);
   size_t ciphertext_size = plaintext.size() + kBlockSize;
-
   std::string ciphertext;
   ResizeStringUninitialized(&ciphertext, ciphertext_size);
-  std::copy(std::begin(siv), std::end(siv), ciphertext.begin());
-  util::Status res =
-      AesCtrCrypt(plaintext, siv, k2_.get(),
-                  absl::MakeSpan(ciphertext).subspan(kBlockSize));
+  uint8_t* siv_ptr = reinterpret_cast<uint8_t*>(&ciphertext[0]);
+  // The ciphertext will be leaked in a std::string anyhow -- this is known to
+  // the user, so we can assume it isn't sensitive.
+  internal::ScopedAssumeRegionCoreDumpSafe ciphertextscope(&ciphertext[0],
+                                                           ciphertext_size);
+
+  CallWithCoreDumpProtection([&]() {
+    S2v(absl::MakeSpan(reinterpret_cast<const uint8_t*>(associated_data.data()),
+                       associated_data.size()),
+        absl::MakeSpan(reinterpret_cast<const uint8_t*>(plaintext.data()),
+                       plaintext.size()),
+        siv_ptr);
+  });
+  absl::Status res = CallWithCoreDumpProtection([&]() {
+    return AesCtrCrypt(plaintext, siv_ptr, k2_.get(),
+                       absl::MakeSpan(ciphertext).subspan(kBlockSize));
+  });
   if (!res.ok()) {
     return res;
   }
+  // Declassify the ciphertext: this is now safe to give to the adversary.
+  // (Note: we currently do not propagate labels of the associated data).
+  crypto::tink::internal::DfsanClearLabel(&ciphertext[0], ciphertext_size);
   return ciphertext;
 }
 
-util::StatusOr<std::string> AesSivBoringSsl::DecryptDeterministically(
+absl::StatusOr<std::string> AesSivBoringSsl::DecryptDeterministically(
     absl::string_view ciphertext, absl::string_view associated_data) const {
   if (ciphertext.size() < kBlockSize) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "ciphertext too short");
   }
   size_t plaintext_size = ciphertext.size() - kBlockSize;
   std::string plaintext;
   ResizeStringUninitialized(&plaintext, plaintext_size);
+  // The plaintext region is allowed to leak. In succesful decryptions, the
+  // adversary can already get the plaintext via core dumps (since the API
+  // specifies that the plaintext is in a std::string, so this is the users
+  // responsibility). Hence, this gives adversaries access to data which is
+  // stored *during* the computation, and data which would be erased because the
+  // tag is wrong. Since AES SIV is a counter mode, this means that the
+  // adversary can potentially obtain key streams for IVs for which he does
+  // either not know a valid tag (which seems useless if he didn't see a valid
+  // ciphertext) or without querying the actual ciphertext (which does not seem
+  // useful). Hence, we declare this to be sufficiently safe at the moment.
+  internal::ScopedAssumeRegionCoreDumpSafe scope(&plaintext[0], plaintext_size);
   const uint8_t* siv = reinterpret_cast<const uint8_t*>(&ciphertext[0]);
-  util::Status res = AesCtrCrypt(ciphertext.substr(kBlockSize), siv, k2_.get(),
-                                 absl::MakeSpan(plaintext));
+  absl::Status res = CallWithCoreDumpProtection([&]() {
+    return AesCtrCrypt(ciphertext.substr(kBlockSize), siv, k2_.get(),
+                       absl::MakeSpan(plaintext));
+  });
   if (!res.ok()) {
     return res;
   }
 
-  uint8_t s2v[kBlockSize];
+  internal::SecretBuffer s2v(kBlockSize);
+
+  // Note that we very much need to protect the calculation of the IV even when
+  // the plaintext may be leaked.
+  CallWithCoreDumpProtection([&]() {
   S2v(absl::MakeSpan(reinterpret_cast<const uint8_t*>(associated_data.data()),
                      associated_data.size()),
       absl::MakeSpan(reinterpret_cast<const uint8_t*>(plaintext.data()),
                      plaintext_size),
-      s2v);
-  if (CRYPTO_memcmp(siv, s2v, kBlockSize) != 0) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+      s2v.data());
+  });
+
+  if (!SafeCryptoMemEquals(siv, s2v.data(), kBlockSize)) {
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "invalid ciphertext");
   }
+  // Declassify the plaintext: this is now safe to give to the adversary
+  // (since the API specifies that the plaintext is in a std::string which
+  // can leak so the user is responsible for this).
+  crypto::tink::internal::DfsanClearLabel(&plaintext[0], plaintext_size);
   return plaintext;
 }
 

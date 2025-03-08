@@ -17,6 +17,8 @@
 #ifndef TINK_AEAD_AES_CTR_HMAC_AEAD_KEY_H_
 #define TINK_AEAD_AES_CTR_HMAC_AEAD_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -59,7 +61,7 @@ class AesCtrHmacAeadKey : public AeadKey {
     Builder& SetIdRequirement(absl::optional<int> id_requirement);
 
     // Creates an AES-CTR-HMAC-AEAD key object from this builder.
-    util::StatusOr<AesCtrHmacAeadKey> Build(PartialKeyAccessToken token);
+    absl::StatusOr<AesCtrHmacAeadKey> Build(PartialKeyAccessToken token);
 
    private:
     absl::optional<AesCtrHmacAeadParameters> parameters_;
@@ -84,11 +86,15 @@ class AesCtrHmacAeadKey : public AeadKey {
     return parameters_;
   }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<AesCtrHmacAeadKey>(*this);
+  }
 
  private:
   AesCtrHmacAeadKey(const AesCtrHmacAeadParameters& parameters,

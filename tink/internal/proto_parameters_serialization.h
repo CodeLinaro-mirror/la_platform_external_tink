@@ -19,9 +19,10 @@
 
 #include <string>
 
+#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "tink/internal/serialization.h"
-#include "tink/util/statusor.h"
+#include "tink/internal/tink_proto_structs.h"
 #include "proto/tink.pb.h"
 
 namespace crypto {
@@ -42,16 +43,29 @@ class ProtoParametersSerialization : public Serialization {
       ProtoParametersSerialization&& other) = default;
 
   // Creates a `ProtoParametersSerialization` object from individual components.
-  static util::StatusOr<ProtoParametersSerialization> Create(
+  inline static absl::StatusOr<ProtoParametersSerialization> Create(
       absl::string_view type_url,
       google::crypto::tink::OutputPrefixType output_prefix_type,
+      absl::string_view serialized_proto) {
+    return Create(type_url,
+                  static_cast<OutputPrefixTypeEnum>(output_prefix_type),
+                  serialized_proto);
+  }
+
+  // Creates a `ProtoParametersSerialization` object from individual components.
+  static absl::StatusOr<ProtoParametersSerialization> Create(
+      absl::string_view type_url, OutputPrefixTypeEnum output_prefix_type,
       absl::string_view serialized_proto);
 
   // Creates a `ProtoParametersSerialization` object from a key template.
-  static util::StatusOr<ProtoParametersSerialization> Create(
+  static absl::StatusOr<ProtoParametersSerialization> Create(
       google::crypto::tink::KeyTemplate key_template);
 
-  const google::crypto::tink::KeyTemplate& GetKeyTemplate() const {
+  // Creates a `ProtoParametersSerialization` object from a key template struct.
+  static absl::StatusOr<ProtoParametersSerialization> Create(
+      const KeyTemplateStruct& key_template);
+
+  const KeyTemplateStruct& GetKeyTemplateStruct() const {
     return key_template_;
   }
 
@@ -66,10 +80,9 @@ class ProtoParametersSerialization : public Serialization {
   friend class LegacyProtoParameters;
   friend class LegacyProtoParametersTest;
 
-  explicit ProtoParametersSerialization(
-      google::crypto::tink::KeyTemplate key_template)
+  explicit ProtoParametersSerialization(const KeyTemplateStruct& key_template)
       : key_template_(key_template),
-        object_identifier_(key_template.type_url()) {}
+        object_identifier_(key_template.type_url) {}
 
   // Returns `true` if this `ProtoParametersSerialization` object is equal to
   // `other` (with the possibility of false negatives due to lack of
@@ -78,7 +91,7 @@ class ProtoParametersSerialization : public Serialization {
   bool EqualsWithPotentialFalseNegatives(
       const ProtoParametersSerialization& other) const;
 
-  google::crypto::tink::KeyTemplate key_template_;
+  KeyTemplateStruct key_template_;
   std::string object_identifier_;
 };
 

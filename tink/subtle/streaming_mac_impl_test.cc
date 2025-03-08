@@ -25,34 +25,62 @@
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
+#include "tink/mac/internal/stateful_mac.h"
 #include "tink/output_stream_with_result.h"
-#include "tink/subtle/mac/stateful_mac.h"
 #include "tink/subtle/random.h"
 #include "tink/subtle/test_util.h"
+#include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
-#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
 namespace subtle {
 namespace {
 
-using ::crypto::tink::test::DummyStatefulMac;
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
+using ::crypto::tink::util::SecretData;
+using ::crypto::tink::util::SecretDataFromStringView;
 using ::testing::HasSubstr;
 
-class DummyStatefulMacFactory : public StatefulMacFactory {
+// A dummy implementation of Stateful Mac interface.
+// An instance of DummyStatefulMac can be identified by a name specified
+// as a parameter of the constructor.
+// Over the same inputs, the DummyStatefulMac and DummyMac should give the same
+// output; DummyStatefulMac builds and internal_state_ and calls DummyMac.
+class DummyStatefulMac : public internal::StatefulMac {
+ public:
+  explicit DummyStatefulMac(const std::string& mac_name)
+      : mac_name_(absl::StrCat("DummyMac:", mac_name)), buffer_("") {}
+
+  absl::Status Update(absl::string_view data) override {
+    absl::StrAppend(&buffer_, data);
+    return absl::OkStatus();
+  }
+  absl::StatusOr<SecretData> FinalizeAsSecretData() override {
+    return SecretDataFromStringView(absl::StrCat(
+        mac_name_.size(), ":", buffer_.size(), ":", mac_name_, buffer_));
+  }
+
+ private:
+  std::string mac_name_;
+  std::string buffer_;
+};
+
+class DummyStatefulMacFactory : public internal::StatefulMacFactory {
  public:
   DummyStatefulMacFactory() = default;
   ~DummyStatefulMacFactory() override = default;
 
   // Constructs a StatefulMac using the DummyStatefulMac, which creates
   // returns a MAC of the header concatenated with the plaintext.
-  util::StatusOr<std::unique_ptr<StatefulMac>> Create() const override {
-    return std::unique_ptr<StatefulMac>(
+  absl::StatusOr<std::unique_ptr<internal::StatefulMac>> Create()
+      const override {
+    return std::unique_ptr<internal::StatefulMac>(
         absl::make_unique<DummyStatefulMac>("streaming mac:"));
   }
 };
@@ -61,11 +89,11 @@ class DummyStatefulMacFactory : public StatefulMacFactory {
 // used for test validation for mac computation.
 std::unique_ptr<OutputStreamWithResult<std::string>>
 GetComputeMacOutputStream() {
-  auto mac_factory = std::unique_ptr<StatefulMacFactory>(
+  auto mac_factory = std::unique_ptr<internal::StatefulMacFactory>(
       absl::make_unique<DummyStatefulMacFactory>());
   auto streaming_mac =
       absl::make_unique<StreamingMacImpl>(std::move(mac_factory));
-  util::StatusOr<std::unique_ptr<OutputStreamWithResult<std::string>>>
+  absl::StatusOr<std::unique_ptr<OutputStreamWithResult<std::string>>>
       stream_status = streaming_mac->NewComputeMacOutputStream();
   EXPECT_THAT(stream_status, IsOk());
   return std::move(*stream_status);
@@ -73,13 +101,13 @@ GetComputeMacOutputStream() {
 
 // A helper for creating an OutputStreamWithResult<util::Status>,
 // used for test validation for mac verification.
-std::unique_ptr<OutputStreamWithResult<util::Status>> GetVerifyMacOutputStream(
+std::unique_ptr<OutputStreamWithResult<absl::Status>> GetVerifyMacOutputStream(
     std::string expected_mac) {
-  auto mac_factory = std::unique_ptr<StatefulMacFactory>(
+  auto mac_factory = std::unique_ptr<internal::StatefulMacFactory>(
       absl::make_unique<DummyStatefulMacFactory>());
   auto streaming_mac =
       absl::make_unique<StreamingMacImpl>(std::move(mac_factory));
-  util::StatusOr<std::unique_ptr<OutputStreamWithResult<util::Status>>>
+  absl::StatusOr<std::unique_ptr<OutputStreamWithResult<absl::Status>>>
       stream_status = streaming_mac->NewVerifyMacOutputStream(expected_mac);
   EXPECT_THAT(stream_status, IsOk());
   return std::move(*stream_status);
@@ -139,7 +167,7 @@ TEST(StreamingMacImplTest, ComputeCheckStreamPosition) {
 
   // Check position in first buffer returned by Next();
   void* buffer;
-  util::StatusOr<int> next_result = output_stream->Next(&buffer);
+  absl::StatusOr<int> next_result = output_stream->Next(&buffer);
   EXPECT_THAT(next_result, IsOk());
   int buffer_size = *next_result;
   EXPECT_EQ(buffer_size, output_stream->Position());
@@ -239,7 +267,7 @@ TEST(StreamingMacImplTest, VerifyCheckStreamPosition) {
 
   // Check position in first buffer returned by Next();
   void* buffer;
-  util::StatusOr<int> next_result = output_stream->Next(&buffer);
+  absl::StatusOr<int> next_result = output_stream->Next(&buffer);
   EXPECT_THAT(next_result, IsOk());
   int buffer_size = *next_result;
   EXPECT_EQ(buffer_size, output_stream->Position());

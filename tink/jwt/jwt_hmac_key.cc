@@ -56,11 +56,11 @@ JwtHmacKey::Builder& JwtHmacKey::Builder::SetCustomKid(
   return *this;
 }
 
-util::StatusOr<absl::optional<std::string>> JwtHmacKey::Builder::ComputeKid() {
+absl::StatusOr<absl::optional<std::string>> JwtHmacKey::Builder::ComputeKid() {
   switch (parameters_->GetKidStrategy()) {
     case JwtHmacParameters::KidStrategy::kBase64EncodedKeyId: {
       if (custom_kid_.has_value()) {
-        return util::Status(
+        return absl::Status(
             absl::StatusCode::kInvalidArgument,
             "Custom kid must not be set for KidStrategy::kBase64EncodedKeyId.");
       }
@@ -72,14 +72,14 @@ util::StatusOr<absl::optional<std::string>> JwtHmacKey::Builder::ComputeKid() {
     }
     case JwtHmacParameters::KidStrategy::kCustom: {
       if (!custom_kid_.has_value()) {
-        return util::Status(absl::StatusCode::kInvalidArgument,
+        return absl::Status(absl::StatusCode::kInvalidArgument,
                             "Custom kid must be set for KidStrategy::kCustom.");
       }
       return custom_kid_;
     }
     case JwtHmacParameters::KidStrategy::kIgnored: {
       if (custom_kid_.has_value()) {
-        return util::Status(
+        return absl::Status(
             absl::StatusCode::kInvalidArgument,
             "Custom kid must not be set for KidStrategy::kIgnored.");
       }
@@ -87,40 +87,40 @@ util::StatusOr<absl::optional<std::string>> JwtHmacKey::Builder::ComputeKid() {
     }
     default:
       // Should be unreachable if all valid kid strategies have been handled.
-      return util::Status(absl::StatusCode::kFailedPrecondition,
+      return absl::Status(absl::StatusCode::kFailedPrecondition,
                           "Unknown kid strategy.");
   }
 }
 
-util::StatusOr<JwtHmacKey> JwtHmacKey::Builder::Build(
+absl::StatusOr<JwtHmacKey> JwtHmacKey::Builder::Build(
     PartialKeyAccessToken token) {
   if (!parameters_.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "JWT HMAC parameters must be specified.");
   }
   if (!key_bytes_.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "JWT HMAC key bytes must be specified.");
   }
   if (parameters_->KeySizeInBytes() != key_bytes_->size()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Actual JWT HMAC key size does not match size specified in "
         "the parameters.");
   }
   if (parameters_->HasIdRequirement() && !id_requirement_.has_value()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create key without ID requirement with parameters with ID "
         "requirement");
   }
   if (!parameters_->HasIdRequirement() && id_requirement_.has_value()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create key with ID requirement with parameters without ID "
         "requirement");
   }
-  util::StatusOr<absl::optional<std::string>> kid = ComputeKid();
+  absl::StatusOr<absl::optional<std::string>> kid = ComputeKid();
   if (!kid.ok()) {
     return kid.status();
   }

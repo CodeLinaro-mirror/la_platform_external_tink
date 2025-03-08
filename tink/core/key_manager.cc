@@ -29,29 +29,29 @@ namespace tink {
 class AlwaysFailingKeyFactory : public KeyFactory {
  public:
   AlwaysFailingKeyFactory() = delete;
-  explicit AlwaysFailingKeyFactory(const crypto::tink::util::Status& status)
+  explicit AlwaysFailingKeyFactory(const absl::Status& status)
       : status_(status) {}
 
-  crypto::tink::util::StatusOr<std::unique_ptr<portable_proto::MessageLite>>
-  NewKey(const portable_proto::MessageLite& key_format) const override {
+  absl::StatusOr<std::unique_ptr<portable_proto::MessageLite>> NewKey(
+      const portable_proto::MessageLite& key_format) const override {
     return status_;
   }
 
-  crypto::tink::util::StatusOr<std::unique_ptr<portable_proto::MessageLite>>
-  NewKey(absl::string_view serialized_key_format) const override {
+  absl::StatusOr<std::unique_ptr<portable_proto::MessageLite>> NewKey(
+      absl::string_view serialized_key_format) const override {
     return status_;
   }
 
-  crypto::tink::util::StatusOr<std::unique_ptr<google::crypto::tink::KeyData>>
-  NewKeyData(absl::string_view serialized_key_format) const override {
+  absl::StatusOr<std::unique_ptr<google::crypto::tink::KeyData>> NewKeyData(
+      absl::string_view serialized_key_format) const override {
     return status_;
   }
 
  private:
-  crypto::tink::util::Status status_;
+  absl::Status status_;
 };
 std::unique_ptr<KeyFactory> KeyFactory::AlwaysFailingFactory(
-    const crypto::tink::util::Status& status) {
+    const absl::Status& status) {
   return absl::make_unique<AlwaysFailingKeyFactory>(status);
 }
 }  // namespace tink

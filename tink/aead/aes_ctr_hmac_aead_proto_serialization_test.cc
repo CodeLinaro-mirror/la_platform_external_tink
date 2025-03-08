@@ -31,6 +31,7 @@
 #include "tink/internal/proto_key_serialization.h"
 #include "tink/internal/proto_parameters_serialization.h"
 #include "tink/internal/serialization.h"
+#include "tink/internal/tink_proto_structs.h"
 #include "tink/key.h"
 #include "tink/parameters.h"
 #include "tink/partial_key_access.h"
@@ -52,11 +53,11 @@ using ::crypto::tink::subtle::Random;
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
 using ::google::crypto::tink::AesCtrHmacAeadKeyFormat;
-using ::google::crypto::tink::AesCtrKey;
+using AesCtrKeyProto = ::google::crypto::tink::AesCtrKey;
 using ::google::crypto::tink::AesCtrKeyFormat;
 using ::google::crypto::tink::AesCtrParams;
 using ::google::crypto::tink::HashType;
-using ::google::crypto::tink::HmacKey;
+using HmacKeyProto = ::google::crypto::tink::HmacKey;
 using ::google::crypto::tink::HmacKeyFormat;
 using ::google::crypto::tink::HmacParams;
 using ::google::crypto::tink::KeyData;
@@ -145,8 +146,8 @@ google::crypto::tink::AesCtrHmacAeadKey BuildAesCtrHmacAeadKey(
     int iv_size, int tag_size, HashType proto_hash_type, int aes_ctr_version,
     int hmac_version) {
   google::crypto::tink::AesCtrHmacAeadKey aes_ctr_hmac_aead_key;
-  HmacKey& hmac_key = *aes_ctr_hmac_aead_key.mutable_hmac_key();
-  AesCtrKey& aes_ctr_key = *aes_ctr_hmac_aead_key.mutable_aes_ctr_key();
+  HmacKeyProto& hmac_key = *aes_ctr_hmac_aead_key.mutable_hmac_key();
+  AesCtrKeyProto& aes_ctr_key = *aes_ctr_hmac_aead_key.mutable_aes_ctr_key();
 
   AesCtrParams& aes_ctr_params = *aes_ctr_key.mutable_params();
   aes_ctr_params.set_iv_size(iv_size);
@@ -176,20 +177,20 @@ TEST_P(AesCtrHmacAeadProtoSerializationTest, ParseParameters) {
           test_case.aes_key_size, test_case.hmac_key_size, test_case.iv_size,
           test_case.tag_size, test_case.proto_hash_type, /*hmac_version=*/0);
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kTypeUrl, test_case.output_prefix_type,
           aes_ctr_hmac_aead_key_format.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parsed_parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parsed_parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   ASSERT_THAT(parsed_parameters, IsOk());
   EXPECT_THAT((*parsed_parameters)->HasIdRequirement(),
               Eq(test_case.id_requirement.has_value()));
 
-  util::StatusOr<AesCtrHmacAeadParameters> expected_parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> expected_parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(test_case.aes_key_size)
           .SetHmacKeySizeInBytes(test_case.hmac_key_size)
@@ -210,17 +211,15 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest,
       /*aes_key_size=*/16, /*hmac_key_size=*/16, /*iv_size=*/16,
       /*tag_size=*/16, HashType::SHA256, /*hmac_version=*/0);
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kTypeUrl, OutputPrefixType::RAW, "invalid_serialization");
   ASSERT_THAT(serialization, IsOk());
 
-  EXPECT_THAT(
-      internal::MutableSerializationRegistry::GlobalInstance()
-          .ParseParameters(*serialization)
-          .status(),
-      StatusIs(absl::StatusCode::kInvalidArgument,
-               HasSubstr("Failed to parse AesCtrHmacAeadKeyFormat proto")));
+  EXPECT_THAT(internal::MutableSerializationRegistry::GlobalInstance()
+                  .ParseParameters(*serialization)
+                  .status(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST_F(AesCtrHmacAeadProtoSerializationTest,
@@ -231,7 +230,7 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest,
       /*aes_key_size=*/16, /*hmac_key_size=*/16, /*iv_size=*/16,
       /*tag_size=*/16, HashType::SHA256, /*hmac_version=*/0);
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kTypeUrl, OutputPrefixType::UNKNOWN_PREFIX,
           key_format_proto.SerializeAsString());
@@ -254,7 +253,7 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest,
       /*aes_key_size=*/16, /*hmac_key_size=*/16, /*iv_size=*/16,
       /*tag_size=*/16, HashType::UNKNOWN_HASH, /*hmac_version=*/0);
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kTypeUrl, OutputPrefixType::RAW,
           key_format_proto.SerializeAsString());
@@ -277,7 +276,7 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest,
       /*aes_key_size=*/16, /*hmac_key_size=*/16, /*iv_size=*/16,
       /*tag_size=*/16, HashType::SHA256, /*hmac_version=*/1);
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kTypeUrl, OutputPrefixType::RAW,
           key_format_proto.SerializeAsString());
@@ -294,7 +293,7 @@ TEST_P(AesCtrHmacAeadProtoSerializationTest, SerializeParameters) {
   TestCase test_case = GetParam();
   ASSERT_THAT(RegisterAesCtrHmacAeadProtoSerialization(), IsOk());
 
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(test_case.aes_key_size)
           .SetHmacKeySizeInBytes(test_case.hmac_key_size)
@@ -305,7 +304,7 @@ TEST_P(AesCtrHmacAeadProtoSerializationTest, SerializeParameters) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeParameters<internal::ProtoParametersSerialization>(
               *parameters);
@@ -317,13 +316,15 @@ TEST_P(AesCtrHmacAeadProtoSerializationTest, SerializeParameters) {
           serialization->get());
   ASSERT_THAT(proto_serialization, NotNull());
 
-  EXPECT_THAT(proto_serialization->GetKeyTemplate().type_url(), Eq(kTypeUrl));
-  EXPECT_THAT(proto_serialization->GetKeyTemplate().output_prefix_type(),
-              Eq(test_case.output_prefix_type));
+  const internal::KeyTemplateStruct& key_template =
+      proto_serialization->GetKeyTemplateStruct();
+  EXPECT_THAT(key_template.type_url, Eq(kTypeUrl));
+  EXPECT_THAT(key_template.output_prefix_type,
+              Eq(static_cast<internal::OutputPrefixTypeEnum>(
+                  test_case.output_prefix_type)));
 
   AesCtrHmacAeadKeyFormat aes_ctr_hmac_aead_key_format;
-  ASSERT_THAT(aes_ctr_hmac_aead_key_format.ParseFromString(
-                  proto_serialization->GetKeyTemplate().value()),
+  ASSERT_THAT(aes_ctr_hmac_aead_key_format.ParseFromString(key_template.value),
               IsTrue());
   ASSERT_THAT(aes_ctr_hmac_aead_key_format.aes_ctr_key_format().key_size(),
               Eq(test_case.aes_key_size));
@@ -353,13 +354,13 @@ TEST_P(AesCtrHmacAeadProtoSerializationTest, ParseKey) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC,
           test_case.output_prefix_type, test_case.id_requirement);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key, IsOk());
@@ -368,7 +369,7 @@ TEST_P(AesCtrHmacAeadProtoSerializationTest, ParseKey) {
   EXPECT_THAT((*key)->GetParameters().HasIdRequirement(),
               Eq(test_case.id_requirement.has_value()));
 
-  util::StatusOr<AesCtrHmacAeadParameters> expected_parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> expected_parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(test_case.aes_key_size)
           .SetHmacKeySizeInBytes(test_case.hmac_key_size)
@@ -378,7 +379,7 @@ TEST_P(AesCtrHmacAeadProtoSerializationTest, ParseKey) {
           .SetVariant(test_case.variant)
           .Build();
   ASSERT_THAT(expected_parameters, IsOk());
-  util::StatusOr<AesCtrHmacAeadKey> expected_key =
+  absl::StatusOr<AesCtrHmacAeadKey> expected_key =
       AesCtrHmacAeadKey::Builder()
           .SetParameters(*expected_parameters)
           .SetAesKeyBytes(
@@ -404,13 +405,13 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest, ParseLegacyKeyAsCrunchy) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC,
           OutputPrefixType::LEGACY, /*id_requirement=*/123);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key, IsOk());
@@ -429,13 +430,13 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest,
   RestrictedData serialized_key =
       RestrictedData("invalid_serialization", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::TINK,
           /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
 
@@ -456,13 +457,13 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest, ParseKeyNoSecretKeyAccessFails) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::TINK,
           /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, /*token=*/absl::nullopt);
   EXPECT_THAT(key.status(), StatusIs(absl::StatusCode::kPermissionDenied,
@@ -482,13 +483,13 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest, ParseKeyWithInvalidVersionFails) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::TINK,
           /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   EXPECT_THAT(key.status(),
@@ -509,13 +510,13 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest,
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::TINK,
           /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   EXPECT_THAT(
@@ -538,13 +539,13 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest,
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::TINK,
           /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   EXPECT_THAT(
@@ -559,7 +560,7 @@ TEST_P(AesCtrHmacAeadProtoSerializationTest, SerializeKey) {
 
   std::string aes_key_bytes = Random::GetRandomBytes(test_case.aes_key_size);
   std::string hmac_key_bytes = Random::GetRandomBytes(test_case.hmac_key_size);
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(test_case.aes_key_size)
           .SetHmacKeySizeInBytes(test_case.hmac_key_size)
@@ -570,7 +571,7 @@ TEST_P(AesCtrHmacAeadProtoSerializationTest, SerializeKey) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesCtrHmacAeadKey> key =
+  absl::StatusOr<AesCtrHmacAeadKey> key =
       AesCtrHmacAeadKey::Builder()
           .SetParameters(*parameters)
           .SetAesKeyBytes(
@@ -581,7 +582,7 @@ TEST_P(AesCtrHmacAeadProtoSerializationTest, SerializeKey) {
           .Build(GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeKey<internal::ProtoKeySerialization>(
               *key, InsecureSecretKeyAccess::Get());
@@ -619,7 +620,7 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest,
 
   std::string aes_key_bytes = Random::GetRandomBytes(16);
   std::string hmac_key_bytes = Random::GetRandomBytes(16);
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -630,7 +631,7 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest,
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesCtrHmacAeadKey> key =
+  absl::StatusOr<AesCtrHmacAeadKey> key =
       AesCtrHmacAeadKey::Builder()
           .SetParameters(*parameters)
           .SetAesKeyBytes(
@@ -641,7 +642,7 @@ TEST_F(AesCtrHmacAeadProtoSerializationTest,
           .Build(GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeKey<internal::ProtoKeySerialization>(*key, absl::nullopt);
   EXPECT_THAT(serialization.status(),

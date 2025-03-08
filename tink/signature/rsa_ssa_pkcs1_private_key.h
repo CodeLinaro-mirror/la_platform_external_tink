@@ -17,10 +17,13 @@
 #ifndef TINK_SIGNATURE_RSA_SSA_PKCS1_PRIVATE_KEY_H_
 #define TINK_SIGNATURE_RSA_SSA_PKCS1_PRIVATE_KEY_H_
 
+#include <memory>
+
 #include "absl/types/optional.h"
 #include "tink/key.h"
 #include "tink/partial_key_access_token.h"
 #include "tink/restricted_big_integer.h"
+#include "tink/signature/rsa_ssa_pkcs1_parameters.h"
 #include "tink/signature/rsa_ssa_pkcs1_public_key.h"
 #include "tink/signature/signature_private_key.h"
 #include "tink/util/statusor.h"
@@ -58,7 +61,7 @@ class RsaSsaPkcs1PrivateKey : public SignaturePrivateKey {
     Builder& SetCrtCoefficient(const RestrictedBigInteger& q_inv);
 
     // Creates RsaSsaPkcs1 private key object from this builder.
-    util::StatusOr<RsaSsaPkcs1PrivateKey> Build(PartialKeyAccessToken token);
+    absl::StatusOr<RsaSsaPkcs1PrivateKey> Build(PartialKeyAccessToken token);
 
    private:
     absl::optional<RsaSsaPkcs1PublicKey> public_key_;
@@ -90,7 +93,15 @@ class RsaSsaPkcs1PrivateKey : public SignaturePrivateKey {
     return public_key_;
   }
 
+  const RsaSsaPkcs1Parameters& GetParameters() const override {
+    return GetPublicKey().GetParameters();
+  }
+
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<RsaSsaPkcs1PrivateKey>(*this);
+  }
 
  private:
   explicit RsaSsaPkcs1PrivateKey(const RsaSsaPkcs1PublicKey& public_key,

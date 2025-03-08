@@ -29,6 +29,7 @@
 #include "openssl/curve25519.h"
 #include "openssl/hrss.h"
 #include "tink/internal/fips_utils.h"
+#include "tink/internal/secret_buffer.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/hkdf.h"
 #include "tink/subtle/random.h"
@@ -46,7 +47,7 @@ namespace subtle {
 // Curve25519. This method was designed to be generic enough to faciliate the
 // extension of this hybrid KEM to support other curves.
 // static
-util::StatusOr<std::unique_ptr<const Cecpq2HkdfSenderKemBoringSsl>>
+absl::StatusOr<std::unique_ptr<const Cecpq2HkdfSenderKemBoringSsl>>
 Cecpq2HkdfSenderKemBoringSsl::New(subtle::EllipticCurveType curve,
                                   const absl::string_view ec_pubx,
                                   const absl::string_view ec_puby,
@@ -56,7 +57,7 @@ Cecpq2HkdfSenderKemBoringSsl::New(subtle::EllipticCurveType curve,
       return Cecpq2HkdfX25519SenderKemBoringSsl::New(curve, ec_pubx, ec_puby,
                                                      marshalled_hrss_pub);
     default:
-      return util::Status(absl::StatusCode::kUnimplemented,
+      return absl::Status(absl::StatusCode::kUnimplemented,
                           "Unsupported elliptic curve");
   }
 }
@@ -69,7 +70,7 @@ Cecpq2HkdfX25519SenderKemBoringSsl::Cecpq2HkdfX25519SenderKemBoringSsl(
 }
 
 // static
-util::StatusOr<std::unique_ptr<const Cecpq2HkdfSenderKemBoringSsl>>
+absl::StatusOr<std::unique_ptr<const Cecpq2HkdfSenderKemBoringSsl>>
 Cecpq2HkdfX25519SenderKemBoringSsl::New(
     subtle::EllipticCurveType curve, const absl::string_view pubx,
     const absl::string_view puby, const absl::string_view marshalled_hrss_pub) {
@@ -79,19 +80,19 @@ Cecpq2HkdfX25519SenderKemBoringSsl::New(
 
   // Basic input checking
   if (curve != CURVE25519) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "curve is not CURVE25519");
   }
   if (pubx.size() != X25519_PUBLIC_VALUE_LEN) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "pubx has unexpected length");
   }
   if (!puby.empty()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "puby is not empty");
   }
   if (marshalled_hrss_pub.size() != HRSS_PUBLIC_KEY_BYTES) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "marshalled_hrss_pub has unexpected length");
   }
 
@@ -101,26 +102,27 @@ Cecpq2HkdfX25519SenderKemBoringSsl::New(
   return std::move(sender_kem);
 }
 
-util::StatusOr<std::unique_ptr<const Cecpq2HkdfSenderKemBoringSsl::KemKey>>
+absl::StatusOr<std::unique_ptr<const Cecpq2HkdfSenderKemBoringSsl::KemKey>>
 Cecpq2HkdfX25519SenderKemBoringSsl::GenerateKey(
     subtle::HashType hash, absl::string_view hkdf_salt,
     absl::string_view hkdf_info, uint32_t key_size_in_bytes,
     subtle::EcPointFormat point_format) const {
   // Basic input validation:
   if (point_format != EcPointFormat::COMPRESSED) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "X25519 only supports compressed elliptic curve points");
   }
   if (key_size_in_bytes < 32) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "key size length is smaller than 32 bytes "
                         "and thus not post-quantum secure.");
   }
 
   // Generate the ephemeral X25519 key pair. Note that the
   // X25519_kem_bytes holds the X25519 public key
-  util::SecretData ephemeral_x25519_private_key(X25519_PRIVATE_KEY_LEN);
+  crypto::tink::internal::SecretBuffer ephemeral_x25519_private_key(
+      X25519_PRIVATE_KEY_LEN);
   std::string x25519_kem_bytes(X25519_PUBLIC_VALUE_LEN, '\0');
   X25519_keypair(const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(
                      x25519_kem_bytes.data())),
@@ -128,13 +130,12 @@ Cecpq2HkdfX25519SenderKemBoringSsl::GenerateKey(
 
   // Generate the x25519 shared secret using peer's X25519 public key and
   // locally generated ephemeral X25519 private key
-  util::SecretData x25519_shared_secret(X25519_SHARED_KEY_LEN);
+  internal::SecretBuffer x25519_shared_secret(X25519_SHARED_KEY_LEN);
   X25519(x25519_shared_secret.data(), ephemeral_x25519_private_key.data(),
          reinterpret_cast<const uint8_t *>(peer_public_key_x25519_.data()));
 
   // Declare the hrss_shared_secret and hrss_kem_bytes to be used in HRSS encaps
-  util::SecretData hrss_shared_secret;
-  hrss_shared_secret.resize(HRSS_KEY_BYTES);
+  internal::SecretBuffer hrss_shared_secret(HRSS_KEY_BYTES);
   // The hrss_kem_bytes will contain the encrypted shared secret
   std::string hrss_kem_bytes;
   subtle::ResizeStringUninitialized(&hrss_kem_bytes, HRSS_CIPHERTEXT_BYTES);
@@ -151,19 +152,18 @@ Cecpq2HkdfX25519SenderKemBoringSsl::GenerateKey(
 
   // Generate a random shared secret and encapsulate it using peer's HRSS public
   // key
-  HRSS_encap(const_cast<uint8_t *>(
-                 reinterpret_cast<const uint8_t *>(hrss_kem_bytes.data())),
-             reinterpret_cast<uint8_t *>(hrss_shared_secret.data()),
-             &peer_public_key_hrss, encaps_entropy.data());
+  HRSS_encap(reinterpret_cast<uint8_t *>(hrss_kem_bytes.data()),
+             hrss_shared_secret.data(), &peer_public_key_hrss,
+             encaps_entropy.data());
 
   // Concatenate the two kem_bytes
   std::string kem_bytes(x25519_kem_bytes);
   kem_bytes += hrss_kem_bytes;
 
   // Concatenate the two shared secrets with the two kem_bytes
-  std::string kem_bytes_and_shared_secrets = absl::StrCat(
-      kem_bytes, util::SecretDataAsStringView(x25519_shared_secret),
-      util::SecretDataAsStringView(hrss_shared_secret));
+  std::string kem_bytes_and_shared_secrets =
+      absl::StrCat(kem_bytes, x25519_shared_secret.AsStringView(),
+                   hrss_shared_secret.AsStringView());
   util::SecretData ikm =
       util::SecretDataFromStringView(kem_bytes_and_shared_secrets);
 

@@ -26,6 +26,7 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/base/config.h"
+#include "absl/base/nullability.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
@@ -35,7 +36,9 @@
 #include "tink/aead.h"
 #include "tink/internal/aes_util.h"
 #include "tink/internal/call_with_core_dump_protection.h"
+#include "tink/internal/dfsan_forwarders.h"
 #include "tink/internal/fips_utils.h"
+#include "tink/internal/secret_buffer.h"
 #include "tink/internal/util.h"
 #include "tink/subtle/random.h"
 #include "tink/subtle/subtle_util.h"
@@ -87,13 +90,13 @@ void BigEndianStore64(uint64_t val, uint8_t dst[8]) {
 #endif
 }
 
-crypto::tink::util::StatusOr<util::SecretUniquePtr<AES_KEY>> InitAesKey(
+absl::StatusOr<util::SecretUniquePtr<AES_KEY>> InitAesKey(
     const util::SecretData& key) {
   auto aeskey = util::MakeSecretUniquePtr<AES_KEY>();
   int status = AES_set_encrypt_key(key.data(), key.size() * 8, aeskey.get());
   // status != 0 happens if key_value is invalid.
   if (status != 0) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Invalid key value");
   }
   return std::move(aeskey);
@@ -137,32 +140,32 @@ bool AesEaxBoringSsl::IsValidNonceSize(size_t nonce_size_in_bytes) {
 }
 
 util::SecretData AesEaxBoringSsl::ComputeB() const {
-  util::SecretData block(kBlockSize, 0);
+  internal::SecretBuffer block(kBlockSize, 0);
   EncryptBlock(&block);
   MultiplyByX(block.data(), block.data());
-  return block;
+  return util::internal::AsSecretData(std::move(block));
 }
 
 util::SecretData AesEaxBoringSsl::ComputeP() const {
-  util::SecretData rv(kBlockSize, 0);
+  internal::SecretBuffer rv(kBlockSize, 0);
   MultiplyByX(B_.data(), rv.data());
-  return rv;
+  return util::internal::AsSecretData(std::move(rv));
 }
 
-crypto::tink::util::StatusOr<std::unique_ptr<Aead>> AesEaxBoringSsl::New(
+absl::StatusOr<std::unique_ptr<Aead>> AesEaxBoringSsl::New(
     const util::SecretData& key, size_t nonce_size_in_bytes) {
   auto status = internal::CheckFipsCompatibility<AesEaxBoringSsl>();
   if (!status.ok()) return status;
 
   if (!IsValidKeySize(key.size())) {
-    return util::Status(absl::StatusCode::kInvalidArgument, "Invalid key size");
+    return absl::Status(absl::StatusCode::kInvalidArgument, "Invalid key size");
   }
   if (!IsValidNonceSize(nonce_size_in_bytes)) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Invalid nonce size");
   }
   return internal::CallWithCoreDumpProtection(
-      [&]() -> util::StatusOr<std::unique_ptr<Aead>> {
+      [&]() -> absl::StatusOr<std::unique_ptr<Aead>> {
         auto aeskey_or = InitAesKey(key);
         if (!aeskey_or.ok()) {
           return aeskey_or.status();
@@ -189,11 +192,12 @@ AesEaxBoringSsl::Block AesEaxBoringSsl::Pad(
   return padded_block;
 }
 
-void AesEaxBoringSsl::EncryptBlock(util::SecretData* block) const {
+void AesEaxBoringSsl::EncryptBlock(
+    absl::Nonnull<internal::SecretBuffer*> block) const {
   AES_encrypt(block->data(), block->data(), aeskey_.get());
 }
 
-void AesEaxBoringSsl::EncryptBlock(Block* block) const {
+void AesEaxBoringSsl::EncryptBlock(absl::Nonnull<Block*> block) const {
   AES_encrypt(block->data(), block->data(), aeskey_.get());
 }
 
@@ -227,7 +231,7 @@ AesEaxBoringSsl::Block AesEaxBoringSsl::Omac(absl::Span<const uint8_t> data,
   return mac;
 }
 
-util::Status AesEaxBoringSsl::CtrCrypt(const Block& N, absl::string_view in,
+absl::Status AesEaxBoringSsl::CtrCrypt(const Block& N, absl::string_view in,
                                        absl::Span<char> out) const {
   // Make a copy of N, since BoringSsl changes ctr.
   uint8_t ctr[kBlockSize];
@@ -235,7 +239,7 @@ util::Status AesEaxBoringSsl::CtrCrypt(const Block& N, absl::string_view in,
   return internal::AesCtr128Crypt(in, ctr, aeskey_.get(), out);
 }
 
-crypto::tink::util::StatusOr<std::string> AesEaxBoringSsl::Encrypt(
+absl::StatusOr<std::string> AesEaxBoringSsl::Encrypt(
     absl::string_view plaintext, absl::string_view associated_data) const {
   // BoringSSL expects a non-null pointer for plaintext and associated_data,
   // regardless of whether the size is 0.
@@ -246,13 +250,17 @@ crypto::tink::util::StatusOr<std::string> AesEaxBoringSsl::Encrypt(
   std::string ciphertext;
   ResizeStringUninitialized(&ciphertext, ciphertext_size);
   return internal::CallWithCoreDumpProtection(
-      [&]() -> util::StatusOr<std::string> {
+      [&]() -> absl::StatusOr<std::string> {
+        // The ciphertext region is allowed to leak: this never fails and
+        // the ciphertext can afterwards be given to the adversary.
+        crypto::tink::internal::ScopedAssumeRegionCoreDumpSafe scope_object(
+            ciphertext.data(), ciphertext.size());
         const std::string nonce = Random::GetRandomBytes(nonce_size_);
         const Block N = Omac(nonce, 0);
         const Block H = Omac(associated_data, 1);
         uint8_t* ct_start =
             reinterpret_cast<uint8_t*>(&ciphertext[nonce_size_]);
-        util::Status res = CtrCrypt(
+        absl::Status res = CtrCrypt(
             N, plaintext, absl::MakeSpan(ciphertext).subspan(nonce_size_));
         if (!res.ok()) {
           return res;
@@ -263,11 +271,15 @@ crypto::tink::util::StatusOr<std::string> AesEaxBoringSsl::Encrypt(
         absl::c_copy(nonce, ciphertext.begin());
         std::copy_n(mac.begin(), kTagSize,
                     &ciphertext[ciphertext_size - kTagSize]);
+        // Declassify the ciphertext: this is now safe to give to the adversary.
+        // (Note: we currently do not propagate labels of the associated data).
+        crypto::tink::internal::DfsanClearLabel(ciphertext.data(),
+                                                ciphertext_size);
         return ciphertext;
       });
 }
 
-crypto::tink::util::StatusOr<std::string> AesEaxBoringSsl::Decrypt(
+absl::StatusOr<std::string> AesEaxBoringSsl::Decrypt(
     absl::string_view ciphertext, absl::string_view associated_data) const {
   // BoringSSL expects a non-null pointer for associated_data,
   // regardless of whether the size is 0.
@@ -275,7 +287,7 @@ crypto::tink::util::StatusOr<std::string> AesEaxBoringSsl::Decrypt(
 
   size_t ct_size = ciphertext.size();
   if (ct_size < nonce_size_ + kTagSize) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Ciphertext too short");
   }
   size_t out_size = ct_size - kTagSize - nonce_size_;
@@ -283,7 +295,7 @@ crypto::tink::util::StatusOr<std::string> AesEaxBoringSsl::Decrypt(
   absl::string_view encrypted = ciphertext.substr(nonce_size_, out_size);
   absl::string_view tag = ciphertext.substr(ct_size - kTagSize, kTagSize);
   return internal::CallWithCoreDumpProtection(
-      [&]() -> util::StatusOr<std::string> {
+      [&]() -> absl::StatusOr<std::string> {
         const Block N = Omac(nonce, 0);
         const Block H = Omac(associated_data, 1);
         Block mac = Omac(encrypted, 2);
@@ -291,15 +303,33 @@ crypto::tink::util::StatusOr<std::string> AesEaxBoringSsl::Decrypt(
         XorBlock(H.data(), &mac);
         const uint8_t* sig = reinterpret_cast<const uint8_t*>(tag.data());
         if (!EqualBlocks(mac.data(), sig)) {
-          return util::Status(absl::StatusCode::kInvalidArgument,
+          return absl::Status(absl::StatusCode::kInvalidArgument,
                               "Tag mismatch");
         }
         std::string plaintext;
         ResizeStringUninitialized(&plaintext, out_size);
-        util::Status res = CtrCrypt(N, encrypted, absl::MakeSpan(plaintext));
+        // The plaintext region is allowed to leak. In successful decryptions,
+        // the adversary can already get the plaintext via core dumps (since
+        // the API specifies that the plaintext is in a std::string, so this is
+        // the users responsibility). Hence, this gives adversaries access to
+        // data which is stored *during* the computation, and data which would
+        // be erased because the tag is wrong. Since EAX is a counter mode, this
+        // means that the adversary can potentially obtain key streams for IVs
+        // for which he does either not know a valid tag (which seems useless if
+        // he didn't see a valid ciphertext) or without querying the actual
+        // ciphertext (which does not seem useful). Hence, we declare this to be
+        // sufficiently safe at the moment.
+        char* plaintext_start = &plaintext[0];
+        crypto::tink::internal::ScopedAssumeRegionCoreDumpSafe scope_object(
+            plaintext_start, out_size);
+        absl::Status res = CtrCrypt(N, encrypted, absl::MakeSpan(plaintext));
         if (!res.ok()) {
           return res;
         }
+        // Declassify the plaintext: this is now safe to give to the adversary
+        // (since the API specifies that the plaintext is in a std::string which
+        // can leak so the user is responsible for this).
+        crypto::tink::internal::DfsanClearLabel(plaintext_start, out_size);
         return plaintext;
       });
 }

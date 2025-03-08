@@ -41,7 +41,7 @@ class Ed25519VerifyKeyManager
                             List<PublicKeyVerify>> {
  public:
   class PublicKeyVerifyFactory : public PrimitiveFactory<PublicKeyVerify> {
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
+    absl::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
         const google::crypto::tink::Ed25519PublicKey& ecdsa_public_key)
         const override;
   };
@@ -58,7 +58,7 @@ class Ed25519VerifyKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::Ed25519PublicKey& key) const override;
 
  private:

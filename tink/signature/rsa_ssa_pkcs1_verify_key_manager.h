@@ -45,7 +45,7 @@ class RsaSsaPkcs1VerifyKeyManager
                             List<PublicKeyVerify>> {
  public:
   class PublicKeyVerifyFactory : public PrimitiveFactory<PublicKeyVerify> {
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
+    absl::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
         const google::crypto::tink::RsaSsaPkcs1PublicKey&
             rsa_ssa_pkcs1_public_key) const override;
   };
@@ -62,10 +62,10 @@ class RsaSsaPkcs1VerifyKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::RsaSsaPkcs1PublicKey& key) const override;
 
-  crypto::tink::util::Status ValidateParams(
+  absl::Status ValidateParams(
       const google::crypto::tink::RsaSsaPkcs1Params& params) const;
 
   internal::FipsCompatibility FipsStatus() const override {

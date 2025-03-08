@@ -24,6 +24,10 @@
 #include "tink/configuration.h"
 #include "tink/hybrid/ecies_aead_hkdf_private_key_manager.h"
 #include "tink/hybrid/hybrid_key_templates.h"
+#include "tink/hybrid/internal/hpke_test_util.h"
+#include "tink/hybrid/internal/testing/hpke_test_vectors.h"
+#include "tink/hybrid/internal/testing/hybrid_test_vectors.h"
+#include "tink/key_status.h"
 #ifdef OPENSSL_IS_BORINGSSL
 #include "tink/hybrid/internal/hpke_private_key_manager.h"
 #endif
@@ -50,11 +54,12 @@ using ::crypto::tink::test::IsOkAndHolds;
 using ::google::crypto::tink::KeyTemplate;
 using ::testing::TestWithParam;
 using ::testing::Values;
+using ::testing::Eq;
 
 TEST(HybridV0Test, PrimitiveWrappers) {
   Configuration config;
   ASSERT_THAT(AddHybridV0(config), IsOk());
-  util::StatusOr<const KeysetWrapperStore*> store =
+  absl::StatusOr<const KeysetWrapperStore*> store =
       ConfigurationImpl::GetKeysetWrapperStore(config);
   ASSERT_THAT(store, IsOk());
 
@@ -65,13 +70,13 @@ TEST(HybridV0Test, PrimitiveWrappers) {
 TEST(HybridV0Test, KeyManagers) {
   Configuration config;
   ASSERT_THAT(AddHybridV0(config), IsOk());
-  util::StatusOr<const KeyTypeInfoStore*> store =
+  absl::StatusOr<const KeyTypeInfoStore*> store =
       ConfigurationImpl::GetKeyTypeInfoStore(config);
   ASSERT_THAT(store, IsOk());
 
   KeyGenConfiguration key_gen_config;
   ASSERT_THAT(AddHybridKeyGenV0(key_gen_config), IsOk());
-  util::StatusOr<const KeyTypeInfoStore*> key_gen_store =
+  absl::StatusOr<const KeyTypeInfoStore*> key_gen_store =
       KeyGenConfigurationImpl::GetKeyTypeInfoStore(key_gen_config);
   ASSERT_THAT(key_gen_store, IsOk());
 
@@ -90,6 +95,7 @@ using HybridV0KeyTypesTest = TestWithParam<KeyTemplate>;
 INSTANTIATE_TEST_SUITE_P(
     HybridV0KeyTypesTestSuite, HybridV0KeyTypesTest,
     Values(HybridKeyTemplates::EciesP256HkdfHmacSha256Aes128Gcm(),
+           HybridKeyTemplates::HpkeP256HkdfSha256Aes128Gcm(),
            HybridKeyTemplates::HpkeX25519HkdfSha256Aes128Gcm()));
 #else
 INSTANTIATE_TEST_SUITE_P(
@@ -103,25 +109,88 @@ TEST_P(HybridV0KeyTypesTest, GetPrimitive) {
   Configuration config;
   ASSERT_THAT(AddHybridV0(config), IsOk());
 
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       KeysetHandle::GenerateNew(GetParam(), key_gen_config);
   ASSERT_THAT(handle, IsOk());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
       (*handle)->GetPublicKeysetHandle(key_gen_config);
   ASSERT_THAT(public_handle, IsOk());
 
-  util::StatusOr<std::unique_ptr<HybridEncrypt>> encrypt =
+  absl::StatusOr<std::unique_ptr<HybridEncrypt>> encrypt =
       (*public_handle)->GetPrimitive<HybridEncrypt>(config);
   ASSERT_THAT(encrypt, IsOk());
-  util::StatusOr<std::unique_ptr<HybridDecrypt>> decrypt =
+  absl::StatusOr<std::unique_ptr<HybridDecrypt>> decrypt =
       (*handle)->GetPrimitive<HybridDecrypt>(config);
   ASSERT_THAT(decrypt, IsOk());
 
   std::string plaintext = "plaintext";
-  util::StatusOr<std::string> ciphertext = (*encrypt)->Encrypt(plaintext, "ad");
+  absl::StatusOr<std::string> ciphertext = (*encrypt)->Encrypt(plaintext, "ad");
   ASSERT_THAT(ciphertext, IsOk());
   EXPECT_THAT((*decrypt)->Decrypt(*ciphertext, "ad"), IsOkAndHolds(plaintext));
 }
+
+#ifdef OPENSSL_IS_BORINGSSL
+
+using HybridTestVectorTest =
+    testing::TestWithParam<internal::HybridTestVector>;
+
+TEST_P(HybridTestVectorTest, DecryptWorks) {
+  const HybridTestVector& param = GetParam();
+  Configuration config;
+  ASSERT_THAT(AddHybridV0(config), IsOk());
+  KeyGenConfiguration key_gen_config;
+  ASSERT_THAT(AddHybridKeyGenV0(key_gen_config), IsOk());
+
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder()
+          .AddEntry(KeysetHandleBuilder::Entry::CreateFromKey(
+              param.hybrid_private_key, KeyStatus::kEnabled,
+              /*is_primary=*/true))
+          .Build();
+  ASSERT_THAT(handle, IsOk());
+
+  absl::StatusOr<std::unique_ptr<HybridDecrypt>> decrypter =
+      handle->GetPrimitive<HybridDecrypt>(config);
+  ASSERT_THAT(decrypter, IsOk());
+  EXPECT_THAT((*decrypter)->Decrypt(param.ciphertext, param.context_info),
+              IsOkAndHolds(Eq(param.plaintext)));
+}
+
+TEST_P(HybridTestVectorTest, EncryptWorks) {
+  const HybridTestVector& param = GetParam();
+  Configuration config;
+  ASSERT_THAT(AddHybridV0(config), IsOk());
+  KeyGenConfiguration key_gen_config;
+  ASSERT_THAT(AddHybridKeyGenV0(key_gen_config), IsOk());
+
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder()
+          .AddEntry(KeysetHandleBuilder::Entry::CreateFromKey(
+              param.hybrid_private_key, KeyStatus::kEnabled,
+              /*is_primary=*/true))
+          .Build();
+  ASSERT_THAT(handle, IsOk());
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
+      handle->GetPublicKeysetHandle(key_gen_config);
+  ASSERT_THAT(public_handle, IsOk());
+
+  absl::StatusOr<std::unique_ptr<HybridDecrypt>> decrypter =
+      handle->GetPrimitive<HybridDecrypt>(config);
+  ASSERT_THAT(decrypter, IsOk());
+  absl::StatusOr<std::unique_ptr<HybridEncrypt>> encrypter =
+      (*public_handle)->GetPrimitive<HybridEncrypt>(config);
+
+  absl::StatusOr<std::string> ciphertext =
+      (*encrypter)->Encrypt(param.plaintext, param.context_info);
+  ASSERT_THAT(ciphertext, IsOk());
+  EXPECT_THAT((*decrypter)->Decrypt(*ciphertext, param.context_info),
+              IsOkAndHolds(Eq(param.plaintext)));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    HpkeTestVectorTest, HybridTestVectorTest,
+    testing::ValuesIn(internal::CreateHpkeTestVectors()));
+#endif
 
 }  // namespace
 }  // namespace internal

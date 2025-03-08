@@ -22,7 +22,6 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "openssl/aes.h"
@@ -32,6 +31,7 @@
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
+#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
@@ -64,14 +64,14 @@ class AesCtrTest : public testing::Test {
 
   // Test vector from NIST SP 800-38A.
   NistAesCtrTestVector test_vector_ = {
-      /*iv=*/absl::HexStringToBytes("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"),
-      /*key=*/absl::HexStringToBytes("2b7e151628aed2a6abf7158809cf4f3c"),
+      /*iv=*/test::HexDecodeOrDie("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"),
+      /*key=*/test::HexDecodeOrDie("2b7e151628aed2a6abf7158809cf4f3c"),
       /*plaintext=*/
-      absl::HexStringToBytes(
+      test::HexDecodeOrDie(
           "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c8"
           "1c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710"),
       /*ciphertext=*/
-      absl::HexStringToBytes(
+      test::HexDecodeOrDie(
           "874d6191b620e3261bef6864990db6ce9806f66b7970fdff8617187bb9fffdff5ae4"
           "df3edbd5d35e5b4f09020db03eab1e031dda2fbe03d1792170a0f3009cee"),
   };
@@ -99,7 +99,7 @@ TEST_F(AesCtrTest, AesCtrPartiallyOverlappingFails) {
             out.begin() + kStartIndex);
   auto plaintext =
       absl::string_view(out).substr(kStartIndex, test_vector_.plaintext.size());
-  util::Status res = AesCtr128Crypt(
+  absl::Status res = AesCtr128Crypt(
       plaintext, reinterpret_cast<uint8_t*>(&test_vector_.iv[0]),
       aes_key_.get(), absl::MakeSpan(out).subspan(0, plaintext.size()));
   // Checking the message to disambiguate from the kInvalidArgumentError that is
@@ -154,7 +154,7 @@ TEST_F(AesCtrTest, AesCtrDecryptInPlace) {
 
 TEST(AesUtilTest, GetAesCtrCipherForKeySize) {
   for (int i = 0; i < 64; i++) {
-    util::StatusOr<const EVP_CIPHER*> cipher = GetAesCtrCipherForKeySize(i);
+    absl::StatusOr<const EVP_CIPHER *> cipher = GetAesCtrCipherForKeySize(i);
     if (i == 16) {
       EXPECT_THAT(cipher, IsOkAndHolds(EVP_aes_128_ctr()));
     } else if (i == 32) {
@@ -167,7 +167,7 @@ TEST(AesUtilTest, GetAesCtrCipherForKeySize) {
 
 TEST(AesUtilTest, GetAesCbcCipherForKeySize) {
   for (int i = 0; i < 64; i++) {
-    util::StatusOr<const EVP_CIPHER*> cipher = GetAesCbcCipherForKeySize(i);
+    absl::StatusOr<const EVP_CIPHER *> cipher = GetAesCbcCipherForKeySize(i);
     if (i == 16) {
       EXPECT_THAT(cipher, IsOkAndHolds(EVP_aes_128_cbc()));
     } else if (i == 32) {

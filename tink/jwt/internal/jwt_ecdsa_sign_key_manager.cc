@@ -20,7 +20,6 @@
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "tink/jwt/internal/jwt_ecdsa_verify_key_manager.h"
@@ -41,15 +40,15 @@ using google::crypto::tink::JwtEcdsaKeyFormat;
 using google::crypto::tink::JwtEcdsaPrivateKey;
 using google::crypto::tink::JwtEcdsaPublicKey;
 
-StatusOr<std::unique_ptr<JwtPublicKeySignInternal>>
+absl::StatusOr<std::unique_ptr<JwtPublicKeySignInternal>>
 JwtEcdsaSignKeyManager::PublicKeySignFactory::Create(
     const JwtEcdsaPrivateKey& jwt_ecdsa_private_key) const {
-  StatusOr<std::string> name = JwtEcdsaVerifyKeyManager::AlgorithmName(
+  absl::StatusOr<std::string> name = JwtEcdsaVerifyKeyManager::AlgorithmName(
       jwt_ecdsa_private_key.public_key().algorithm());
   if (!name.ok()) {
     return name.status();
   }
-  util::StatusOr<std::unique_ptr<PublicKeySign>> sign =
+  absl::StatusOr<std::unique_ptr<PublicKeySign>> sign =
       raw_key_manager_.GetPrimitive<PublicKeySign>(jwt_ecdsa_private_key);
   if (!sign.ok()) {
     return sign.status();
@@ -58,10 +57,11 @@ JwtEcdsaSignKeyManager::PublicKeySignFactory::Create(
   if (jwt_ecdsa_private_key.public_key().has_custom_kid()) {
     custom_kid = jwt_ecdsa_private_key.public_key().custom_kid().value();
   }
-  std::unique_ptr<JwtPublicKeySignInternal> jwt_public_key_sign =
-      absl::make_unique<jwt_internal::JwtPublicKeySignImpl>(*std::move(sign),
-                                                            *name, custom_kid);
-  return std::move(jwt_public_key_sign);
+  if (custom_kid.has_value()) {
+    return jwt_internal::JwtPublicKeySignImpl::RawWithCustomKid(
+        *std::move(sign), *name, *custom_kid);
+  }
+  return jwt_internal::JwtPublicKeySignImpl::Raw(*std::move(sign), *name);
 }
 
 uint32_t JwtEcdsaSignKeyManager::get_version() const {
@@ -77,7 +77,7 @@ const std::string& JwtEcdsaSignKeyManager::get_key_type() const {
   return raw_key_manager_.get_key_type();
 }
 
-StatusOr<JwtEcdsaPrivateKey> JwtEcdsaSignKeyManager::CreateKey(
+absl::StatusOr<JwtEcdsaPrivateKey> JwtEcdsaSignKeyManager::CreateKey(
     const JwtEcdsaKeyFormat& key_format) const {
   return raw_key_manager_.CreateKey(key_format);
 }
@@ -92,7 +92,7 @@ Status JwtEcdsaSignKeyManager::ValidateKeyFormat(
   return raw_key_manager_.ValidateKeyFormat(key_format);
 }
 
-StatusOr<JwtEcdsaPublicKey> JwtEcdsaSignKeyManager::GetPublicKey(
+absl::StatusOr<JwtEcdsaPublicKey> JwtEcdsaSignKeyManager::GetPublicKey(
     const JwtEcdsaPrivateKey& private_key) const {
   return raw_key_manager_.GetPublicKey(private_key);
 }

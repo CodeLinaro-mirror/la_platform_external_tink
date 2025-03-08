@@ -21,6 +21,9 @@
 #include <string>
 
 #include "absl/strings/string_view.h"
+#include "tink/restricted_big_integer.h"
+#include "tink/secret_key_access_token.h"
+#include "tink/util/secret_data.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {
@@ -30,8 +33,12 @@ namespace internal {
 // Returns the value of a big integer `big_integer_encoding` (represented as a
 // big endian encoded string), left padded to obtain a fixed length `length`.
 // Returns an error if the `length` is too short.
-crypto::tink::util::StatusOr<std::string> GetValueOfFixedLength(
+absl::StatusOr<std::string> GetValueOfFixedLength(
     absl::string_view big_integer_encoding, int length);
+
+absl::StatusOr<util::SecretData> GetSecretValueOfFixedLength(
+    const RestrictedBigInteger& big_integer, int length,
+    SecretKeyAccessToken token);
 
 }  // namespace internal
 }  // namespace tink

@@ -37,19 +37,20 @@ namespace crypto {
 namespace tink {
 namespace internal {
 
-util::StatusOr<SenderHpkeContextBoringSsl>
-TestHpkeContextBoringSsl::SetupSender(
-    const HpkeParams &params, absl::string_view recipient_public_key,
-    absl::string_view context_info, absl::string_view seed_for_testing) {
-  util::StatusOr<const EVP_HPKE_KEM *> kem = KemParam(params);
+absl::StatusOr<SenderHpkeContextBoringSsl>
+TestHpkeContextBoringSsl::SetupSender(const HpkeParams &params,
+                                      absl::string_view recipient_public_key,
+                                      absl::string_view context_info,
+                                      absl::string_view seed_for_testing) {
+  absl::StatusOr<const EVP_HPKE_KEM *> kem = KemParam(params);
   if (!kem.ok()) {
     return kem.status();
   }
-  util::StatusOr<const EVP_HPKE_KDF *> kdf = KdfParam(params);
+  absl::StatusOr<const EVP_HPKE_KDF *> kdf = KdfParam(params);
   if (!kdf.ok()) {
     return kdf.status();
   }
-  util::StatusOr<const EVP_HPKE_AEAD *> aead = AeadParam(params);
+  absl::StatusOr<const EVP_HPKE_AEAD *> aead = AeadParam(params);
   if (!aead.ok()) {
     return aead.status();
   }
@@ -64,7 +65,7 @@ TestHpkeContextBoringSsl::SetupSender(
           context_info.size(),
           reinterpret_cast<const uint8_t *>(seed_for_testing.data()),
           seed_for_testing.size())) {
-    return util::Status(absl::StatusCode::kUnknown,
+    return absl::Status(absl::StatusCode::kUnknown,
                         "Unable to set up HPKE sender context.");
   }
   SenderHpkeContextBoringSsl tuple;

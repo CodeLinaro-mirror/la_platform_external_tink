@@ -20,7 +20,6 @@
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
@@ -28,6 +27,7 @@
 #include "tink/jwt/internal/jwt_public_key_verify_internal.h"
 #include "tink/public_key_verify.h"
 #include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
 
 namespace crypto {
@@ -39,15 +39,15 @@ using crypto::tink::util::StatusOr;
 using google::crypto::tink::JwtRsaSsaPssAlgorithm;
 using google::crypto::tink::JwtRsaSsaPssPublicKey;
 
-StatusOr<std::unique_ptr<JwtPublicKeyVerifyInternal>>
+absl::StatusOr<std::unique_ptr<JwtPublicKeyVerifyInternal>>
 JwtRsaSsaPssVerifyKeyManager::PublicKeyVerifyFactory::Create(
     const JwtRsaSsaPssPublicKey& jwt_rsa_ssa_pss_public_key) const {
-  StatusOr<std::string> name =
+  absl::StatusOr<std::string> name =
       AlgorithmName(jwt_rsa_ssa_pss_public_key.algorithm());
   if (!name.ok()) {
     return name.status();
   }
-  StatusOr<std::unique_ptr<PublicKeyVerify>> verify =
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verify =
       raw_key_manager_.GetPrimitive<PublicKeyVerify>(
           jwt_rsa_ssa_pss_public_key);
   if (!verify.ok()) {
@@ -57,10 +57,11 @@ JwtRsaSsaPssVerifyKeyManager::PublicKeyVerifyFactory::Create(
   if (jwt_rsa_ssa_pss_public_key.has_custom_kid()) {
     custom_kid = jwt_rsa_ssa_pss_public_key.custom_kid().value();
   }
-  std::unique_ptr<JwtPublicKeyVerifyInternal> jwt_public_key_verify =
-      absl::make_unique<jwt_internal::JwtPublicKeyVerifyImpl>(
-          *std::move(verify), *name, custom_kid);
-  return std::move(jwt_public_key_verify);
+  if (custom_kid.has_value()) {
+    return jwt_internal::JwtPublicKeyVerifyImpl::RawWithCustomKid(
+        *std::move(verify), *name, *custom_kid);
+  }
+  return jwt_internal::JwtPublicKeyVerifyImpl::Raw(*std::move(verify), *name);
 }
 
 uint32_t JwtRsaSsaPssVerifyKeyManager::get_version() const {
@@ -81,7 +82,7 @@ Status JwtRsaSsaPssVerifyKeyManager::ValidateKey(
   return raw_key_manager_.ValidateKey(key);
 }
 
-StatusOr<std::string> JwtRsaSsaPssVerifyKeyManager::AlgorithmName(
+absl::StatusOr<std::string> JwtRsaSsaPssVerifyKeyManager::AlgorithmName(
     const JwtRsaSsaPssAlgorithm& algorithm) {
   switch (algorithm) {
     case JwtRsaSsaPssAlgorithm::PS256:

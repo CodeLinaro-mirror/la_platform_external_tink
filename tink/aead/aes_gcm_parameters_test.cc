@@ -16,11 +16,14 @@
 
 #include "tink/aead/aes_gcm_parameters.h"
 
+#include <memory>
 #include <tuple>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "tink/parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 
@@ -62,7 +65,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(AesGcmParametersBuildTest, Build) {
   BuildTestCase test_case = GetParam();
 
-  util::StatusOr<AesGcmParameters> parameters =
+  absl::StatusOr<AesGcmParameters> parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(test_case.key_size)
           .SetIvSizeInBytes(test_case.iv_size)
@@ -215,7 +218,7 @@ TEST(AesGcmParametersTest, BuildWithInvalidTagSizeFails) {
 }
 
 TEST(AesGcmParametersTest, CopyConstructor) {
-  util::StatusOr<AesGcmParameters> parameters =
+  absl::StatusOr<AesGcmParameters> parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(16)
           .SetIvSizeInBytes(16)
@@ -225,6 +228,7 @@ TEST(AesGcmParametersTest, CopyConstructor) {
   ASSERT_THAT(parameters, IsOk());
 
   AesGcmParameters copy(*parameters);
+
   EXPECT_THAT(copy.KeySizeInBytes(), Eq(16));
   EXPECT_THAT(copy.IvSizeInBytes(), Eq(16));
   EXPECT_THAT(copy.TagSizeInBytes(), Eq(16));
@@ -233,7 +237,7 @@ TEST(AesGcmParametersTest, CopyConstructor) {
 }
 
 TEST(AesGcmParametersTest, CopyAssignment) {
-  util::StatusOr<AesGcmParameters> parameters =
+  absl::StatusOr<AesGcmParameters> parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(16)
           .SetIvSizeInBytes(16)
@@ -242,12 +246,69 @@ TEST(AesGcmParametersTest, CopyAssignment) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  AesGcmParameters copy = *parameters;
-  EXPECT_THAT(copy.KeySizeInBytes(), Eq(16));
-  EXPECT_THAT(copy.IvSizeInBytes(), Eq(16));
-  EXPECT_THAT(copy.TagSizeInBytes(), Eq(16));
-  EXPECT_THAT(copy.GetVariant(), Eq(AesGcmParameters::Variant::kTink));
-  EXPECT_THAT(copy.HasIdRequirement(), IsTrue());
+  absl::StatusOr<AesGcmParameters> copy =
+      AesGcmParameters::Builder()
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(12)
+          .SetTagSizeInBytes(12)
+          .SetVariant(AesGcmParameters::Variant::kNoPrefix)
+          .Build();
+  ASSERT_THAT(copy, IsOk());
+
+  *copy = *parameters;
+
+  EXPECT_THAT(copy->KeySizeInBytes(), Eq(16));
+  EXPECT_THAT(copy->IvSizeInBytes(), Eq(16));
+  EXPECT_THAT(copy->TagSizeInBytes(), Eq(16));
+  EXPECT_THAT(copy->GetVariant(), Eq(AesGcmParameters::Variant::kTink));
+  EXPECT_THAT(copy->HasIdRequirement(), IsTrue());
+}
+
+TEST(AesGcmParametersTest, MoveConstructor) {
+  absl::StatusOr<AesGcmParameters> parameters =
+      AesGcmParameters::Builder()
+          .SetKeySizeInBytes(16)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesGcmParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  AesGcmParameters move(std::move(*parameters));
+
+  EXPECT_THAT(move.KeySizeInBytes(), Eq(16));
+  EXPECT_THAT(move.IvSizeInBytes(), Eq(16));
+  EXPECT_THAT(move.TagSizeInBytes(), Eq(16));
+  EXPECT_THAT(move.GetVariant(), Eq(AesGcmParameters::Variant::kTink));
+  EXPECT_THAT(move.HasIdRequirement(), IsTrue());
+}
+
+TEST(AesGcmParametersTest, MoveAssignment) {
+  absl::StatusOr<AesGcmParameters> parameters =
+      AesGcmParameters::Builder()
+          .SetKeySizeInBytes(16)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesGcmParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  absl::StatusOr<AesGcmParameters> move =
+      AesGcmParameters::Builder()
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(12)
+          .SetTagSizeInBytes(12)
+          .SetVariant(AesGcmParameters::Variant::kNoPrefix)
+          .Build();
+  ASSERT_THAT(move, IsOk());
+
+  *move = std::move(*parameters);
+
+  EXPECT_THAT(move->KeySizeInBytes(), Eq(16));
+  EXPECT_THAT(move->IvSizeInBytes(), Eq(16));
+  EXPECT_THAT(move->TagSizeInBytes(), Eq(16));
+  EXPECT_THAT(move->GetVariant(), Eq(AesGcmParameters::Variant::kTink));
+  EXPECT_THAT(move->HasIdRequirement(), IsTrue());
 }
 
 using AesGcmParametersVariantTest =
@@ -266,7 +327,7 @@ TEST_P(AesGcmParametersVariantTest, ParametersEquals) {
   AesGcmParameters::Variant variant;
   std::tie(key_size, iv_and_tag_size, variant) = GetParam();
 
-  util::StatusOr<AesGcmParameters> parameters =
+  absl::StatusOr<AesGcmParameters> parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(key_size)
           .SetIvSizeInBytes(iv_and_tag_size)
@@ -275,7 +336,7 @@ TEST_P(AesGcmParametersVariantTest, ParametersEquals) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesGcmParameters> other_parameters =
+  absl::StatusOr<AesGcmParameters> other_parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(key_size)
           .SetIvSizeInBytes(iv_and_tag_size)
@@ -291,7 +352,7 @@ TEST_P(AesGcmParametersVariantTest, ParametersEquals) {
 }
 
 TEST(AesGcmParametersTest, KeySizeNotEqual) {
-  util::StatusOr<AesGcmParameters> parameters =
+  absl::StatusOr<AesGcmParameters> parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -300,7 +361,7 @@ TEST(AesGcmParametersTest, KeySizeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesGcmParameters> other_parameters =
+  absl::StatusOr<AesGcmParameters> other_parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(24)
           .SetIvSizeInBytes(16)
@@ -314,7 +375,7 @@ TEST(AesGcmParametersTest, KeySizeNotEqual) {
 }
 
 TEST(AesGcmParametersTest, IvSizeNotEqual) {
-  util::StatusOr<AesGcmParameters> parameters =
+  absl::StatusOr<AesGcmParameters> parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -323,7 +384,7 @@ TEST(AesGcmParametersTest, IvSizeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesGcmParameters> other_parameters =
+  absl::StatusOr<AesGcmParameters> other_parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(12)
@@ -337,7 +398,7 @@ TEST(AesGcmParametersTest, IvSizeNotEqual) {
 }
 
 TEST(AesGcmParametersTest, TagSizeNotEqual) {
-  util::StatusOr<AesGcmParameters> parameters =
+  absl::StatusOr<AesGcmParameters> parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -346,7 +407,7 @@ TEST(AesGcmParametersTest, TagSizeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesGcmParameters> other_parameters =
+  absl::StatusOr<AesGcmParameters> other_parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -360,7 +421,7 @@ TEST(AesGcmParametersTest, TagSizeNotEqual) {
 }
 
 TEST(AesGcmParametersTest, VariantNotEqual) {
-  util::StatusOr<AesGcmParameters> parameters =
+  absl::StatusOr<AesGcmParameters> parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -369,7 +430,7 @@ TEST(AesGcmParametersTest, VariantNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesGcmParameters> other_parameters =
+  absl::StatusOr<AesGcmParameters> other_parameters =
       AesGcmParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -380,6 +441,20 @@ TEST(AesGcmParametersTest, VariantNotEqual) {
 
   EXPECT_TRUE(*parameters != *other_parameters);
   EXPECT_FALSE(*parameters == *other_parameters);
+}
+
+TEST(AesGcmParametersTest, Clone) {
+  absl::StatusOr<AesGcmParameters> parameters =
+      AesGcmParameters::Builder()
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesGcmParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  std::unique_ptr<Parameters> cloned_parameters = parameters->Clone();
+  ASSERT_THAT(*cloned_parameters, Eq(*parameters));
 }
 
 }  // namespace

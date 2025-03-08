@@ -47,7 +47,7 @@ class KeyParser {
   // This function is usually called on a `Serialization` subclass matching the
   // value returned by `ObjectIdentifier()`. However, implementations should
   // check that this is the case.
-  virtual util::StatusOr<std::unique_ptr<Key>> ParseKey(
+  virtual absl::StatusOr<std::unique_ptr<Key>> ParseKey(
       const Serialization& serialization,
       absl::optional<SecretKeyAccessToken> token) const = 0;
 
@@ -83,17 +83,17 @@ class KeyParserImpl : public KeyParser {
           function)
       : object_identifier_(object_identifier), function_(function) {}
 
-  util::StatusOr<std::unique_ptr<Key>> ParseKey(
+  absl::StatusOr<std::unique_ptr<Key>> ParseKey(
       const Serialization& serialization,
       absl::optional<SecretKeyAccessToken> token) const override {
     if (serialization.ObjectIdentifier() != object_identifier_) {
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "Invalid object identifier for this key parser.");
     }
     const SerializationT* st =
         dynamic_cast<const SerializationT*>(&serialization);
     if (st == nullptr) {
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "Invalid serialization type for this key parser.");
     }
     util::StatusOr<KeyT> key = function_(*st, token);

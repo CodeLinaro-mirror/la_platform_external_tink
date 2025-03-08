@@ -40,15 +40,15 @@
 namespace crypto {
 namespace tink {
 
-using crypto::tink::util::Enums;
-using crypto::tink::util::Status;
-using crypto::tink::util::StatusOr;
-using google::crypto::tink::RsaSsaPssParams;
-using google::crypto::tink::RsaSsaPssPublicKey;
+using ::crypto::tink::util::Enums;
+using ::crypto::tink::util::Status;
+using ::crypto::tink::util::StatusOr;
+using ::google::crypto::tink::RsaSsaPssParams;
+using RsaSsaPssPublicKeyProto = ::google::crypto::tink::RsaSsaPssPublicKey;
 
-StatusOr<std::unique_ptr<PublicKeyVerify>>
+absl::StatusOr<std::unique_ptr<PublicKeyVerify>>
 RsaSsaPssVerifyKeyManager::PublicKeyVerifyFactory::Create(
-    const RsaSsaPssPublicKey& rsa_ssa_pss_public_key) const {
+    const RsaSsaPssPublicKeyProto& rsa_ssa_pss_public_key) const {
   internal::RsaPublicKey rsa_pub_key;
   rsa_pub_key.n = rsa_ssa_pss_public_key.n();
   rsa_pub_key.e = rsa_ssa_pss_public_key.e();
@@ -66,10 +66,10 @@ RsaSsaPssVerifyKeyManager::PublicKeyVerifyFactory::Create(
 }
 
 Status RsaSsaPssVerifyKeyManager::ValidateKey(
-    const RsaSsaPssPublicKey& key) const {
+    const RsaSsaPssPublicKeyProto& key) const {
   Status status = ValidateVersion(key.version(), get_version());
   if (!status.ok()) return status;
-  StatusOr<internal::SslUniquePtr<BIGNUM>> n =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> n =
       internal::StringToBignum(key.n());
   if (!n.ok()) {
     return n.status();
@@ -88,7 +88,7 @@ Status RsaSsaPssVerifyKeyManager::ValidateKey(
 
 Status RsaSsaPssVerifyKeyManager::ValidateParams(
     const RsaSsaPssParams& params) const {
-  util::Status hash_result = internal::IsHashTypeSafeForSignature(
+  absl::Status hash_result = internal::IsHashTypeSafeForSignature(
       Enums::ProtoToSubtle(params.sig_hash()));
   if (!hash_result.ok()) {
     return hash_result;
@@ -105,16 +105,16 @@ Status RsaSsaPssVerifyKeyManager::ValidateParams(
   //
   //  - Conscrypt/BouncyCastle do not support different hashes.
   if (params.mgf1_hash() != params.sig_hash()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         absl::StrCat("MGF1 hash '", params.mgf1_hash(),
                                      "' is different from signature hash '",
                                      params.sig_hash(), "'"));
   }
   if (params.salt_length() < 0) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "salt length is negative");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace tink

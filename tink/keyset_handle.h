@@ -19,21 +19,23 @@
 
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include "absl/base/attributes.h"
 #include "absl/base/macros.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/memory/memory.h"
-#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "tink/aead.h"
 #include "tink/config/global_registry.h"
 #include "tink/configuration.h"
 #include "tink/internal/configuration_impl.h"
 #include "tink/internal/key_info.h"
+#include "tink/internal/keyset_handle_builder_entry.h"
 #include "tink/internal/keyset_wrapper.h"
 #include "tink/internal/keyset_wrapper_store.h"
 #include "tink/internal/registry_impl.h"
@@ -43,6 +45,7 @@
 #include "tink/key_status.h"
 #include "tink/keyset_reader.h"
 #include "tink/keyset_writer.h"
+#include "tink/parameters.h"
 #include "tink/primitive_set.h"
 #include "tink/registry.h"
 #include "tink/secret_key_access_token.h"
@@ -73,17 +76,22 @@ class KeysetHandle {
 
     // ID should be unique (though currently Tink still accepts keysets with
     // repeated IDs).
-    int GetId() const { return id_; }
+    int32_t GetId() const { return id_; }
 
     // Should return true for exactly one entry (though currently Tink still
     // accepts keysets which have no entry marked as primary).
     bool IsPrimary() const { return is_primary_; }
 
+    // Returns true if all `Entry` object fields have identical values.
+    // Otherwise, returns false.
+    bool operator==(const Entry& other) const;
+    bool operator!=(const Entry& other) const { return !(*this == other); }
+
    private:
     friend class KeysetHandle;
     friend class KeysetHandleBuilder;
 
-    Entry(std::shared_ptr<const Key> key, KeyStatus status, int id,
+    Entry(std::shared_ptr<const Key> key, KeyStatus status, int32_t id,
           bool is_primary)
         : key_(std::move(key)),
           status_(status),
@@ -92,7 +100,7 @@ class KeysetHandle {
 
     std::shared_ptr<const Key> key_;
     KeyStatus status_;
-    int id_;
+    int32_t id_;
     bool is_primary_;
   };
 
@@ -106,10 +114,10 @@ class KeysetHandle {
   int size() const { return keyset_->key_size(); }
   // Validates single `KeysetHandle::Entry` at `index` by making sure that the
   // key entry's type URL is printable and that it has a valid key status.
-  crypto::tink::util::Status ValidateAt(int index) const;
+  absl::Status ValidateAt(int index) const;
   // Validates each individual `KeysetHandle::Entry` in keyset handle by calling
   // `ValidateAt()`.  Also, checks that there is a single enabled primary key.
-  crypto::tink::util::Status Validate() const;
+  absl::Status Validate() const;
   // Returns entry for primary key in this keyset. Crashes if `Validate()`
   // does not return an OK status.  Call `Validate()` prior to calling this
   // method to avoid potentially crashing your program.
@@ -122,58 +130,79 @@ class KeysetHandle {
   // Creates a KeysetHandle from an encrypted keyset obtained via `reader`
   // using `master_key_aead` to decrypt the keyset, with monitoring annotations
   // `monitoring_annotations`; by default, `monitoring_annotations` is empty.
-  static crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>> Read(
+  static absl::StatusOr<std::unique_ptr<KeysetHandle>> Read(
       std::unique_ptr<KeysetReader> reader, const Aead& master_key_aead,
-      const absl::flat_hash_map<std::string, std::string>&
-          monitoring_annotations = {});
+      absl::flat_hash_map<std::string, std::string> monitoring_annotations =
+          {});
 
   // Creates a KeysetHandle from an encrypted keyset obtained via `reader`
   // using `master_key_aead` to decrypt the keyset, expecting `associated_data`.
   // The keyset is annotated for monitoring with `monitoring_annotations`; by
   // default, `monitoring_annotations` is empty.
-  static crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>>
-  ReadWithAssociatedData(std::unique_ptr<KeysetReader> reader,
-                         const Aead& master_key_aead,
-                         absl::string_view associated_data,
-                         const absl::flat_hash_map<std::string, std::string>&
-                             monitoring_annotations = {});
+  static absl::StatusOr<std::unique_ptr<KeysetHandle>> ReadWithAssociatedData(
+      std::unique_ptr<KeysetReader> reader, const Aead& master_key_aead,
+      absl::string_view associated_data,
+      absl::flat_hash_map<std::string, std::string> monitoring_annotations =
+          {});
 
   // Creates a KeysetHandle from a serialized keyset `serialized_keyset` which
   // contains no secret key material, and annotates it with
   // `monitoring_annotations` for monitoring; by default,
   // `monitoring_annotations` is empty. This can be used to load public keysets
   // or envelope encryption keysets.
-  static crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>>
-  ReadNoSecret(const std::string& serialized_keyset,
-               const absl::flat_hash_map<std::string, std::string>&
-                   monitoring_annotations = {});
+  static absl::StatusOr<std::unique_ptr<KeysetHandle>> ReadNoSecret(
+      const std::string& serialized_keyset,
+      absl::flat_hash_map<std::string, std::string> monitoring_annotations =
+          {});
 
   // Returns a KeysetHandle containing one new key generated according to
   // `key_template` using `config`. When specified, the keyset is annotated
   // for monitoring with `monitoring_annotations`.
-  static crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>>
-  GenerateNew(const google::crypto::tink::KeyTemplate& key_template,
-              const crypto::tink::KeyGenConfiguration& config,
-              const absl::flat_hash_map<std::string, std::string>&
-                  monitoring_annotations);
-  static crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>>
-  GenerateNew(const google::crypto::tink::KeyTemplate& key_template,
-              const crypto::tink::KeyGenConfiguration& config);
+  //
+  // `config` is the corresponding :key_gen_config_v0 for your primitive. For
+  // example, use //tink/aead:key_gen_config_v0 for AEAD. If a single
+  // GenerateNew call handles multiple primitives, use
+  // //tink//config:key_gen_v0.
+  static absl::StatusOr<std::unique_ptr<KeysetHandle>> GenerateNew(
+      const google::crypto::tink::KeyTemplate& key_template,
+      const crypto::tink::KeyGenConfiguration& config,
+      absl::flat_hash_map<std::string, std::string> monitoring_annotations);
+  static absl::StatusOr<std::unique_ptr<KeysetHandle>> GenerateNew(
+      const google::crypto::tink::KeyTemplate& key_template,
+      const crypto::tink::KeyGenConfiguration& config);
+
+  // Returns a KeysetHandle containing one new key generated according to
+  // `parameters` using `config`. When specified, the keyset is annotated
+  // for monitoring with `monitoring_annotations`.
+  //
+  // This will only work for key types, whose key creation functions have been
+  // added to `config` using
+  // `crypto::tink::internal::KeyGenConfigurationImpl::AddKeyCreator`. Note that
+  // `AddKeyCreator` function is currently restricted.
+  template <typename P>
+  static absl::StatusOr<std::unique_ptr<KeysetHandle>>
+  GenerateNewFromParameters(
+      const P& parameters, const crypto::tink::KeyGenConfiguration& config,
+      absl::flat_hash_map<std::string, std::string> monitoring_annotations);
+
+  template <typename P>
+  static absl::StatusOr<std::unique_ptr<KeysetHandle>>
+  GenerateNewFromParameters(const P& parameters,
+                            const crypto::tink::KeyGenConfiguration& config);
 
   // Returns a KeysetHandle containing one new key generated according to
   // `key_template` using the global registry. When specified, the keyset is
   //  annotated for monitoring with `monitoring_annotations`.
-  ABSL_DEPRECATED("Inline this function's body at its call sites")
-  static crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>>
-  GenerateNew(const google::crypto::tink::KeyTemplate& key_template,
-              const absl::flat_hash_map<std::string, std::string>&
-                  monitoring_annotations) {
+  ABSL_DEPRECATE_AND_INLINE()
+  static absl::StatusOr<std::unique_ptr<KeysetHandle>> GenerateNew(
+      const google::crypto::tink::KeyTemplate& key_template,
+      absl::flat_hash_map<std::string, std::string> monitoring_annotations) {
     return GenerateNew(key_template, crypto::tink::KeyGenConfigGlobalRegistry(),
-                       monitoring_annotations);
+                       std::move(monitoring_annotations));
   }
-  ABSL_DEPRECATED("Inline this function's body at its call sites")
-  static crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>>
-  GenerateNew(const google::crypto::tink::KeyTemplate& key_template) {
+  ABSL_DEPRECATE_AND_INLINE()
+  static absl::StatusOr<std::unique_ptr<KeysetHandle>> GenerateNew(
+      const google::crypto::tink::KeyTemplate& key_template) {
     return GenerateNew(key_template,
                        crypto::tink::KeyGenConfigGlobalRegistry());
   }
@@ -181,15 +210,14 @@ class KeysetHandle {
   // Encrypts the underlying keyset with the provided `master_key_aead`
   // and writes the resulting EncryptedKeyset to the given `writer`,
   // which must be non-null.
-  crypto::tink::util::Status Write(KeysetWriter* writer,
-                                   const Aead& master_key_aead) const;
+  absl::Status Write(KeysetWriter* writer, const Aead& master_key_aead) const;
 
   // Encrypts the underlying keyset with the provided `master_key_aead`, using
   // `associated_data`. and writes the resulting EncryptedKeyset to the given
   // `writer`, which must be non-null.
-  crypto::tink::util::Status WriteWithAssociatedData(
-      KeysetWriter* writer, const Aead& master_key_aead,
-      absl::string_view associated_data) const;
+  absl::Status WriteWithAssociatedData(KeysetWriter* writer,
+                                       const Aead& master_key_aead,
+                                       absl::string_view associated_data) const;
 
   // Returns KeysetInfo, a "safe" Keyset that doesn't contain any actual
   // key material, thus can be used for logging or monitoring.
@@ -200,27 +228,30 @@ class KeysetHandle {
   // This can be used to persist public keysets or envelope encryption keysets.
   // Users that need to persist cleartext keysets can use
   // `CleartextKeysetHandle`.
-  crypto::tink::util::Status WriteNoSecret(KeysetWriter* writer) const;
+  absl::Status WriteNoSecret(KeysetWriter* writer) const;
 
   // Returns a new KeysetHandle containing public keys corresponding to the
   // private keys in this handle. Relies on key type managers stored in `config`
   // to do so. Returns an error if this handle contains keys that are not
   // private keys.
-  crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>>
-  GetPublicKeysetHandle(const KeyGenConfiguration& config) const;
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> GetPublicKeysetHandle(
+      const KeyGenConfiguration& config) const;
 
   // Returns a new KeysetHandle containing public keys corresponding to the
   // private keys in this handle. Relies on key type managers stored in the
   // global registry to do so. Returns an error if this handle contains keys
   // that are not private keys.
-  ABSL_DEPRECATED("Inline this function's body at its call sites")
-  crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>>
-  GetPublicKeysetHandle() const {
+  ABSL_DEPRECATE_AND_INLINE()
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> GetPublicKeysetHandle() const {
     return GetPublicKeysetHandle(crypto::tink::KeyGenConfigGlobalRegistry());
   }
 
   // Creates a wrapped primitive using this keyset handle and config, which
   // stores necessary primitive wrappers and key type managers.
+  //
+  // `config` is the corresponding :config_v0 for your primitive. For example,
+  // use //tink/aead:config_v0 for AEAD. If a single GenerateNew call handles
+  // multiple primitives, use //tink//config:v0.
   template <class P>
   crypto::tink::util::StatusOr<std::unique_ptr<P>> GetPrimitive(
       const Configuration& config) const;
@@ -228,7 +259,7 @@ class KeysetHandle {
   // Creates a wrapped primitive using this keyset handle and the global
   // registry, which stores necessary primitive wrappers and key type managers.
   template <class P>
-  ABSL_DEPRECATED("Inline this function's body at its call sites")
+  ABSL_DEPRECATE_AND_INLINE()
   crypto::tink::util::StatusOr<std::unique_ptr<P>> GetPrimitive() const {
     return GetPrimitive<P>(crypto::tink::ConfigGlobalRegistry());
   }
@@ -255,52 +286,50 @@ class KeysetHandle {
   // KeysetHandleBuilder::Build() needs access to KeysetHandle(Keyset).
   friend class KeysetHandleBuilder;
 
-  friend crypto::tink::util::StatusOr<KeysetHandle>
-  ParseKeysetFromProtoKeysetFormat(absl::string_view serialized_keyset,
-                                   SecretKeyAccessToken token);
+  friend absl::StatusOr<KeysetHandle> ParseKeysetFromProtoKeysetFormat(
+      absl::string_view serialized_keyset, SecretKeyAccessToken token);
 
   // Creates a handle that contains the given keyset.
   explicit KeysetHandle(util::SecretProto<google::crypto::tink::Keyset> keyset)
       : keyset_(std::move(keyset)) {}
   // Creates a handle that contains the given `keyset` and `entries`.
-  KeysetHandle(
-      util::SecretProto<google::crypto::tink::Keyset> keyset,
-      const std::vector<std::shared_ptr<const Entry>>& entries)
-      : keyset_(std::move(keyset)), entries_(entries) {}
+  KeysetHandle(util::SecretProto<google::crypto::tink::Keyset> keyset,
+               std::vector<std::shared_ptr<const Entry>> entries)
+      : keyset_(std::move(keyset)), entries_(std::move(entries)) {}
   // Creates a handle that contains the given `keyset` and
   // `monitoring_annotations`.
-  KeysetHandle(util::SecretProto<google::crypto::tink::Keyset> keyset,
-               const absl::flat_hash_map<std::string, std::string>&
-                   monitoring_annotations)
+  KeysetHandle(
+      util::SecretProto<google::crypto::tink::Keyset> keyset,
+      absl::flat_hash_map<std::string, std::string> monitoring_annotations)
       : keyset_(std::move(*keyset)),
-        monitoring_annotations_(monitoring_annotations) {}
+        monitoring_annotations_(std::move(monitoring_annotations)) {}
   // Creates a handle that contains the given `keyset`, `entries`, and
   // `monitoring_annotations`.
-  KeysetHandle(util::SecretProto<google::crypto::tink::Keyset> keyset,
-               const std::vector<std::shared_ptr<const Entry>>& entries,
-               const absl::flat_hash_map<std::string, std::string>&
-                   monitoring_annotations)
+  KeysetHandle(
+      util::SecretProto<google::crypto::tink::Keyset> keyset,
+      std::vector<std::shared_ptr<const Entry>> entries,
+      absl::flat_hash_map<std::string, std::string> monitoring_annotations)
       : keyset_(std::move(keyset)),
-        entries_(entries),
-        monitoring_annotations_(monitoring_annotations) {}
+        entries_(std::move(entries)),
+        monitoring_annotations_(std::move(monitoring_annotations)) {}
 
   // Generates a key from `key_template` and adds it `keyset`.
-  static crypto::tink::util::StatusOr<uint32_t> AddToKeyset(
+  static absl::StatusOr<uint32_t> AddToKeyset(
       const google::crypto::tink::KeyTemplate& key_template, bool as_primary,
       const crypto::tink::KeyGenConfiguration& config,
       google::crypto::tink::Keyset* keyset);
 
   // Creates list of KeysetHandle::Entry entries derived from `keyset` in order.
-  static crypto::tink::util::StatusOr<std::vector<std::shared_ptr<const Entry>>>
+  static absl::StatusOr<std::vector<std::shared_ptr<const Entry>>>
   GetEntriesFromKeyset(const google::crypto::tink::Keyset& keyset);
 
   // Creates KeysetHandle::Entry for `key`, which will be set to primary if
   // its key id equals `primary_key_id`.
-  static util::StatusOr<Entry> CreateEntry(
+  static absl::StatusOr<Entry> CreateEntry(
       const google::crypto::tink::Keyset::Key& key, uint32_t primary_key_id);
 
   // Generates a key from `key_template` and adds it to the keyset handle.
-  crypto::tink::util::StatusOr<uint32_t> AddKey(
+  absl::StatusOr<uint32_t> AddKey(
       const google::crypto::tink::KeyTemplate& key_template, bool as_primary,
       const crypto::tink::KeyGenConfiguration& config);
 
@@ -314,9 +343,12 @@ class KeysetHandle {
   //
   // The returned set is usually later "wrapped" into a class that
   // implements the corresponding Primitive-interface.
+  // TINK-PENDING-REMOVAL-IN-3.0.0-START
   template <class P>
-  crypto::tink::util::StatusOr<std::unique_ptr<PrimitiveSet<P>>> GetPrimitives(
+  crypto::tink::util::StatusOr<std::unique_ptr<PrimitiveSet<P>>>
+  GetPrimitives(
       const KeyManager<P>* custom_manager) const;
+  // TINK-PENDING-REMOVAL-IN-3.0.0-END
 
   // Creates KeysetHandle::Entry from `keyset_` at `index`.
   Entry CreateEntryAt(int index) const;
@@ -332,9 +364,159 @@ class KeysetHandle {
   absl::flat_hash_map<std::string, std::string> monitoring_annotations_;
 };
 
+// Creates new `KeysetHandle` objects.
+class KeysetHandleBuilder {
+ public:
+  // Movable, but not copyable.
+  KeysetHandleBuilder(KeysetHandleBuilder&& other) = default;
+  KeysetHandleBuilder& operator=(KeysetHandleBuilder&& other) = default;
+  KeysetHandleBuilder(const KeysetHandleBuilder& other) = delete;
+  KeysetHandleBuilder& operator=(const KeysetHandleBuilder& other) = delete;
+
+  // Creates initially empty keyset handle builder.
+  KeysetHandleBuilder() = default;
+  // Creates keyset handle builder by initially moving keys from `handle`.
+  explicit KeysetHandleBuilder(const KeysetHandle& handle);
+
+  // Represents a single entry in a `KeysetHandleBuilder`.
+  class Entry {
+   public:
+    // Movable, but not copyable.
+    Entry(Entry&& other) = default;
+    Entry& operator=(Entry&& other) = default;
+    Entry(const Entry& other) = delete;
+    Entry& operator=(const Entry& other) = delete;
+
+    // Creates new KeysetHandleBuilder::Entry from a given `key`. Also, sets
+    // key `status` and whether or not the key `is_primary`.
+    static Entry CreateFromKey(std::shared_ptr<const Key> key, KeyStatus status,
+                               bool is_primary);
+
+    template <typename CopyableKey>
+    inline static Entry CreateFromCopyableKey(CopyableKey key, KeyStatus status,
+                                              bool is_primary) {
+      auto copyable_key = absl::make_unique<CopyableKey>(std::move(key));
+      return CreateFromKey(std::move(copyable_key), status, is_primary);
+    }
+
+    // Creates new KeysetHandleBuilder::Entry from given `parameters`. Also,
+    // sets key `status` and whether or not the key `is_primary`. If `id`
+    // does not have a value, then the key will be assigned a random id.
+    static Entry CreateFromParams(std::shared_ptr<const Parameters> parameters,
+                                  KeyStatus status, bool is_primary,
+                                  absl::optional<int> id = absl::nullopt);
+
+    template <typename CopyableParameters>
+    inline static Entry CreateFromCopyableParams(
+        CopyableParameters parameters, KeyStatus status, bool is_primary,
+        absl::optional<int> id = absl::nullopt) {
+      auto copyable_params =
+          absl::make_unique<CopyableParameters>(std::move(parameters));
+      return CreateFromParams(std::move(copyable_params), status, is_primary,
+                              id);
+    }
+
+    // Sets the key status of this entry.
+    void SetStatus(KeyStatus status) { entry_->SetStatus(status); }
+    // Returns key status of this entry.
+    KeyStatus GetStatus() const { return entry_->GetStatus(); }
+
+    // Assigns a fixed id when this keyset is built.
+    void SetFixedId(int32_t id) { entry_->SetFixedId(id); }
+    // Assigns an unused random id when this keyset is built.
+    void SetRandomId() { entry_->SetRandomId(); }
+
+    // Sets this entry as the primary key.
+    void SetPrimary() { entry_->SetPrimary(); }
+    // Unsets this entry as the primary key.
+    void UnsetPrimary() { entry_->UnsetPrimary(); }
+    // Returns whether or not this entry has been marked as a primary.
+    bool IsPrimary() const { return entry_->IsPrimary(); }
+
+   private:
+    friend class KeysetHandleBuilder;
+
+    explicit Entry(std::unique_ptr<internal::KeysetHandleBuilderEntry> entry)
+        : entry_(std::move(entry)) {}
+
+    // Returns whether or not this entry has a randomly assigned id.
+    bool HasRandomId() {
+      return entry_->GetKeyIdStrategyEnum() ==
+             internal::KeyIdStrategyEnum::kRandomId;
+    }
+
+    internal::KeyIdStrategy GetKeyIdStrategy() {
+      return entry_->GetKeyIdStrategy();
+    }
+
+    absl::StatusOr<
+        crypto::tink::util::SecretProto<google::crypto::tink::Keyset::Key>>
+    CreateKeysetKey(int32_t id, const KeyGenConfiguration& config) {
+      return entry_->CreateKeysetKey(id, config);
+    }
+
+    std::unique_ptr<internal::KeysetHandleBuilderEntry> entry_;
+    bool added_to_builder_ = false;
+  };
+
+  // Adds an `entry` to the keyset builder. Crashes if `entry` has already been
+  // added to a keyset handle builder.
+  KeysetHandleBuilder& AddEntry(KeysetHandleBuilder::Entry entry);
+  // Removes an entry at `index` from keyset builder.
+  KeysetHandleBuilder& RemoveEntry(int index);
+
+  // Returns the number of Entry objects in this keyset builder.
+  int size() const { return entries_.size(); }
+
+  // Returns entry from keyset builder at `index`.
+  KeysetHandleBuilder::Entry& operator[](int index) { return entries_[index]; }
+
+  // Sets MonitoringAnnotations. If not called, then the default value of an
+  // empty map is used. When called multiple times, previous values are
+  // replaced.
+  KeysetHandleBuilder& SetMonitoringAnnotations(
+      const absl::flat_hash_map<std::string, std::string>&
+          monitoring_annotations);
+
+  // Creates a new `KeysetHandle` object.
+  //
+  // Note: Since KeysetHandleBuilder::Entry objects might have randomly
+  // generated IDs, Build() can only be called once on a single
+  // KeysetHandleBuilder object.  Otherwise, the KeysetHandleBuilder::Entry
+  // IDs would randomly change for each call to Build(), which would result
+  // in incompatible keysets.
+  absl::StatusOr<KeysetHandle> Build() {
+    return Build(KeyGenConfigGlobalRegistry());
+  }
+
+  // Does the same as Build() but also takes a `KeyGenConfiguration` object
+  // which is used to generate keys instead of relying on the global registry.
+  //
+  // Falls back to the global registry if the `config` does not provide the
+  // functionality to create the required key type.
+  absl::StatusOr<KeysetHandle> Build(const KeyGenConfiguration& config);
+
+ private:
+  // Select the next key id based on the given strategy.
+  absl::StatusOr<int32_t> NextIdFromKeyIdStrategy(
+      internal::KeyIdStrategy strategy, const std::set<int32_t>& ids_so_far);
+
+  // Unset primary flag on all entries.
+  void ClearPrimary();
+
+  // Verify that entries with fixed IDs do not follow entries with random IDs.
+  absl::Status CheckIdAssignments();
+
+  std::vector<KeysetHandleBuilder::Entry> entries_;
+  absl::flat_hash_map<std::string, std::string> monitoring_annotations_;
+
+  bool build_called_ = false;
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 // Implementation details of templated methods.
 
+// TINK-PENDING-REMOVAL-IN-3.0.0-START
 template <class P>
 crypto::tink::util::StatusOr<std::unique_ptr<PrimitiveSet<P>>>
 KeysetHandle::GetPrimitives(const KeyManager<P>* custom_manager) const {
@@ -368,6 +550,7 @@ KeysetHandle::GetPrimitives(const KeyManager<P>* custom_manager) const {
   if (!primitives.ok()) return primitives.status();
   return absl::make_unique<PrimitiveSet<P>>(*std::move(primitives));
 }
+// TINK-PENDING-REMOVAL-IN-3.0.0-END
 
 template <class P>
 crypto::tink::util::StatusOr<std::unique_ptr<P>> KeysetHandle::GetPrimitive(
@@ -378,8 +561,7 @@ crypto::tink::util::StatusOr<std::unique_ptr<P>> KeysetHandle::GetPrimitive(
         *keyset_, monitoring_annotations_);
   }
 
-  crypto::tink::util::StatusOr<
-      const crypto::tink::internal::KeysetWrapperStore*>
+  absl::StatusOr<const crypto::tink::internal::KeysetWrapperStore*>
       wrapper_store =
           crypto::tink::internal::ConfigurationImpl::GetKeysetWrapperStore(
               config);
@@ -392,6 +574,44 @@ crypto::tink::util::StatusOr<std::unique_ptr<P>> KeysetHandle::GetPrimitive(
     return wrapper.status();
   }
   return (*wrapper)->Wrap(*keyset_, monitoring_annotations_);
+}
+
+// Returns a KeysetHandle containing one new key generated according to
+// `parameters` using `config`. When specified, the keyset is annotated
+// for monitoring with `monitoring_annotations`.
+//
+// This will only work for key types, whose key creation functions have been
+// added to `config` using `AddKeyCreator`.
+template <typename P>
+absl::StatusOr<std::unique_ptr<KeysetHandle>>
+KeysetHandle::GenerateNewFromParameters(
+    const P& parameters, const crypto::tink::KeyGenConfiguration& config,
+    absl::flat_hash_map<std::string, std::string> monitoring_annotations) {
+  // Check that `parameters` is a valid type.
+  static_assert(std::is_base_of<Parameters, P>::value, "");
+
+  KeysetHandleBuilder::Entry entry =
+      KeysetHandleBuilder::Entry::CreateFromCopyableParams(
+          parameters, KeyStatus::kEnabled,
+          /*is_primary=*/true,
+          /*id=*/absl::nullopt);
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder()
+          .AddEntry(std::move(entry))
+          .SetMonitoringAnnotations(monitoring_annotations)
+          .Build(config);
+  if (!handle.ok()) {
+    return handle.status();
+  }
+  return std::make_unique<KeysetHandle>(std::move(*handle));
+}
+
+template <typename P>
+absl::StatusOr<std::unique_ptr<KeysetHandle>>
+KeysetHandle::GenerateNewFromParameters(
+    const P& parameters, const crypto::tink::KeyGenConfiguration& config) {
+  return GenerateNewFromParameters(parameters, config,
+                                   /*monitoring_annotations=*/{});
 }
 
 // TINK-PENDING-REMOVAL-IN-3.0.0-START

@@ -32,17 +32,18 @@
 namespace crypto {
 namespace tink {
 
-using crypto::tink::util::Status;
-using crypto::tink::util::StatusOr;
-using google::crypto::tink::Ed25519PublicKey;
+using ::crypto::tink::util::Status;
+using ::crypto::tink::util::StatusOr;
+using Ed25519PublicKeyProto = ::google::crypto::tink::Ed25519PublicKey;
 
-StatusOr<std::unique_ptr<PublicKeyVerify>>
+absl::StatusOr<std::unique_ptr<PublicKeyVerify>>
 Ed25519VerifyKeyManager::PublicKeyVerifyFactory::Create(
-    const Ed25519PublicKey& public_key) const {
+    const Ed25519PublicKeyProto& public_key) const {
   return subtle::Ed25519VerifyBoringSsl::New(public_key.key_value());
 }
 
-Status Ed25519VerifyKeyManager::ValidateKey(const Ed25519PublicKey& key) const {
+Status Ed25519VerifyKeyManager::ValidateKey(
+    const Ed25519PublicKeyProto& key) const {
   Status status = ValidateVersion(key.version(), get_version());
   if (!status.ok()) return status;
 
@@ -50,7 +51,7 @@ Status Ed25519VerifyKeyManager::ValidateKey(const Ed25519PublicKey& key) const {
     return Status(absl::StatusCode::kInvalidArgument,
                   "The ED25519 public key must be 32-bytes long.");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace tink

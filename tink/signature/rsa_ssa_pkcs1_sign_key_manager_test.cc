@@ -16,16 +16,26 @@
 
 #include "tink/signature/rsa_ssa_pkcs1_sign_key_manager.h"
 
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/types/optional.h"
 #include "openssl/rsa.h"
+#include "tink/config/global_registry.h"
 #include "tink/internal/bn_util.h"
 #include "tink/internal/ssl_unique_ptr.h"
+#include "tink/key_status.h"
+#include "tink/keyset_handle.h"
 #include "tink/public_key_sign.h"
+#include "tink/public_key_verify.h"
+#include "tink/signature/internal/testing/rsa_ssa_pkcs1_test_vectors.h"
+#include "tink/signature/internal/testing/signature_test_vector.h"
 #include "tink/signature/rsa_ssa_pkcs1_verify_key_manager.h"
+#include "tink/signature/signature_config.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/rsa_ssa_pkcs1_verify_boringssl.h"
 #include "tink/util/status.h"
@@ -44,8 +54,9 @@ using ::crypto::tink::util::StatusOr;
 using ::google::crypto::tink::HashType;
 using ::google::crypto::tink::KeyData;
 using ::google::crypto::tink::RsaSsaPkcs1KeyFormat;
-using ::google::crypto::tink::RsaSsaPkcs1PrivateKey;
-using ::google::crypto::tink::RsaSsaPkcs1PublicKey;
+using RsaSsaPkcs1PrivateKeyProto =
+    ::google::crypto::tink::RsaSsaPkcs1PrivateKey;
+using RsaSsaPkcs1PublicKeyProto = ::google::crypto::tink::RsaSsaPkcs1PublicKey;
 using ::testing::Eq;
 using ::testing::Not;
 using ::testing::SizeIs;
@@ -118,10 +129,10 @@ TEST(RsaSsaPkcs1SignKeyManagerTest, ValidateKeyFormatSmallModulusDisallowed) {
 }
 
 // Checks whether given key is compatible with the given format.
-void CheckNewKey(const RsaSsaPkcs1PrivateKey& private_key,
+void CheckNewKey(const RsaSsaPkcs1PrivateKeyProto& private_key,
                  const RsaSsaPkcs1KeyFormat& key_format) {
   RsaSsaPkcs1SignKeyManager key_manager;
-  RsaSsaPkcs1PublicKey public_key = private_key.public_key();
+  RsaSsaPkcs1PublicKeyProto public_key = private_key.public_key();
   EXPECT_EQ(0, private_key.version());
   EXPECT_TRUE(private_key.has_public_key());
   EXPECT_EQ(0, public_key.version());
@@ -130,22 +141,22 @@ void CheckNewKey(const RsaSsaPkcs1PrivateKey& private_key,
   EXPECT_EQ(public_key.params().SerializeAsString(),
             key_format.params().SerializeAsString());
   EXPECT_EQ(key_format.public_exponent(), public_key.e());
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> n =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> n =
       internal::StringToBignum(public_key.n());
   ASSERT_THAT(n, IsOk());
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> d =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> d =
       internal::StringToBignum(private_key.d());
   ASSERT_THAT(d, IsOk());
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> p =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> p =
       internal::StringToBignum(private_key.p());
   ASSERT_THAT(p, IsOk());
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> q =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> q =
       internal::StringToBignum(private_key.q());
   ASSERT_THAT(q, IsOk());
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> dp =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> dp =
       internal::StringToBignum(private_key.dp());
   ASSERT_THAT(dp, IsOk());
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> dq =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> dq =
       internal::StringToBignum(private_key.dq());
   ASSERT_THAT(dq, IsOk());
   internal::SslUniquePtr<BN_CTX> ctx(BN_CTX_new());
@@ -176,7 +187,7 @@ void CheckNewKey(const RsaSsaPkcs1PrivateKey& private_key,
 TEST(RsaSsaPkcs1SignKeyManagerTest, CreateKey) {
   RsaSsaPkcs1KeyFormat key_format =
       CreateKeyFormat(HashType::SHA256, 3072, RSA_F4);
-  StatusOr<RsaSsaPkcs1PrivateKey> private_key_or =
+  absl::StatusOr<RsaSsaPkcs1PrivateKeyProto> private_key_or =
       RsaSsaPkcs1SignKeyManager().CreateKey(key_format);
   ASSERT_THAT(private_key_or, IsOk());
   CheckNewKey(private_key_or.value(), key_format);
@@ -186,7 +197,7 @@ TEST(RsaSsaPkcs1SignKeyManagerTest, CreateKeySmallKey) {
   RsaSsaPkcs1KeyFormat key_format =
       CreateKeyFormat(HashType::SHA256, 2048, RSA_F4);
 
-  StatusOr<RsaSsaPkcs1PrivateKey> private_key_or =
+  absl::StatusOr<RsaSsaPkcs1PrivateKeyProto> private_key_or =
       RsaSsaPkcs1SignKeyManager().CreateKey(key_format);
   ASSERT_THAT(private_key_or, IsOk());
   CheckNewKey(private_key_or.value(), key_format);
@@ -196,14 +207,14 @@ TEST(RsaSsaPkcs1SignKeyManagerTest, CreateKeyLargeKey) {
   RsaSsaPkcs1KeyFormat key_format =
       CreateKeyFormat(HashType::SHA512, 4096, RSA_F4);
 
-  StatusOr<RsaSsaPkcs1PrivateKey> private_key_or =
+  absl::StatusOr<RsaSsaPkcs1PrivateKeyProto> private_key_or =
       RsaSsaPkcs1SignKeyManager().CreateKey(key_format);
   ASSERT_THAT(private_key_or, IsOk());
   CheckNewKey(private_key_or.value(), key_format);
 }
 
 TEST(RsaSsaPkcs1SignKeyManagerTest, CreateKeyValid) {
-  StatusOr<RsaSsaPkcs1PrivateKey> key_or =
+  absl::StatusOr<RsaSsaPkcs1PrivateKeyProto> key_or =
       RsaSsaPkcs1SignKeyManager().CreateKey(ValidKeyFormat());
   ASSERT_THAT(key_or, IsOk());
   EXPECT_THAT(RsaSsaPkcs1SignKeyManager().ValidateKey(key_or.value()), IsOk());
@@ -215,7 +226,7 @@ TEST(RsaSsaPkcs1SignKeyManagerTest, CreateKeyAlwaysNewRsaPair) {
   // This test takes about a second per key.
   int num_generated_keys = 5;
   for (int i = 0; i < num_generated_keys; ++i) {
-    StatusOr<RsaSsaPkcs1PrivateKey> key_or =
+    absl::StatusOr<RsaSsaPkcs1PrivateKeyProto> key_or =
         RsaSsaPkcs1SignKeyManager().CreateKey(ValidKeyFormat());
     ASSERT_THAT(key_or, IsOk());
     keys.insert(key_or.value().p());
@@ -225,10 +236,10 @@ TEST(RsaSsaPkcs1SignKeyManagerTest, CreateKeyAlwaysNewRsaPair) {
 }
 
 TEST(RsaSsaPkcs1SignKeyManagerTest, GetPublicKey) {
-  StatusOr<RsaSsaPkcs1PrivateKey> key_or =
+  absl::StatusOr<RsaSsaPkcs1PrivateKeyProto> key_or =
       RsaSsaPkcs1SignKeyManager().CreateKey(ValidKeyFormat());
   ASSERT_THAT(key_or, IsOk());
-  StatusOr<RsaSsaPkcs1PublicKey> public_key_or =
+  absl::StatusOr<RsaSsaPkcs1PublicKeyProto> public_key_or =
       RsaSsaPkcs1SignKeyManager().GetPublicKey(key_or.value());
   ASSERT_THAT(public_key_or, IsOk());
   EXPECT_THAT(public_key_or.value().version(),
@@ -239,13 +250,13 @@ TEST(RsaSsaPkcs1SignKeyManagerTest, GetPublicKey) {
   EXPECT_THAT(public_key_or.value().e(), Eq(key_or.value().public_key().e()));
 }
 
-TEST(EcdsaSignKeyManagerTest, Create) {
+TEST(RsaSsaPkcs1SignKeyManagerTest, Create) {
   RsaSsaPkcs1KeyFormat key_format =
       CreateKeyFormat(HashType::SHA256, 3072, RSA_F4);
-  StatusOr<RsaSsaPkcs1PrivateKey> key_or =
+  absl::StatusOr<RsaSsaPkcs1PrivateKeyProto> key_or =
       RsaSsaPkcs1SignKeyManager().CreateKey(key_format);
   ASSERT_THAT(key_or, IsOk());
-  RsaSsaPkcs1PrivateKey key = key_or.value();
+  RsaSsaPkcs1PrivateKeyProto key = key_or.value();
 
   auto signer_or = RsaSsaPkcs1SignKeyManager().GetPrimitive<PublicKeySign>(key);
   ASSERT_THAT(signer_or, IsOk());
@@ -259,6 +270,52 @@ TEST(EcdsaSignKeyManagerTest, Create) {
                   signer_or.value()->Sign(message).value(), message),
               IsOk());
 }
+
+using RsaSsaPkcs1SignKeyManagerTestVectorTest =
+    testing::TestWithParam<internal::SignatureTestVector>;
+
+// RsaSsaPkcs1 is deterministic, so we can compute the signature.
+TEST_P(RsaSsaPkcs1SignKeyManagerTestVectorTest, ComputeSignatureInTestVector) {
+  ASSERT_THAT(SignatureConfig::Register(), IsOk());
+  const internal::SignatureTestVector& param = GetParam();
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder()
+          .AddEntry(KeysetHandleBuilder::Entry::CreateFromKey(
+              param.signature_private_key, KeyStatus::kEnabled,
+              /*is_primary=*/true))
+          .Build();
+  ASSERT_THAT(handle, IsOk());
+  absl::StatusOr<std::unique_ptr<PublicKeySign>> signer =
+      handle->GetPrimitive<PublicKeySign>(ConfigGlobalRegistry());
+  ASSERT_THAT(signer, IsOk());
+  absl::StatusOr<std::string> signature = (*signer)->Sign(param.message);
+  ASSERT_THAT(signature, IsOk());
+  EXPECT_THAT(*signature, Eq(param.signature));
+}
+
+TEST_P(RsaSsaPkcs1SignKeyManagerTestVectorTest, VerifySignatureInTestVector) {
+  ASSERT_THAT(SignatureConfig::Register(), IsOk());
+  const internal::SignatureTestVector& param = GetParam();
+  absl::StatusOr<KeysetHandle> handle =
+      KeysetHandleBuilder()
+          .AddEntry(KeysetHandleBuilder::Entry::CreateFromKey(
+              param.signature_private_key, KeyStatus::kEnabled,
+              /*is_primary=*/true))
+          .Build();
+  ASSERT_THAT(handle, IsOk());
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
+      handle->GetPublicKeysetHandle(KeyGenConfigGlobalRegistry());
+  ASSERT_THAT(public_handle, IsOk());
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      (*public_handle)->GetPrimitive<PublicKeyVerify>(ConfigGlobalRegistry());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT((*verifier)->Verify(param.signature, param.message), IsOk());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    RsaSsaPkcs1SignKeyManagerTestVectorTest,
+    RsaSsaPkcs1SignKeyManagerTestVectorTest,
+    testing::ValuesIn(internal::CreateRsaSsaPkcs1TestVectors()));
 
 }  // namespace
 }  // namespace tink

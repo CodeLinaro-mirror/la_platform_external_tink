@@ -20,16 +20,14 @@
 #include <utility>
 
 #include "absl/status/status.h"
-#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "openssl/bn.h"
 #include "tink/internal/bn_util.h"
 #include "tink/internal/rsa_util.h"
 #include "tink/internal/ssl_unique_ptr.h"
 #include "tink/public_key_verify.h"
 #include "tink/subtle/rsa_ssa_pss_verify_boringssl.h"
 #include "tink/util/enums.h"
-#include "tink/util/errors.h"
-#include "tink/util/protobuf_helper.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/validation.h"
@@ -47,18 +45,18 @@ using ::google::crypto::tink::HashType;
 using ::google::crypto::tink::JwtRsaSsaPssAlgorithm;
 using ::google::crypto::tink::JwtRsaSsaPssPublicKey;
 
-StatusOr<std::unique_ptr<PublicKeyVerify>>
+absl::StatusOr<std::unique_ptr<PublicKeyVerify>>
 RawJwtRsaSsaPssVerifyKeyManager::PublicKeyVerifyFactory::Create(
     const JwtRsaSsaPssPublicKey& rsa_ssa_pss_public_key) const {
   internal::RsaPublicKey rsa_pub_key;
   rsa_pub_key.n = rsa_ssa_pss_public_key.n();
   rsa_pub_key.e = rsa_ssa_pss_public_key.e();
   JwtRsaSsaPssAlgorithm algorithm = rsa_ssa_pss_public_key.algorithm();
-  StatusOr<HashType> hash_or = HashForPssAlgorithm(algorithm);
+  absl::StatusOr<HashType> hash_or = HashForPssAlgorithm(algorithm);
   if (!hash_or.ok()) {
     return hash_or.status();
   }
-  StatusOr<int> salt_length = SaltLengthForPssAlgorithm(algorithm);
+  absl::StatusOr<int> salt_length = SaltLengthForPssAlgorithm(algorithm);
   if (!salt_length.ok()) {
     return salt_length.status();
   }
@@ -67,7 +65,7 @@ RawJwtRsaSsaPssVerifyKeyManager::PublicKeyVerifyFactory::Create(
   params.mgf1_hash = Enums::ProtoToSubtle(hash_or.value());
   params.salt_length = *salt_length;
 
-  util::StatusOr<std::unique_ptr<RsaSsaPssVerifyBoringSsl>> verify =
+  absl::StatusOr<std::unique_ptr<RsaSsaPssVerifyBoringSsl>> verify =
       subtle::RsaSsaPssVerifyBoringSsl::New(rsa_pub_key, params);
   if (!verify.ok()) {
     return verify.status();
@@ -81,7 +79,7 @@ Status RawJwtRsaSsaPssVerifyKeyManager::ValidateKey(
   if (!status.ok()) {
     return status;
   }
-  StatusOr<internal::SslUniquePtr<BIGNUM>> n =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> n =
       internal::StringToBignum(key.n());
   if (!n.ok()) {
     return n.status();
@@ -104,15 +102,15 @@ Status RawJwtRsaSsaPssVerifyKeyManager::ValidateAlgorithm(
     case JwtRsaSsaPssAlgorithm::PS256:
     case JwtRsaSsaPssAlgorithm::PS384:
     case JwtRsaSsaPssAlgorithm::PS512:
-      return util::OkStatus();
+      return absl::OkStatus();
     default:
       return Status(absl::StatusCode::kInvalidArgument,
                     "Unsupported RSA SSA PSS Algorithm");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-StatusOr<HashType> RawJwtRsaSsaPssVerifyKeyManager::HashForPssAlgorithm(
+absl::StatusOr<HashType> RawJwtRsaSsaPssVerifyKeyManager::HashForPssAlgorithm(
     const JwtRsaSsaPssAlgorithm& algorithm) {
   switch (algorithm) {
     case JwtRsaSsaPssAlgorithm::PS256:
@@ -127,7 +125,7 @@ StatusOr<HashType> RawJwtRsaSsaPssVerifyKeyManager::HashForPssAlgorithm(
   }
 }
 
-StatusOr<int> RawJwtRsaSsaPssVerifyKeyManager::SaltLengthForPssAlgorithm(
+absl::StatusOr<int> RawJwtRsaSsaPssVerifyKeyManager::SaltLengthForPssAlgorithm(
     const JwtRsaSsaPssAlgorithm& algorithm) {
   switch (algorithm) {
     case JwtRsaSsaPssAlgorithm::PS256:

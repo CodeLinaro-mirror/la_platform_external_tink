@@ -17,6 +17,8 @@
 #ifndef TINK_AEAD_AES_GCM_KEY_H_
 #define TINK_AEAD_AES_GCM_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -43,7 +45,7 @@ class AesGcmKey : public AeadKey {
 
   // Creates a new AES-GCM key.  If the parameters specify a variant that uses
   // a prefix, then the id is used to compute this prefix.
-  static util::StatusOr<AesGcmKey> Create(const AesGcmParameters& parameters,
+  static absl::StatusOr<AesGcmKey> Create(const AesGcmParameters& parameters,
                                           const RestrictedData& key_bytes,
                                           absl::optional<int> id_requirement,
                                           PartialKeyAccessToken token);
@@ -57,16 +59,19 @@ class AesGcmKey : public AeadKey {
 
   const AesGcmParameters& GetParameters() const override { return parameters_; }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
 
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<AesGcmKey>(*this);
+  }
+
  private:
   AesGcmKey(const AesGcmParameters& parameters, const RestrictedData& key_bytes,
-            absl::optional<int> id_requirement,
-            std::string output_prefix)
+            absl::optional<int> id_requirement, std::string output_prefix)
       : parameters_(parameters),
         key_bytes_(key_bytes),
         id_requirement_(id_requirement),

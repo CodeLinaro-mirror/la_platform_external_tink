@@ -16,8 +16,11 @@
 
 #include "tink/jwt/jwt_hmac_proto_serialization.h"
 
+#include <cstdint>
 #include <string>
+#include <utility>
 
+#include "absl/base/no_destructor.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
@@ -29,26 +32,21 @@
 #include "tink/internal/parameters_serializer.h"
 #include "tink/internal/proto_key_serialization.h"
 #include "tink/internal/proto_parameters_serialization.h"
+#include "tink/internal/proto_parser.h"
+#include "tink/internal/tink_proto_structs.h"
 #include "tink/jwt/jwt_hmac_key.h"
 #include "tink/jwt/jwt_hmac_parameters.h"
 #include "tink/partial_key_access.h"
 #include "tink/restricted_data.h"
 #include "tink/secret_key_access_token.h"
-#include "tink/util/secret_proto.h"
-#include "tink/util/status.h"
-#include "tink/util/statusor.h"
-#include "proto/common.pb.h"
-#include "proto/jwt_hmac.pb.h"
-#include "proto/tink.pb.h"
+#include "tink/util/secret_data.h"
 
 namespace crypto {
 namespace tink {
 namespace {
 
-using ::crypto::tink::util::SecretProto;
-using ::google::crypto::tink::JwtHmacAlgorithm;
-using ::google::crypto::tink::JwtHmacKeyFormat;
-using ::google::crypto::tink::OutputPrefixType;
+using ::crypto::tink::internal::ProtoParser;
+using ::crypto::tink::internal::ProtoParserBuilder;
 
 using JwtHmacProtoParametersParserImpl =
     internal::ParametersParserImpl<internal::ProtoParametersSerialization,
@@ -61,80 +59,136 @@ using JwtHmacProtoKeyParserImpl =
 using JwtHmacProtoKeySerializerImpl =
     internal::KeySerializerImpl<JwtHmacKey, internal::ProtoKeySerialization>;
 
+struct CustomKidStruct {
+  std::string value;
+
+  static ProtoParser<CustomKidStruct> CreateParser() {
+    return ProtoParserBuilder<CustomKidStruct>()
+        .AddBytesStringField(1, &CustomKidStruct::value)
+        .BuildOrDie();
+  }
+};
+
+bool JwtHmacAlgorithmValid(int value) { return value >= 0 && value <= 3; }
+
+enum class JwtHmacAlgorithmEnum : uint32_t {
+  kHsUnknown = 0,
+  kHS256 = 1,
+  kHS384 = 2,
+  kHS512 = 3,
+};
+
+struct JwtHmacKeyStruct {
+  uint32_t version;
+  JwtHmacAlgorithmEnum algorithm;
+  util::SecretData key_value;
+  absl::optional<CustomKidStruct> custom_kid;
+
+  static const ProtoParser<JwtHmacKeyStruct>& GetParser() {
+    static absl::NoDestructor<ProtoParser<JwtHmacKeyStruct>> parser{
+        ProtoParserBuilder<JwtHmacKeyStruct>()
+            .AddUint32Field(1, &JwtHmacKeyStruct::version)
+            .AddEnumField(2, &JwtHmacKeyStruct::algorithm,
+                          &JwtHmacAlgorithmValid)
+            .AddBytesSecretDataField(3, &JwtHmacKeyStruct::key_value)
+            .AddMessageFieldWithPresence(4, &JwtHmacKeyStruct::custom_kid,
+                                         CustomKidStruct::CreateParser())
+
+            .BuildOrDie()};
+    return *parser;
+  }
+};
+
+struct JwtHmacKeyFormatStruct {
+  uint32_t version;
+  JwtHmacAlgorithmEnum algorithm;
+  uint32_t key_size;
+
+  static const ProtoParser<JwtHmacKeyFormatStruct>& GetParser() {
+    static absl::NoDestructor<ProtoParser<JwtHmacKeyFormatStruct>> parser{
+        ProtoParserBuilder<JwtHmacKeyFormatStruct>()
+            .AddUint32Field(1, &JwtHmacKeyFormatStruct::version)
+            .AddEnumField(2, &JwtHmacKeyFormatStruct::algorithm,
+                          &JwtHmacAlgorithmValid)
+            .AddUint32Field(3, &JwtHmacKeyFormatStruct::key_size)
+            .BuildOrDie()};
+    return *parser;
+  }
+};
+
 const absl::string_view kTypeUrl =
     "type.googleapis.com/google.crypto.tink.JwtHmacKey";
 
-util::StatusOr<JwtHmacParameters::KidStrategy> ToKidStrategy(
-    OutputPrefixType output_prefix_type, bool has_custom_kid) {
+absl::StatusOr<JwtHmacParameters::KidStrategy> ToKidStrategy(
+    internal::OutputPrefixTypeEnum output_prefix_type, bool has_custom_kid) {
   switch (output_prefix_type) {
-    case OutputPrefixType::RAW:
+    case internal::OutputPrefixTypeEnum::kRaw:
       if (has_custom_kid) {
         return JwtHmacParameters::KidStrategy::kCustom;
       }
       return JwtHmacParameters::KidStrategy::kIgnored;
-    case OutputPrefixType::TINK:
+    case internal::OutputPrefixTypeEnum::kTink:
       return JwtHmacParameters::KidStrategy::kBase64EncodedKeyId;
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
-                          "Invalid OutputPrefixType for JwtHmacKeyFormat.");
+      return absl::InvalidArgumentError(
+          "Invalid OutputPrefixType for JwtHmacKeyFormat.");
   }
 }
 
-util::StatusOr<OutputPrefixType> ToOutputPrefixType(
+absl::StatusOr<internal::OutputPrefixTypeEnum> ToOutputPrefixType(
     JwtHmacParameters::KidStrategy kid_strategy) {
   switch (kid_strategy) {
     case JwtHmacParameters::KidStrategy::kCustom:
-      return OutputPrefixType::RAW;
+      return internal::OutputPrefixTypeEnum::kRaw;
     case JwtHmacParameters::KidStrategy::kIgnored:
-      return OutputPrefixType::RAW;
+      return internal::OutputPrefixTypeEnum::kRaw;
     case JwtHmacParameters::KidStrategy::kBase64EncodedKeyId:
-      return OutputPrefixType::TINK;
+      return internal::OutputPrefixTypeEnum::kTink;
     default:
-      return util::Status(
-          absl::StatusCode::kInvalidArgument,
+      return absl::InvalidArgumentError(
           "Could not determine JwtHmacParameters::KidStrategy.");
   }
 }
 
-util::StatusOr<JwtHmacParameters::Algorithm> FromProtoAlgorithm(
-    JwtHmacAlgorithm algorithm) {
+absl::StatusOr<JwtHmacParameters::Algorithm> FromProtoAlgorithm(
+    JwtHmacAlgorithmEnum algorithm) {
   switch (algorithm) {
-    case JwtHmacAlgorithm::HS256:
+    case JwtHmacAlgorithmEnum::kHS256:
       return JwtHmacParameters::Algorithm::kHs256;
-    case JwtHmacAlgorithm::HS384:
+    case JwtHmacAlgorithmEnum::kHS384:
       return JwtHmacParameters::Algorithm::kHs384;
-    case JwtHmacAlgorithm::HS512:
+    case JwtHmacAlgorithmEnum::kHS512:
       return JwtHmacParameters::Algorithm::kHs512;
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
-                          "Could not determine JwtHmacAlgorithm.");
+      return absl::InvalidArgumentError(
+          "Could not determine JwtHmacAlgorithm.");
   }
 }
 
-util::StatusOr<JwtHmacAlgorithm> ToProtoAlgorithm(
+absl::StatusOr<JwtHmacAlgorithmEnum> ToProtoAlgorithm(
     JwtHmacParameters::Algorithm algorithm) {
   switch (algorithm) {
     case JwtHmacParameters::Algorithm::kHs256:
-      return JwtHmacAlgorithm::HS256;
+      return JwtHmacAlgorithmEnum::kHS256;
     case JwtHmacParameters::Algorithm::kHs384:
-      return JwtHmacAlgorithm::HS384;
+      return JwtHmacAlgorithmEnum::kHS384;
     case JwtHmacParameters::Algorithm::kHs512:
-      return JwtHmacAlgorithm::HS512;
+      return JwtHmacAlgorithmEnum::kHS512;
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
-                          "Could not determine JwtHmacParameters::Algorithm");
+      return absl::InvalidArgumentError(
+          "Could not determine JwtHmacParameters::Algorithm");
   }
 }
 
-util::StatusOr<JwtHmacParameters> ToParameters(
-    int key_size_in_bytes, OutputPrefixType output_prefix_type,
-    JwtHmacAlgorithm proto_algorithm, bool has_custom_kid) {
-  util::StatusOr<JwtHmacParameters::KidStrategy> kid_strategy =
+absl::StatusOr<JwtHmacParameters> ToParameters(
+    int key_size_in_bytes, internal::OutputPrefixTypeEnum output_prefix_type,
+    JwtHmacAlgorithmEnum proto_algorithm, bool has_custom_kid) {
+  absl::StatusOr<JwtHmacParameters::KidStrategy> kid_strategy =
       ToKidStrategy(output_prefix_type, has_custom_kid);
   if (!kid_strategy.ok()) {
     return kid_strategy.status();
   }
-  util::StatusOr<JwtHmacParameters::Algorithm> algorithm =
+  absl::StatusOr<JwtHmacParameters::Algorithm> algorithm =
       FromProtoAlgorithm(proto_algorithm);
   if (!algorithm.ok()) {
     return algorithm.status();
@@ -143,83 +197,88 @@ util::StatusOr<JwtHmacParameters> ToParameters(
                                    *algorithm);
 }
 
-util::StatusOr<JwtHmacParameters> ParseParameters(
+absl::StatusOr<JwtHmacParameters> ParseParameters(
     const internal::ProtoParametersSerialization& serialization) {
-  if (serialization.GetKeyTemplate().type_url() != kTypeUrl) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
-                        "Wrong type URL when parsing JwtHmacParameters.");
+  const internal::KeyTemplateStruct& key_template =
+      serialization.GetKeyTemplateStruct();
+  if (key_template.type_url != kTypeUrl) {
+    return absl::InvalidArgumentError(
+        "Wrong type URL when parsing JwtHmacParameters.");
   }
-  JwtHmacKeyFormat proto_key_format;
-  if (!proto_key_format.ParseFromString(
-          serialization.GetKeyTemplate().value())) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
-                        "Failed to parse JwtHmacKeyFormat proto.");
+  absl::StatusOr<JwtHmacKeyFormatStruct> key_format_struct =
+      JwtHmacKeyFormatStruct::GetParser().Parse(key_template.value);
+  if (!key_format_struct.ok()) {
+    return key_format_struct.status();
   }
-  if (proto_key_format.version() != 0) {
-    return util::Status(
-        absl::StatusCode::kInvalidArgument,
+
+  if (key_format_struct->version != 0) {
+    return absl::InvalidArgumentError(
         "Parsing JwtHmacParameters failed: only version 0 is accepted.");
   }
 
-  return ToParameters(proto_key_format.key_size(),
-                      serialization.GetKeyTemplate().output_prefix_type(),
-                      proto_key_format.algorithm(), /*has_custom_kid=*/false);
+  return ToParameters(key_format_struct->key_size,
+                      serialization.GetKeyTemplateStruct().output_prefix_type,
+                      key_format_struct->algorithm, /*has_custom_kid=*/false);
 }
 
-util::StatusOr<internal::ProtoParametersSerialization> SerializeParameters(
+absl::StatusOr<internal::ProtoParametersSerialization> SerializeParameters(
     const JwtHmacParameters& parameters) {
   if (parameters.GetKidStrategy() == JwtHmacParameters::KidStrategy::kCustom) {
-    return util::Status(
-        absl::StatusCode::kInvalidArgument,
+    return absl::InvalidArgumentError(
         "Unable to serialize JwtHmacParameters::KidStrategy::kCustom.");
   }
-  util::StatusOr<OutputPrefixType> output_prefix_type =
+  absl::StatusOr<internal::OutputPrefixTypeEnum> output_prefix_type =
       ToOutputPrefixType(parameters.GetKidStrategy());
   if (!output_prefix_type.ok()) {
     return output_prefix_type.status();
   }
-  util::StatusOr<JwtHmacAlgorithm> proto_algorithm =
+  absl::StatusOr<JwtHmacAlgorithmEnum> proto_algorithm =
       ToProtoAlgorithm(parameters.GetAlgorithm());
   if (!proto_algorithm.ok()) {
     return proto_algorithm.status();
   }
 
-  JwtHmacKeyFormat format;
-  format.set_version(0);
-  format.set_key_size(parameters.KeySizeInBytes());
-  format.set_algorithm(*proto_algorithm);
+  JwtHmacKeyFormatStruct key_format_struct;
+  key_format_struct.version = 0;
+  key_format_struct.key_size = parameters.KeySizeInBytes();
+  key_format_struct.algorithm = *proto_algorithm;
+
+  absl::StatusOr<std::string> serialized_key_format =
+      JwtHmacKeyFormatStruct::GetParser().SerializeIntoString(
+          key_format_struct);
+  if (!serialized_key_format.ok()) {
+    return serialized_key_format.status();
+  }
 
   return internal::ProtoParametersSerialization::Create(
-      kTypeUrl, *output_prefix_type, format.SerializeAsString());
+      kTypeUrl, *output_prefix_type, *serialized_key_format);
 }
 
-util::StatusOr<JwtHmacKey> ParseKey(
+absl::StatusOr<JwtHmacKey> ParseKey(
     const internal::ProtoKeySerialization& serialization,
     absl::optional<SecretKeyAccessToken> token) {
   if (!token.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
-                        "SecretKeyAccess is required.");
+    return absl::InvalidArgumentError("SecretKeyAccess is required.");
   }
   if (serialization.TypeUrl() != kTypeUrl) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
-                        "Wrong type URL when parsing JwtHmacKey.");
+    return absl::InvalidArgumentError(
+        "Wrong type URL when parsing JwtHmacKey.");
   }
-  absl::StatusOr<SecretProto<google::crypto::tink::JwtHmacKey>> proto_key =
-      SecretProto<google::crypto::tink::JwtHmacKey>::ParseFromSecretData(
-          serialization.SerializedKeyProto().Get(*token));
-  if (!proto_key.ok()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
-                        "Failed to parse JwtHmacKey proto.");
+  absl::StatusOr<JwtHmacKeyStruct> key_struct =
+      JwtHmacKeyStruct::GetParser().Parse(
+          serialization.SerializedKeyProto().GetSecret(*token));
+  if (!key_struct.ok()) {
+    return key_struct.status();
   }
-  if ((*proto_key)->version() != 0) {
-    return util::Status(
-        absl::StatusCode::kInvalidArgument,
+
+  if (key_struct->version != 0) {
+    return absl::InvalidArgumentError(
         "Parsing JwtHmacKey failed: only version 0 is accepted.");
   }
 
-  util::StatusOr<JwtHmacParameters> parameters = ToParameters(
-      (*proto_key)->key_value().length(), serialization.GetOutputPrefixType(),
-      (*proto_key)->algorithm(), (*proto_key)->has_custom_kid());
+  absl::StatusOr<JwtHmacParameters> parameters = ToParameters(
+      key_struct->key_value.size(), serialization.GetOutputPrefixTypeEnum(),
+      key_struct->algorithm, key_struct->custom_kid.has_value());
   if (!parameters.ok()) {
     return parameters.status();
   }
@@ -227,52 +286,57 @@ util::StatusOr<JwtHmacKey> ParseKey(
   JwtHmacKey::Builder builder =
       JwtHmacKey::Builder()
           .SetParameters(*parameters)
-          .SetKeyBytes(RestrictedData((*proto_key)->key_value(), *token));
+          .SetKeyBytes(RestrictedData(key_struct->key_value, *token));
   if (serialization.IdRequirement().has_value()) {
     builder.SetIdRequirement(*serialization.IdRequirement());
   }
-  if ((*proto_key)->has_custom_kid()) {
-    builder.SetCustomKid((*proto_key)->custom_kid().value());
+  if (key_struct->custom_kid.has_value()) {
+    builder.SetCustomKid(key_struct->custom_kid.value().value);
   }
   return builder.Build(GetPartialKeyAccess());
 }
 
-util::StatusOr<internal::ProtoKeySerialization> SerializeKey(
+absl::StatusOr<internal::ProtoKeySerialization> SerializeKey(
     const JwtHmacKey& key, absl::optional<SecretKeyAccessToken> token) {
   if (!token.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
-                        "SecretKeyAccess is required.");
+    return absl::InvalidArgumentError("SecretKeyAccess is required.");
   }
-  util::StatusOr<RestrictedData> restricted_input =
+  absl::StatusOr<RestrictedData> restricted_input =
       key.GetKeyBytes(GetPartialKeyAccess());
   if (!restricted_input.ok()) {
     return restricted_input.status();
   }
-  util::StatusOr<JwtHmacAlgorithm> proto_algorithm =
+  absl::StatusOr<JwtHmacAlgorithmEnum> proto_algorithm =
       ToProtoAlgorithm(key.GetParameters().GetAlgorithm());
   if (!proto_algorithm.ok()) {
     return proto_algorithm.status();
   }
 
-  google::crypto::tink::JwtHmacKey proto_key;
-  proto_key.set_version(0);
-  proto_key.set_key_value(restricted_input->GetSecret(*token));
-  proto_key.set_algorithm(*proto_algorithm);
+  JwtHmacKeyStruct key_struct;
+  key_struct.version = 0;
+  key_struct.key_value = restricted_input->Get(*token);
+  key_struct.algorithm = *proto_algorithm;
   if (key.GetParameters().GetKidStrategy() ==
       JwtHmacParameters::KidStrategy::kCustom) {
-    proto_key.mutable_custom_kid()->set_value(*key.GetKid());
+    key_struct.custom_kid = CustomKidStruct{key.GetKid().value()};
   }
 
-  util::StatusOr<OutputPrefixType> output_prefix_type =
+  absl::StatusOr<util::SecretData> serialized_key =
+      JwtHmacKeyStruct::GetParser().SerializeIntoSecretData(key_struct);
+  if (!serialized_key.ok()) {
+    return serialized_key.status();
+  }
+
+  absl::StatusOr<internal::OutputPrefixTypeEnum> output_prefix_type =
       ToOutputPrefixType(key.GetParameters().GetKidStrategy());
   if (!output_prefix_type.ok()) {
     return output_prefix_type.status();
   }
 
   RestrictedData restricted_output =
-      RestrictedData(proto_key.SerializeAsString(), *token);
+      RestrictedData(*std::move(serialized_key), *token);
   return internal::ProtoKeySerialization::Create(
-      kTypeUrl, restricted_output, google::crypto::tink::KeyData::SYMMETRIC,
+      kTypeUrl, restricted_output, internal::KeyMaterialTypeEnum::kSymmetric,
       *output_prefix_type, key.GetIdRequirement());
 }
 
@@ -300,8 +364,8 @@ JwtHmacProtoKeySerializerImpl* JwtHmacProtoKeySerializer() {
 
 }  // namespace
 
-util::Status RegisterJwtHmacProtoSerialization() {
-  util::Status status =
+absl::Status RegisterJwtHmacProtoSerialization() {
+  absl::Status status =
       internal::MutableSerializationRegistry::GlobalInstance()
           .RegisterParametersParser(JwtHmacProtoParametersParser());
   if (!status.ok()) {

@@ -61,14 +61,14 @@ namespace subtle {
 // implies that keys must be 64 bytes (2*256 bits) long.
 class AesSivBoringSsl : public DeterministicAead {
  public:
-  static crypto::tink::util::StatusOr<std::unique_ptr<DeterministicAead>> New(
+  static absl::StatusOr<std::unique_ptr<DeterministicAead>> New(
       const util::SecretData& key);
 
-  crypto::tink::util::StatusOr<std::string> EncryptDeterministically(
+  absl::StatusOr<std::string> EncryptDeterministically(
       absl::string_view plaintext,
       absl::string_view associated_data) const override;
 
-  crypto::tink::util::StatusOr<std::string> DecryptDeterministically(
+  absl::StatusOr<std::string> DecryptDeterministically(
       absl::string_view ciphertext,
       absl::string_view associated_data) const override;
 
@@ -120,7 +120,7 @@ class AesSivBoringSsl : public DeterministicAead {
 
   // Encrypts (or decrypts) `in` using an SIV `siv` and key `key`, and writes
   // the result to `out`.
-  util::Status AesCtrCrypt(absl::string_view in, const uint8_t siv[kBlockSize],
+  absl::Status AesCtrCrypt(absl::string_view in, const uint8_t siv[kBlockSize],
                            const AES_KEY* key, absl::Span<char> out) const;
 
   const util::SecretUniquePtr<AES_KEY> k1_;

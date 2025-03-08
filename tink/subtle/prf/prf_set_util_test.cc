@@ -28,10 +28,11 @@
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "tink/input_stream.h"
+#include "tink/mac/internal/stateful_mac.h"
 #include "tink/prf/prf_set.h"
-#include "tink/subtle/mac/stateful_mac.h"
 #include "tink/subtle/prf/streaming_prf.h"
 #include "tink/util/istream_input_stream.h"
+#include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
@@ -42,6 +43,7 @@ namespace subtle {
 namespace {
 
 using ::crypto::tink::test::IsOk;
+using ::crypto::tink::util::SecretData;
 using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::DefaultValue;
@@ -53,32 +55,34 @@ using ::testing::StrEq;
 
 class MockPrf : public Prf {
  public:
-  MOCK_METHOD(util::StatusOr<std::string>, Compute,
+  MOCK_METHOD(absl::StatusOr<std::string>, Compute,
               (absl::string_view input, size_t output_length), (const));
 };
 
-class MockStatefulMac : public StatefulMac {
+class MockStatefulMac : public internal::StatefulMac {
  public:
-  MOCK_METHOD(util::Status, Update, (absl::string_view data), (override));
-  MOCK_METHOD(util::StatusOr<std::string>, Finalize, (), (override));
+  MOCK_METHOD(absl::Status, Update, (absl::string_view data), (override));
+  MOCK_METHOD(absl::StatusOr<SecretData>, FinalizeAsSecretData, (), (override));
 };
 
-class FakeStatefulMacFactory : public StatefulMacFactory {
+class FakeStatefulMacFactory : public internal::StatefulMacFactory {
  public:
-  FakeStatefulMacFactory(util::Status update_status,
-                         util::StatusOr<std::string> finalize_result)
+  FakeStatefulMacFactory(absl::Status update_status,
+                         absl::StatusOr<SecretData> finalize_result)
       : update_status_(update_status), finalize_result_(finalize_result) {}
-  util::StatusOr<std::unique_ptr<StatefulMac>> Create() const override {
+  absl::StatusOr<std::unique_ptr<internal::StatefulMac>> Create()
+      const override {
     auto mac_mock = absl::make_unique<NiceMock<MockStatefulMac>>();
     ON_CALL(*mac_mock, Update(_)).WillByDefault(Return(update_status_));
-    ON_CALL(*mac_mock, Finalize()).WillByDefault(Return(finalize_result_));
-    std::unique_ptr<StatefulMac> result = std::move(mac_mock);
+    ON_CALL(*mac_mock, FinalizeAsSecretData())
+        .WillByDefault(Return(finalize_result_));
+    std::unique_ptr<internal::StatefulMac> result = std::move(mac_mock);
     return std::move(result);
   }
 
  private:
-  util::Status update_status_;
-  util::StatusOr<std::string> finalize_result_;
+  absl::Status update_status_;
+  absl::StatusOr<SecretData> finalize_result_;
 };
 
 class MockStreamingPrf : public StreamingPrf {
@@ -94,11 +98,16 @@ std::unique_ptr<InputStream> GetInputStreamForString(const std::string& input) {
 
 class PrfFromStatefulMacFactoryTest : public ::testing::Test {
  protected:
-  void SetUpWithResult(util::Status update_status,
-                       util::StatusOr<std::string> finalize_result) {
+  void SetUpWithResult(absl::Status update_status,
+                       absl::StatusOr<std::string> finalize_result) {
+    absl::StatusOr<SecretData> finalize_result_secret_data =
+        finalize_result.ok()
+            ? static_cast<absl::StatusOr<SecretData>>(
+                  util::SecretDataFromStringView(*finalize_result))
+            : static_cast<absl::StatusOr<SecretData>>(finalize_result.status());
     prf_ = CreatePrfFromStatefulMacFactory(
         absl::make_unique<FakeStatefulMacFactory>(update_status,
-                                                  finalize_result));
+                                                  finalize_result_secret_data));
   }
   Prf* prf() { return prf_.get(); }
 
@@ -107,14 +116,14 @@ class PrfFromStatefulMacFactoryTest : public ::testing::Test {
 };
 
 TEST_F(PrfFromStatefulMacFactoryTest, ComputePrf) {
-  SetUpWithResult(util::OkStatus(), std::string("mock_stateful_mac"));
+  SetUpWithResult(absl::OkStatus(), std::string("mock_stateful_mac"));
   auto output_result = prf()->Compute("test_input", 5);
   ASSERT_TRUE(output_result.ok()) << output_result.status();
   EXPECT_THAT(output_result.value(), StrEq("mock_"));
 }
 
 TEST_F(PrfFromStatefulMacFactoryTest, ComputePrfUpdateFails) {
-  SetUpWithResult(util::Status(absl::StatusCode::kInternal, "UpdateFailed"),
+  SetUpWithResult(absl::Status(absl::StatusCode::kInternal, "UpdateFailed"),
                   std::string("mock_stateful_mac"));
   auto output_result = prf()->Compute("test_input", 5);
   EXPECT_FALSE(output_result.ok());
@@ -122,15 +131,15 @@ TEST_F(PrfFromStatefulMacFactoryTest, ComputePrfUpdateFails) {
 }
 
 TEST_F(PrfFromStatefulMacFactoryTest, ComputePrfFinalizeFails) {
-  SetUpWithResult(util::OkStatus(),
-                  util::Status(absl::StatusCode::kInternal, "FinalizeFailed"));
+  SetUpWithResult(absl::OkStatus(),
+                  absl::Status(absl::StatusCode::kInternal, "FinalizeFailed"));
   auto output_result = prf()->Compute("test_input", 5);
   EXPECT_FALSE(output_result.ok());
   EXPECT_THAT(output_result.status().message(), Eq("FinalizeFailed"));
 }
 
 TEST_F(PrfFromStatefulMacFactoryTest, ComputePrfTooMuchOutputRequested) {
-  SetUpWithResult(util::OkStatus(), std::string("mock_stateful_mac"));
+  SetUpWithResult(absl::OkStatus(), std::string("mock_stateful_mac"));
   auto output_result = prf()->Compute("test_input", 100);
   EXPECT_FALSE(output_result.ok());
 }

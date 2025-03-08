@@ -26,14 +26,14 @@
 namespace crypto {
 namespace tink {
 
-util::StatusOr<JwtEcdsaParameters> JwtEcdsaParameters::Create(
+absl::StatusOr<JwtEcdsaParameters> JwtEcdsaParameters::Create(
     KidStrategy kid_strategy, Algorithm algorithm) {
   static const std::set<KidStrategy>* kSupportedKidStrategies =
       new std::set<KidStrategy>({KidStrategy::kBase64EncodedKeyId,
                                  KidStrategy::kIgnored, KidStrategy::kCustom});
   if (kSupportedKidStrategies->find(kid_strategy) ==
       kSupportedKidStrategies->end()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create JWT ECDSA parameters with unknown kid strategy.");
   }
@@ -41,7 +41,7 @@ util::StatusOr<JwtEcdsaParameters> JwtEcdsaParameters::Create(
       new std::set<Algorithm>(
           {Algorithm::kEs256, Algorithm::kEs384, Algorithm::kEs512});
   if (kSupportedAlgorithms->find(algorithm) == kSupportedAlgorithms->end()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create JWT ECDSA parameters with unknown algorithm.");
   }

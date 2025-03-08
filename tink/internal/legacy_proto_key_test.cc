@@ -16,6 +16,7 @@
 
 #include "tink/internal/legacy_proto_key.h"
 
+#include <memory>
 #include <string>
 #include <tuple>
 
@@ -60,13 +61,13 @@ class LegacyProtoKeyTest : public ::testing::Test {
 TEST_F(LegacyProtoKeyTest, CreateAndSerialization) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
@@ -74,7 +75,7 @@ TEST_F(LegacyProtoKeyTest, CreateAndSerialization) {
   EXPECT_THAT(key->GetParameters().HasIdRequirement(), IsTrue());
   EXPECT_THAT(key->Serialization(InsecureSecretKeyAccess::Get()), IsOk());
 
-  util::StatusOr<const ProtoKeySerialization*> key_serialization =
+  absl::StatusOr<const ProtoKeySerialization *> key_serialization =
       key->Serialization(InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key_serialization.status(), IsOk());
   EXPECT_THAT(Equals(**key_serialization, *serialization), IsTrue());
@@ -84,23 +85,23 @@ TEST_F(LegacyProtoKeyTest, Equals) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<ProtoKeySerialization> other_serialization =
+  absl::StatusOr<ProtoKeySerialization> other_serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(other_serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
+  absl::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
       *other_serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(other_key.status(), IsOk());
 
@@ -114,23 +115,23 @@ TEST_F(LegacyProtoKeyTest, TypeUrlNotEqual) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<ProtoKeySerialization> other_serialization =
+  absl::StatusOr<ProtoKeySerialization> other_serialization =
       ProtoKeySerialization::Create("other_type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(other_serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
+  absl::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
       *other_serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(other_key.status(), IsOk());
 
@@ -146,23 +147,23 @@ TEST_F(LegacyProtoKeyTest, SerializedKeyNotEqual) {
   RestrictedData other_serialized_key =
       RestrictedData("other_serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<ProtoKeySerialization> other_serialization =
+  absl::StatusOr<ProtoKeySerialization> other_serialization =
       ProtoKeySerialization::Create("type_url", other_serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(other_serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
+  absl::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
       *other_serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(other_key.status(), IsOk());
 
@@ -176,23 +177,23 @@ TEST_F(LegacyProtoKeyTest, KeyMaterialTypeNotEqual) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<ProtoKeySerialization> other_serialization =
+  absl::StatusOr<ProtoKeySerialization> other_serialization =
       ProtoKeySerialization::Create("type_url", serialized_key, KeyData::REMOTE,
                                     OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(other_serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
+  absl::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
       *other_serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(other_key.status(), IsOk());
 
@@ -206,24 +207,24 @@ TEST_F(LegacyProtoKeyTest, OutputPrefixTypeNotEqual) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<ProtoKeySerialization> other_serialization =
+  absl::StatusOr<ProtoKeySerialization> other_serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC,
                                     OutputPrefixType::CRUNCHY,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(other_serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
+  absl::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
       *other_serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(other_key.status(), IsOk());
 
@@ -237,23 +238,23 @@ TEST_F(LegacyProtoKeyTest, IdRequirementNotEqual) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<ProtoKeySerialization> other_serialization =
+  absl::StatusOr<ProtoKeySerialization> other_serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/6789);
   ASSERT_THAT(other_serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
+  absl::StatusOr<LegacyProtoKey> other_key = LegacyProtoKey::Create(
       *other_serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(other_key.status(), IsOk());
 
@@ -261,6 +262,25 @@ TEST_F(LegacyProtoKeyTest, IdRequirementNotEqual) {
   EXPECT_TRUE(*other_key != *key);
   EXPECT_FALSE(*key == *other_key);
   EXPECT_FALSE(*other_key == *key);
+}
+
+TEST_F(LegacyProtoKeyTest, Clone) {
+  RestrictedData serialized_key =
+      RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
+
+  absl::StatusOr<ProtoKeySerialization> serialization =
+      ProtoKeySerialization::Create("type_url", serialized_key,
+                                    KeyData::SYMMETRIC, OutputPrefixType::TINK,
+                                    /*id_requirement=*/12345);
+  ASSERT_THAT(serialization.status(), IsOk());
+  absl::StatusOr<LegacyProtoKey> key =
+      LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(key.status(), IsOk());
+
+  // Clone the key.
+  std::unique_ptr<Key> cloned_key = key->Clone();
+
+  ASSERT_THAT(*cloned_key, Eq(*key));
 }
 
 using AllOutputPrefixTypesTest =
@@ -280,13 +300,13 @@ TEST_P(AllOutputPrefixTypesTest, GetIdRequirement) {
 
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, output_prefix_type,
                                     id_requirement);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
@@ -305,17 +325,17 @@ TEST_P(AllKeyMaterialTypesTest, CreateAndSerializationWithSecretAccessToken) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     key_material_type, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<const ProtoKeySerialization*> key_serialization =
+  absl::StatusOr<const ProtoKeySerialization *> key_serialization =
       key->Serialization(InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key_serialization.status(), IsOk());
 }
@@ -333,13 +353,13 @@ TEST_P(SecretKeyMaterialTypesTest, CreateWithoutSecretAccessToken) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     key_material_type, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, /*token=*/absl::nullopt);
   ASSERT_THAT(key.status(), StatusIs(absl::StatusCode::kPermissionDenied));
 }
@@ -350,18 +370,18 @@ TEST_P(SecretKeyMaterialTypesTest, SerializationWithoutSecretAccessToken) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     key_material_type, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
   // Must use token for key creation.
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<const ProtoKeySerialization*> key_serialization =
+  absl::StatusOr<const ProtoKeySerialization *> key_serialization =
       key->Serialization(/*token=*/absl::nullopt);
   ASSERT_THAT(key_serialization.status(),
               StatusIs(absl::StatusCode::kPermissionDenied));
@@ -379,13 +399,13 @@ TEST_P(NonSecretKeyMaterialTypesTest, CreateWithoutSecretAccessToken) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     key_material_type, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, /*token=*/absl::nullopt);
   ASSERT_THAT(key.status(), IsOk());
 }
@@ -396,18 +416,18 @@ TEST_P(NonSecretKeyMaterialTypesTest, SerializationWithoutSecretAccessToken) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     key_material_type, OutputPrefixType::TINK,
                                     /*id_requirement=*/12345);
   ASSERT_THAT(serialization.status(), IsOk());
 
   // Must use token for key creation.
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<const ProtoKeySerialization*> key_serialization =
+  absl::StatusOr<const ProtoKeySerialization *> key_serialization =
       key->Serialization(/*token=*/absl::nullopt);
   ASSERT_THAT(key_serialization.status(), IsOk());
 }

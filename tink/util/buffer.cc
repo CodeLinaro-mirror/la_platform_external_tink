@@ -47,13 +47,14 @@ class OwningBuffer : public Buffer {
 
   int size() const override { return size_; }
 
-  util::Status set_size(int new_size) override {
+  absl::Status set_size(int new_size) override {
     if (new_size < 0  || new_size > allocated_size_) {
-      return Status(absl::StatusCode::kInvalidArgument,
-                    "new_size must satisfy 0 <= new_size <= allocated_size()");
+      return absl::Status(
+          absl::StatusCode::kInvalidArgument,
+          "new_size must satisfy 0 <= new_size <= allocated_size()");
     }
     size_ = new_size;
-    return OkStatus();
+    return absl::OkStatus();
   }
 
   ~OwningBuffer() override = default;
@@ -84,13 +85,14 @@ class NonOwningBuffer : public Buffer {
 
   int size() const override { return size_; }
 
-  util::Status set_size(int new_size) override {
+  absl::Status set_size(int new_size) override {
     if (new_size < 0  || new_size > allocated_size_) {
-      return Status(absl::StatusCode::kInvalidArgument,
-                    "new_size must satisfy 0 <= new_size <= allocated_size()");
+      return absl::Status(
+          absl::StatusCode::kInvalidArgument,
+          "new_size must satisfy 0 <= new_size <= allocated_size()");
     }
     size_ = new_size;
-    return OkStatus();
+    return absl::OkStatus();
   }
 
   ~NonOwningBuffer() override = default;
@@ -104,28 +106,27 @@ class NonOwningBuffer : public Buffer {
 }  // namespace
 
 // static
-StatusOr<std::unique_ptr<Buffer>> Buffer::New(int allocated_size) {
+absl::StatusOr<std::unique_ptr<Buffer>> Buffer::New(int allocated_size) {
   if (allocated_size <= 0) {
-    return Status(absl::StatusCode::kInvalidArgument,
-                  "allocated_size must be positive");
+    return absl::Status(absl::StatusCode::kInvalidArgument,
+                        "allocated_size must be positive");
   }
   return {absl::make_unique<OwningBuffer>(allocated_size)};
 }
 
 // static
-StatusOr<std::unique_ptr<Buffer>> Buffer::NewNonOwning(
+absl::StatusOr<std::unique_ptr<Buffer>> Buffer::NewNonOwning(
     char* mem_block, int allocated_size) {
   if (allocated_size <= 0) {
-    return Status(absl::StatusCode::kInvalidArgument,
-                  "allocated_size must be positive");
+    return absl::Status(absl::StatusCode::kInvalidArgument,
+                        "allocated_size must be positive");
   }
   if (mem_block == nullptr) {
-    return Status(absl::StatusCode::kInvalidArgument,
-                  "mem_block must be non-null");
+    return absl::Status(absl::StatusCode::kInvalidArgument,
+                        "mem_block must be non-null");
   }
   return {absl::make_unique<NonOwningBuffer>(mem_block, allocated_size)};
 }
-
 
 }  // namespace util
 }  // namespace tink

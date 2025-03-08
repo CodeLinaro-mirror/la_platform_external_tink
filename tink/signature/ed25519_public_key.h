@@ -17,6 +17,8 @@
 #ifndef TINK_SIGNATURE_ED25519_PUBLIC_KEY_H_
 #define TINK_SIGNATURE_ED25519_PUBLIC_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 
 #include "absl/strings/string_view.h"
@@ -41,7 +43,7 @@ class Ed25519PublicKey : public SignaturePublicKey {
   // Creates a new Ed25519 public key from `public_key_bytes`. If `parameters`
   // specify a variant that uses a prefix, then `id_requirement` is used to
   // compute this prefix.
-  static util::StatusOr<Ed25519PublicKey> Create(
+  static absl::StatusOr<Ed25519PublicKey> Create(
       const Ed25519Parameters& parameters, absl::string_view public_key_bytes,
       absl::optional<int> id_requirement, PartialKeyAccessToken token);
 
@@ -55,11 +57,15 @@ class Ed25519PublicKey : public SignaturePublicKey {
     return parameters_;
   }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<Ed25519PublicKey>(*this);
+  };
 
  private:
   explicit Ed25519PublicKey(const Ed25519Parameters& parameters,

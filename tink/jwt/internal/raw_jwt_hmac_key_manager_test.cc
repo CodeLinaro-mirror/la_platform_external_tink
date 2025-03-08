@@ -25,14 +25,11 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "tink/config/global_registry.h"
-#include "tink/core/key_manager_impl.h"
 #include "tink/keyset_handle.h"
 #include "tink/mac.h"
 #include "tink/mac/mac_config.h"
 #include "tink/registry.h"
 #include "tink/util/istream_input_stream.h"
-#include "tink/util/secret_data.h"
-#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "proto/jwt_hmac.pb.h"
@@ -208,7 +205,7 @@ TEST(RawJwtHmacKeyManagerTest, DeriveKeyIsNotImplemented) {
   IstreamInputStream input_stream{
       absl::make_unique<std::stringstream>("0123456789abcdef0123456789abcdef")};
 
-  StatusOr<JwtHmacKey> key_or =
+  absl::StatusOr<JwtHmacKey> key_or =
       RawJwtHmacKeyManager().DeriveKey(format, &input_stream);
   EXPECT_THAT(key_or.status(), StatusIs(absl::StatusCode::kUnimplemented));
 }

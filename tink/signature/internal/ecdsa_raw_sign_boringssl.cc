@@ -32,6 +32,8 @@
 #include "openssl/ecdsa.h"
 #include "openssl/evp.h"
 #include "tink/internal/bn_util.h"
+#include "tink/internal/call_with_core_dump_protection.h"
+#include "tink/internal/dfsan_forwarders.h"
 #include "tink/internal/ec_util.h"
 #include "tink/internal/err_util.h"
 #include "tink/internal/fips_utils.h"
@@ -59,8 +61,8 @@ namespace {
 // (https://tools.ietf.org/html/rfc5480#appendix-A): ECDSA-Sig-Value :: =
 // SEQUENCE { r INTEGER, s INTEGER }. In particular, the encoding is: 0x30 ||
 // totalLength || 0x02 || r's length || r || 0x02 || s's length || s.
-crypto::tink::util::StatusOr<std::string> DerToIeee(absl::string_view der,
-                                                    const EC_KEY* key) {
+absl::StatusOr<std::string> DerToIeee(absl::string_view der,
+                                      const EC_KEY* key) {
   size_t field_size_in_bytes =
       (EC_GROUP_get_degree(EC_KEY_get0_group(key)) + 7) / 8;
 
@@ -70,18 +72,18 @@ crypto::tink::util::StatusOr<std::string> DerToIeee(absl::string_view der,
       d2i_ECDSA_SIG(nullptr, &der_ptr, der.size()));
   if (ecdsa == nullptr ||
       der_ptr != reinterpret_cast<const uint8_t*>(der.data() + der.size())) {
-    return util::Status(absl::StatusCode::kInternal, "d2i_ECDSA_SIG failed");
+    return absl::Status(absl::StatusCode::kInternal, "d2i_ECDSA_SIG failed");
   }
 
   const BIGNUM* r_bn;
   const BIGNUM* s_bn;
   ECDSA_SIG_get0(ecdsa.get(), &r_bn, &s_bn);
-  util::StatusOr<std::string> r =
+  absl::StatusOr<std::string> r =
       internal::BignumToString(r_bn, field_size_in_bytes);
   if (!r.ok()) {
     return r.status();
   }
-  util::StatusOr<std::string> s =
+  absl::StatusOr<std::string> s =
       internal::BignumToString(s_bn, field_size_in_bytes);
   if (!s.ok()) {
     return s.status();
@@ -92,72 +94,96 @@ crypto::tink::util::StatusOr<std::string> DerToIeee(absl::string_view der,
 }  // namespace
 
 // static
-util::StatusOr<std::unique_ptr<EcdsaRawSignBoringSsl>>
+absl::StatusOr<std::unique_ptr<EcdsaRawSignBoringSsl>>
 EcdsaRawSignBoringSsl::New(const subtle::SubtleUtilBoringSSL::EcKey& ec_key,
                            subtle::EcdsaSignatureEncoding encoding) {
   auto status = internal::CheckFipsCompatibility<EcdsaRawSignBoringSsl>();
   if (!status.ok()) return status;
 
-  // Check curve.
-  util::StatusOr<internal::SslUniquePtr<EC_GROUP>> group =
-      internal::EcGroupFromCurveType(ec_key.curve);
-  if (!group.ok()) {
-    return group.status();
-  }
   internal::SslUniquePtr<EC_KEY> key(EC_KEY_new());
-  EC_KEY_set_group(key.get(), group->get());
+  absl::Status result = CallWithCoreDumpProtection([&]() -> absl::Status {
+    // Check curve.
+    absl::StatusOr<internal::SslUniquePtr<EC_GROUP>> group =
+        internal::EcGroupFromCurveType(ec_key.curve);
+    if (!group.ok()) {
+      return group.status();
+    }
+    EC_KEY_set_group(key.get(), group->get());
 
-  // Check key.
-  util::StatusOr<internal::SslUniquePtr<EC_POINT>> pub_key =
-      internal::GetEcPoint(ec_key.curve, ec_key.pub_x, ec_key.pub_y);
-  if (!pub_key.ok()) {
-    return pub_key.status();
+    // Check key.
+    absl::StatusOr<internal::SslUniquePtr<EC_POINT>> pub_key =
+        internal::GetEcPoint(ec_key.curve, ec_key.pub_x, ec_key.pub_y);
+    if (!pub_key.ok()) {
+      return pub_key.status();
+    }
+
+    if (!EC_KEY_set_public_key(key.get(), pub_key->get())) {
+      return absl::Status(
+          absl::StatusCode::kInvalidArgument,
+          absl::StrCat("Invalid public key: ", internal::GetSslErrors()));
+    }
+
+    internal::SslUniquePtr<BIGNUM> priv_key(
+        BN_bin2bn(ec_key.priv.data(), ec_key.priv.size(), nullptr));
+    if (!EC_KEY_set_private_key(key.get(), priv_key.get())) {
+      return absl::Status(
+          absl::StatusCode::kInvalidArgument,
+          absl::StrCat("Invalid private key: ", internal::GetSslErrors()));
+    }
+    return absl::OkStatus();
+  });
+  if (!result.ok()) {
+    return result;
   }
-
-  if (!EC_KEY_set_public_key(key.get(), pub_key->get())) {
-    return util::Status(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrCat("Invalid public key: ", internal::GetSslErrors()));
-  }
-
-  internal::SslUniquePtr<BIGNUM> priv_key(
-      BN_bin2bn(ec_key.priv.data(), ec_key.priv.size(), nullptr));
-  if (!EC_KEY_set_private_key(key.get(), priv_key.get())) {
-    return util::Status(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrCat("Invalid private key: ", internal::GetSslErrors()));
-  }
-
   return {
       absl::WrapUnique(new EcdsaRawSignBoringSsl(std::move(key), encoding))};
 }
 
-util::StatusOr<std::string> EcdsaRawSignBoringSsl::Sign(
+absl::StatusOr<std::string> EcdsaRawSignBoringSsl::Sign(
     absl::string_view data) const {
   // BoringSSL expects a non-null pointer for data,
   // regardless of whether the size is 0.
   data = internal::EnsureStringNonNull(data);
 
   // Compute the raw signature.
-  std::vector<uint8_t> buffer(ECDSA_size(key_.get()));
-  unsigned int sig_length;
-  if (1 != ECDSA_sign(0 /* unused */,
-                      reinterpret_cast<const uint8_t*>(data.data()),
-                      data.size(), buffer.data(), &sig_length, key_.get())) {
-    return util::Status(absl::StatusCode::kInternal, "Signing failed.");
+  size_t signature_buffer_size = ECDSA_size(key_.get());
+  std::vector<uint8_t> buffer(signature_buffer_size);
+  // We allow core dump leakage of information written into the buffer. This is
+  // anyhow only the signature, which is fine to give to the adversary.
+  ScopedAssumeRegionCoreDumpSafe scope(buffer.data(), signature_buffer_size);
+  absl::StatusOr<int> signature_length =
+      CallWithCoreDumpProtection([&]() -> absl::StatusOr<int> {
+        unsigned int sig_length;
+        int result = ECDSA_sign(0 /* unused */,
+                          reinterpret_cast<const uint8_t*>(data.data()),
+                          data.size(), buffer.data(), &sig_length, key_.get());
+        if (result != 1) {
+          return absl::Status(absl::StatusCode::kInternal,
+                              "BoringSSL signing failed");
+        }
+        // We clear the label from the signature length -- the signature is
+        // now public, so the label can be cleared.
+        DfsanClearLabel(&sig_length, sizeof(sig_length));
+        return sig_length;
+      });
+  if (!signature_length.ok()) {
+    return signature_length.status();
   }
 
+  // We now remove DFSan labels from the signature - this is fine to leak.
+  DfsanClearLabel(buffer.data(), *signature_length);
   if (encoding_ == subtle::EcdsaSignatureEncoding::IEEE_P1363) {
-    auto status_or_sig = DerToIeee(
-        absl::string_view(reinterpret_cast<char*>(buffer.data()), sig_length),
-        key_.get());
+    auto status_or_sig =
+        DerToIeee(absl::string_view(reinterpret_cast<char*>(buffer.data()),
+                                    *signature_length),
+                  key_.get());
     if (!status_or_sig.ok()) {
       return status_or_sig.status();
     }
     return status_or_sig.value();
   }
 
-  return std::string(reinterpret_cast<char*>(buffer.data()), sig_length);
+  return std::string(reinterpret_cast<char*>(buffer.data()), *signature_length);
 }
 
 }  // namespace internal

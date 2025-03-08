@@ -17,13 +17,13 @@
 #ifndef TINK_HYBRID_HPKE_PROTO_SERIALIZATION_H_
 #define TINK_HYBRID_HPKE_PROTO_SERIALIZATION_H_
 
-#include "tink/util/status.h"
+#include "absl/status/status.h"
 
 namespace crypto {
 namespace tink {
 
 // Registers proto parsers and serializers for HPKE parameters and keys.
-crypto::tink::util::Status RegisterHpkeProtoSerialization();
+absl::Status RegisterHpkeProtoSerialization();
 
 }  // namespace tink
 }  // namespace crypto

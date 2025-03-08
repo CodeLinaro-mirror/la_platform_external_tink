@@ -29,6 +29,7 @@
 #include "tink/internal/proto_key_serialization.h"
 #include "tink/internal/proto_parameters_serialization.h"
 #include "tink/internal/serialization.h"
+#include "tink/internal/tink_proto_structs.h"
 #include "tink/jwt/jwt_hmac_key.h"
 #include "tink/jwt/jwt_hmac_parameters.h"
 #include "tink/key.h"
@@ -116,18 +117,18 @@ TEST_P(JwtHmacProtoSerializationTest, ParseParameters) {
   format.set_key_size(test_case.key_size);
   format.set_algorithm(test_case.proto_algorithm);
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kTypeUrl, test_case.output_prefix_type, format.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parsed =
+  absl::StatusOr<std::unique_ptr<Parameters>> parsed =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   ASSERT_THAT(parsed, IsOk());
   EXPECT_THAT((*parsed)->HasIdRequirement(), test_case.id.has_value());
 
-  util::StatusOr<JwtHmacParameters> expected = JwtHmacParameters::Create(
+  absl::StatusOr<JwtHmacParameters> expected = JwtHmacParameters::Create(
       test_case.key_size, test_case.strategy, test_case.algorithm);
   ASSERT_THAT(expected, IsOk());
   EXPECT_THAT(**parsed, Eq(*expected));
@@ -136,17 +137,15 @@ TEST_P(JwtHmacProtoSerializationTest, ParseParameters) {
 TEST_F(JwtHmacProtoSerializationTest, ParseParametersWithInvalidSerialization) {
   ASSERT_THAT(RegisterJwtHmacProtoSerialization(), IsOk());
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kTypeUrl, OutputPrefixType::RAW, "invalid_serialization");
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> params =
+  absl::StatusOr<std::unique_ptr<Parameters>> params =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
-  EXPECT_THAT(params.status(),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("Failed to parse JwtHmacKeyFormat proto")));
+  EXPECT_THAT(params.status(), StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST_F(JwtHmacProtoSerializationTest, ParseParametersWithInvalidVersion) {
@@ -157,12 +156,12 @@ TEST_F(JwtHmacProtoSerializationTest, ParseParametersWithInvalidVersion) {
   format.set_key_size(32);
   format.set_algorithm(JwtHmacAlgorithm::HS256);
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kTypeUrl, OutputPrefixType::RAW, format.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> params =
+  absl::StatusOr<std::unique_ptr<Parameters>> params =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(params.status(),
@@ -178,12 +177,12 @@ TEST_F(JwtHmacProtoSerializationTest, ParseParametersWithUnknownAlgorithm) {
   format.set_key_size(32);
   format.set_algorithm(JwtHmacAlgorithm::HS_UNKNOWN);
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kTypeUrl, OutputPrefixType::RAW, format.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> params =
+  absl::StatusOr<std::unique_ptr<Parameters>> params =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(params.status(),
@@ -208,12 +207,12 @@ TEST_P(JwtHmacParsePrefixTest, ParseParametersWithInvalidPrefix) {
   format.set_key_size(32);
   format.set_algorithm(JwtHmacAlgorithm::HS256);
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kTypeUrl, invalid_output_prefix_type, format.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> params =
+  absl::StatusOr<std::unique_ptr<Parameters>> params =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(
@@ -226,11 +225,11 @@ TEST_P(JwtHmacProtoSerializationTest, SerializeParameters) {
   TestCase test_case = GetParam();
   ASSERT_THAT(RegisterJwtHmacProtoSerialization(), IsOk());
 
-  util::StatusOr<JwtHmacParameters> parameters = JwtHmacParameters::Create(
+  absl::StatusOr<JwtHmacParameters> parameters = JwtHmacParameters::Create(
       test_case.key_size, test_case.strategy, test_case.algorithm);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeParameters<internal::ProtoParametersSerialization>(
               *parameters);
@@ -241,14 +240,14 @@ TEST_P(JwtHmacProtoSerializationTest, SerializeParameters) {
       dynamic_cast<const internal::ProtoParametersSerialization*>(
           serialization->get());
   ASSERT_THAT(proto_serialization, NotNull());
-  EXPECT_THAT(proto_serialization->GetKeyTemplate().type_url(), Eq(kTypeUrl));
-  EXPECT_THAT(proto_serialization->GetKeyTemplate().output_prefix_type(),
-              Eq(test_case.output_prefix_type));
-
+  const internal::KeyTemplateStruct& key_template =
+      proto_serialization->GetKeyTemplateStruct();
+  EXPECT_THAT(key_template.type_url, Eq(kTypeUrl));
+  EXPECT_THAT(key_template.output_prefix_type,
+              Eq(static_cast<internal::OutputPrefixTypeEnum>(
+                  test_case.output_prefix_type)));
   JwtHmacKeyFormat format;
-  ASSERT_THAT(
-      format.ParseFromString(proto_serialization->GetKeyTemplate().value()),
-      IsTrue());
+  ASSERT_THAT(format.ParseFromString(key_template.value), IsTrue());
   EXPECT_THAT(format.version(), Eq(0));
   EXPECT_THAT(format.key_size(), Eq(test_case.key_size));
   EXPECT_THAT(format.algorithm(), Eq(test_case.proto_algorithm));
@@ -257,12 +256,12 @@ TEST_P(JwtHmacProtoSerializationTest, SerializeParameters) {
 TEST_F(JwtHmacProtoSerializationTest, SerializeParametersWithCustomKidFails) {
   ASSERT_THAT(RegisterJwtHmacProtoSerialization(), IsOk());
 
-  util::StatusOr<JwtHmacParameters> parameters = JwtHmacParameters::Create(
+  absl::StatusOr<JwtHmacParameters> parameters = JwtHmacParameters::Create(
       /*key_size_in_bytes=*/32, JwtHmacParameters::KidStrategy::kCustom,
       JwtHmacParameters::Algorithm::kHs256);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeParameters<internal::ProtoParametersSerialization>(
               *parameters);
@@ -286,13 +285,13 @@ TEST_P(JwtHmacProtoSerializationTest, ParseKeyWithoutCustomKid) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC,
           test_case.output_prefix_type, test_case.id);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> parsed_key =
+  absl::StatusOr<std::unique_ptr<Key>> parsed_key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(parsed_key, IsOk());
@@ -300,7 +299,7 @@ TEST_P(JwtHmacProtoSerializationTest, ParseKeyWithoutCustomKid) {
               test_case.id.has_value());
   EXPECT_THAT((*parsed_key)->GetIdRequirement(), Eq(test_case.id));
 
-  util::StatusOr<JwtHmacParameters> expected_parameters =
+  absl::StatusOr<JwtHmacParameters> expected_parameters =
       JwtHmacParameters::Create(test_case.key_size, test_case.strategy,
                                 test_case.algorithm);
   ASSERT_THAT(expected_parameters, IsOk());
@@ -313,7 +312,7 @@ TEST_P(JwtHmacProtoSerializationTest, ParseKeyWithoutCustomKid) {
   if (test_case.id.has_value()) {
     builder.SetIdRequirement(*test_case.id);
   }
-  util::StatusOr<JwtHmacKey> expected_key =
+  absl::StatusOr<JwtHmacKey> expected_key =
       builder.Build(GetPartialKeyAccess());
   ASSERT_THAT(expected_key, IsOk());
   EXPECT_THAT(**parsed_key, Eq(*expected_key));
@@ -331,26 +330,26 @@ TEST_F(JwtHmacProtoSerializationTest, ParseKeyWithCustomKid) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::RAW,
           /*id_requirement=*/absl::nullopt);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> parsed_key =
+  absl::StatusOr<std::unique_ptr<Key>> parsed_key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(parsed_key, IsOk());
   EXPECT_THAT((*parsed_key)->GetParameters().HasIdRequirement(), IsFalse());
   EXPECT_THAT((*parsed_key)->GetIdRequirement(), Eq(absl::nullopt));
 
-  util::StatusOr<JwtHmacParameters> expected_parameters =
+  absl::StatusOr<JwtHmacParameters> expected_parameters =
       JwtHmacParameters::Create(/*key_size_in_bytes=*/32,
                                 JwtHmacParameters::KidStrategy::kCustom,
                                 JwtHmacParameters::Algorithm::kHs256);
   ASSERT_THAT(expected_parameters, IsOk());
 
-  util::StatusOr<JwtHmacKey> expected_key =
+  absl::StatusOr<JwtHmacKey> expected_key =
       JwtHmacKey::Builder()
           .SetParameters(*expected_parameters)
           .SetKeyBytes(
@@ -373,13 +372,13 @@ TEST_F(JwtHmacProtoSerializationTest, ParseTinkKeyWithCustomKidFails) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::TINK,
           /*id_requirement=*/123);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   // Omitting expectation on specific error message since the error occurs
@@ -398,18 +397,16 @@ TEST_F(JwtHmacProtoSerializationTest, ParseKeyWithInvalidSerialization) {
   RestrictedData serialized_key =
       RestrictedData("invalid_serialization", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::RAW,
           /*id_requirement=*/absl::nullopt);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
-  EXPECT_THAT(key.status(),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("Failed to parse JwtHmacKey proto")));
+  EXPECT_THAT(key.status(), StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST_F(JwtHmacProtoSerializationTest, ParseKeyWithInvalidVersion) {
@@ -423,13 +420,13 @@ TEST_F(JwtHmacProtoSerializationTest, ParseKeyWithInvalidVersion) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::RAW,
           /*id_requirement=*/absl::nullopt);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   EXPECT_THAT(
@@ -452,14 +449,14 @@ TEST_P(JwtHmacParsePrefixTest, ParseKeyWithInvalidPrefix) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(kTypeUrl, serialized_key,
                                               KeyData::SYMMETRIC,
                                               invalid_output_prefix_type,
                                               /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   EXPECT_THAT(
@@ -479,13 +476,13 @@ TEST_F(JwtHmacProtoSerializationTest, ParseKeyWithUnknownAlgorithm) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::RAW,
           /*id_requirement=*/absl::nullopt);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   EXPECT_THAT(key.status(),
@@ -504,13 +501,13 @@ TEST_F(JwtHmacProtoSerializationTest, ParseKeyWithoutSecretKeyAccess) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kTypeUrl, serialized_key, KeyData::SYMMETRIC, OutputPrefixType::RAW,
           /*id_requirement=*/absl::nullopt);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, /*token=*/absl::nullopt);
   EXPECT_THAT(key.status(), StatusIs(absl::StatusCode::kInvalidArgument,
@@ -521,7 +518,7 @@ TEST_P(JwtHmacProtoSerializationTest, SerializeKeyWithoutCustomKid) {
   TestCase test_case = GetParam();
   ASSERT_THAT(RegisterJwtHmacProtoSerialization(), IsOk());
 
-  util::StatusOr<JwtHmacParameters> parameters = JwtHmacParameters::Create(
+  absl::StatusOr<JwtHmacParameters> parameters = JwtHmacParameters::Create(
       test_case.key_size, test_case.strategy, test_case.algorithm);
   ASSERT_THAT(parameters, IsOk());
 
@@ -534,10 +531,10 @@ TEST_P(JwtHmacProtoSerializationTest, SerializeKeyWithoutCustomKid) {
   if (test_case.id.has_value()) {
     builder.SetIdRequirement(*test_case.id);
   }
-  util::StatusOr<JwtHmacKey> key = builder.Build(GetPartialKeyAccess());
+  absl::StatusOr<JwtHmacKey> key = builder.Build(GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeKey<internal::ProtoKeySerialization>(
               *key, InsecureSecretKeyAccess::Get());
@@ -568,13 +565,13 @@ TEST_P(JwtHmacProtoSerializationTest, SerializeKeyWithoutCustomKid) {
 TEST_F(JwtHmacProtoSerializationTest, SerializeKeyWithCustomKid) {
   ASSERT_THAT(RegisterJwtHmacProtoSerialization(), IsOk());
 
-  util::StatusOr<JwtHmacParameters> parameters = JwtHmacParameters::Create(
+  absl::StatusOr<JwtHmacParameters> parameters = JwtHmacParameters::Create(
       /*key_size_in_bytes=*/32, JwtHmacParameters::KidStrategy::kCustom,
       JwtHmacParameters::Algorithm::kHs256);
   ASSERT_THAT(parameters, IsOk());
 
   std::string raw_key_bytes = Random::GetRandomBytes(32);
-  util::StatusOr<JwtHmacKey> key =
+  absl::StatusOr<JwtHmacKey> key =
       JwtHmacKey::Builder()
           .SetParameters(*parameters)
           .SetKeyBytes(
@@ -583,7 +580,7 @@ TEST_F(JwtHmacProtoSerializationTest, SerializeKeyWithCustomKid) {
           .Build(GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeKey<internal::ProtoKeySerialization>(
               *key, InsecureSecretKeyAccess::Get());
@@ -615,13 +612,13 @@ TEST_F(JwtHmacProtoSerializationTest, SerializeKeyWithCustomKid) {
 TEST_F(JwtHmacProtoSerializationTest, SerializeKeyWithoutSecretKeyAccess) {
   ASSERT_THAT(RegisterJwtHmacProtoSerialization(), IsOk());
 
-  util::StatusOr<JwtHmacParameters> parameters = JwtHmacParameters::Create(
+  absl::StatusOr<JwtHmacParameters> parameters = JwtHmacParameters::Create(
       /*key_size_in_bytes=*/32, JwtHmacParameters::KidStrategy::kIgnored,
       JwtHmacParameters::Algorithm::kHs256);
   ASSERT_THAT(parameters, IsOk());
 
   std::string raw_key_bytes = Random::GetRandomBytes(32);
-  util::StatusOr<JwtHmacKey> key =
+  absl::StatusOr<JwtHmacKey> key =
       JwtHmacKey::Builder()
           .SetParameters(*parameters)
           .SetKeyBytes(
@@ -629,7 +626,7 @@ TEST_F(JwtHmacProtoSerializationTest, SerializeKeyWithoutSecretKeyAccess) {
           .Build(GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeKey<internal::ProtoKeySerialization>(
               *key, /*token=*/absl::nullopt);

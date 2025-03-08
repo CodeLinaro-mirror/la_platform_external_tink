@@ -47,10 +47,11 @@ Status KmsClients::LocalAdd(std::unique_ptr<KmsClient> kms_client) {
   }
   absl::MutexLock lock(&clients_mutex_);
   clients_.push_back(std::move(kms_client));
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-StatusOr<const KmsClient*> KmsClients::LocalGet(absl::string_view key_uri) {
+absl::StatusOr<const KmsClient*> KmsClients::LocalGet(
+    absl::string_view key_uri) {
   if (key_uri.empty()) {
     return Status(absl::StatusCode::kInvalidArgument,
                   "key_uri must be non-empty.");

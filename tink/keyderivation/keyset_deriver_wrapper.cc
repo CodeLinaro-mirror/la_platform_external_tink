@@ -38,16 +38,16 @@ namespace {
 using ::google::crypto::tink::KeyData;
 using ::google::crypto::tink::Keyset;
 
-util::Status Validate(PrimitiveSet<KeysetDeriver>* deriver_set) {
+absl::Status Validate(PrimitiveSet<KeysetDeriver>* deriver_set) {
   if (deriver_set == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "deriver_set must be non-NULL");
   }
   if (deriver_set->get_primary() == nullptr) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "deriver_set has no primary");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 class KeysetDeriverSetWrapper : public KeysetDeriver {
@@ -56,7 +56,7 @@ class KeysetDeriverSetWrapper : public KeysetDeriver {
       std::unique_ptr<PrimitiveSet<KeysetDeriver>> deriver_set)
       : deriver_set_(std::move(deriver_set)) {}
 
-  crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>> DeriveKeyset(
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> DeriveKeyset(
       absl::string_view salt) const override;
 
   ~KeysetDeriverSetWrapper() override = default;
@@ -65,27 +65,27 @@ class KeysetDeriverSetWrapper : public KeysetDeriver {
   std::unique_ptr<PrimitiveSet<KeysetDeriver>> deriver_set_;
 };
 
-crypto::tink::util::StatusOr<KeyData> DeriveAndGetKeyData(
-    absl::string_view salt, const KeysetDeriver& deriver) {
+absl::StatusOr<KeyData> DeriveAndGetKeyData(absl::string_view salt,
+                                            const KeysetDeriver& deriver) {
   auto keyset_handle_or = deriver.DeriveKeyset(salt);
   if (!keyset_handle_or.ok()) return keyset_handle_or.status();
   const Keyset& keyset =
       CleartextKeysetHandle::GetKeyset(*keyset_handle_or.value());
   if (keyset.key_size() != 1) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInternal,
         "Wrapper Deriver must create a keyset with exactly one KeyData");
   }
   return keyset.key(0).key_data();
 }
 
-crypto::tink::util::StatusOr<std::unique_ptr<KeysetHandle>>
+absl::StatusOr<std::unique_ptr<KeysetHandle>>
 KeysetDeriverSetWrapper::DeriveKeyset(absl::string_view salt) const {
   Keyset keyset;
   for (const auto* entry : deriver_set_->get_all_in_keyset_order()) {
     Keyset::Key* key = keyset.add_key();
 
-    crypto::tink::util::StatusOr<KeyData> key_data_or =
+    absl::StatusOr<KeyData> key_data_or =
         DeriveAndGetKeyData(salt, entry->get_primitive());
     if (!key_data_or.ok()) return key_data_or.status();
     *key->mutable_key_data() = key_data_or.value();
@@ -99,10 +99,9 @@ KeysetDeriverSetWrapper::DeriveKeyset(absl::string_view salt) const {
 
 }  // namespace
 
-crypto::tink::util::StatusOr<std::unique_ptr<KeysetDeriver>>
-KeysetDeriverWrapper::Wrap(
+absl::StatusOr<std::unique_ptr<KeysetDeriver>> KeysetDeriverWrapper::Wrap(
     std::unique_ptr<PrimitiveSet<KeysetDeriver>> deriver_set) const {
-  util::Status status = Validate(deriver_set.get());
+  absl::Status status = Validate(deriver_set.get());
   if (!status.ok()) return status;
   return {absl::make_unique<KeysetDeriverSetWrapper>(std::move(deriver_set))};
 }

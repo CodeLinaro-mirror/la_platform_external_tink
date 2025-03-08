@@ -17,13 +17,13 @@
 #ifndef TINK_HYBRID_ECIES_PROTO_SERIALIZATION_H_
 #define TINK_HYBRID_ECIES_PROTO_SERIALIZATION_H_
 
-#include "tink/util/status.h"
+#include "absl/status/status.h"
 
 namespace crypto {
 namespace tink {
 
 // Registers proto parsers and serializers for ECIES parameters and keys.
-crypto::tink::util::Status RegisterEciesProtoSerialization();
+absl::Status RegisterEciesProtoSerialization();
 
 }  // namespace tink
 }  // namespace crypto

@@ -17,6 +17,8 @@
 #ifndef TINK_JWT_JWT_HMAC_PARAMETERS_H_
 #define TINK_JWT_JWT_HMAC_PARAMETERS_H_
 
+#include <memory>
+
 #include "tink/jwt/jwt_mac_parameters.h"
 #include "tink/parameters.h"
 #include "tink/util/statusor.h"
@@ -76,7 +78,7 @@ class JwtHmacParameters : public JwtMacParameters {
   // Creates JWT HMAC parameters object. Returns an error status if
   // `key_size_in_bytes` is less than 16 bytes, if `kid_strategy` is invalid, or
   // if `algorithm` is invalid.
-  static util::StatusOr<JwtHmacParameters> Create(int key_size_in_bytes,
+  static absl::StatusOr<JwtHmacParameters> Create(int key_size_in_bytes,
                                                   KidStrategy kid_strategy,
                                                   Algorithm algorithm);
 
@@ -96,6 +98,10 @@ class JwtHmacParameters : public JwtMacParameters {
   }
 
   bool operator==(const Parameters& other) const override;
+
+  std::unique_ptr<Parameters> Clone() const override {
+    return std::make_unique<JwtHmacParameters>(*this);
+  }
 
  private:
   JwtHmacParameters(int key_size_in_bytes, KidStrategy kid_strategy,

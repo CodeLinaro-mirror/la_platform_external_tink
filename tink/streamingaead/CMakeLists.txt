@@ -32,7 +32,9 @@ tink_cc_library(
     streaming_aead_config.h
   DEPS
     tink::streamingaead::aes_ctr_hmac_streaming_key_manager
+    tink::streamingaead::aes_ctr_hmac_streaming_proto_serialization
     tink::streamingaead::aes_gcm_hkdf_streaming_key_manager
+    tink::streamingaead::aes_gcm_hkdf_streaming_proto_serialization
     tink::streamingaead::streaming_aead_wrapper
     absl::core_headers
     absl::memory
@@ -215,6 +217,149 @@ tink_cc_library(
     tink::streamingaead::internal::key_gen_config_v0
 )
 
+tink_cc_library(
+  NAME streaming_aead_parameters
+  SRCS
+    streaming_aead_parameters.h
+  DEPS
+    tink::core::parameters
+)
+
+tink_cc_library(
+  NAME streaming_aead_key
+  SRCS
+    streaming_aead_key.h
+  DEPS
+    tink::streamingaead::streaming_aead_parameters
+    absl::optional
+    tink::core::key
+)
+
+tink_cc_library(
+  NAME aes_ctr_hmac_streaming_parameters
+  SRCS
+    aes_ctr_hmac_streaming_parameters.cc
+    aes_ctr_hmac_streaming_parameters.h
+  DEPS
+    tink::streamingaead::streaming_aead_parameters
+    absl::status
+    absl::strings
+    absl::optional
+    tink::core::parameters
+    tink::util::status
+    tink::util::statusor
+)
+
+tink_cc_library(
+  NAME aes_ctr_hmac_streaming_key
+  SRCS
+    aes_ctr_hmac_streaming_key.cc
+    aes_ctr_hmac_streaming_key.h
+  DEPS
+    tink::streamingaead::aes_ctr_hmac_streaming_parameters
+    tink::streamingaead::streaming_aead_key
+    absl::status
+    tink::core::key
+    tink::core::partial_key_access_token
+    tink::core::restricted_data
+    tink::util::status
+    tink::util::statusor
+)
+
+tink_cc_library(
+  NAME aes_ctr_hmac_streaming_proto_serialization
+  SRCS
+    aes_ctr_hmac_streaming_proto_serialization.cc
+    aes_ctr_hmac_streaming_proto_serialization.h
+  DEPS
+    tink::streamingaead::aes_ctr_hmac_streaming_key
+    tink::streamingaead::aes_ctr_hmac_streaming_parameters
+    absl::no_destructor
+    absl::status
+    absl::statusor
+    absl::strings
+    absl::string_view
+    absl::optional
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::internal::common_proto_enums
+    tink::internal::key_parser
+    tink::internal::key_serializer
+    tink::internal::mutable_serialization_registry
+    tink::internal::parameters_parser
+    tink::internal::parameters_serializer
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::proto_parser
+    tink::internal::tink_proto_structs
+    tink::util::secret_data
+    tink::util::status
+)
+
+tink_cc_library(
+  NAME aes_gcm_hkdf_streaming_parameters
+  SRCS
+    aes_gcm_hkdf_streaming_parameters.cc
+    aes_gcm_hkdf_streaming_parameters.h
+  DEPS
+    tink::streamingaead::streaming_aead_parameters
+    absl::flat_hash_set
+    absl::status
+    absl::strings
+    absl::optional
+    tink::core::parameters
+    tink::util::status
+    tink::util::statusor
+)
+
+tink_cc_library(
+  NAME aes_gcm_hkdf_streaming_key
+  SRCS
+    aes_gcm_hkdf_streaming_key.cc
+    aes_gcm_hkdf_streaming_key.h
+  DEPS
+    tink::streamingaead::aes_gcm_hkdf_streaming_parameters
+    tink::streamingaead::streaming_aead_key
+    absl::status
+    tink::core::key
+    tink::core::partial_key_access_token
+    tink::core::restricted_data
+    tink::util::status
+    tink::util::statusor
+)
+
+tink_cc_library(
+  NAME aes_gcm_hkdf_streaming_proto_serialization
+  SRCS
+    aes_gcm_hkdf_streaming_proto_serialization.cc
+    aes_gcm_hkdf_streaming_proto_serialization.h
+  DEPS
+    tink::streamingaead::aes_gcm_hkdf_streaming_key
+    tink::streamingaead::aes_gcm_hkdf_streaming_parameters
+    absl::no_destructor
+    absl::status
+    absl::statusor
+    absl::strings
+    absl::string_view
+    absl::optional
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::internal::common_proto_enums
+    tink::internal::key_parser
+    tink::internal::key_serializer
+    tink::internal::mutable_serialization_registry
+    tink::internal::parameters_parser
+    tink::internal::parameters_serializer
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::proto_parser
+    tink::internal::tink_proto_structs
+    tink::util::secret_data
+    tink::util::status
+)
+
 # tests
 
 tink_cc_test(
@@ -260,16 +405,22 @@ tink_cc_test(
     aes_gcm_hkdf_streaming_key_manager_test.cc
   DEPS
     tink::streamingaead::aes_gcm_hkdf_streaming_key_manager
+    tink::streamingaead::streaming_aead_config
     gmock
     absl::memory
     absl::status
     absl::strings
+    tink::core::input_stream
+    tink::core::keyset_handle
     tink::core::streaming_aead
+    tink::streamingaead::internal::testing::aes_gcm_hkdf_streaming_test_vectors
+    tink::streamingaead::internal::testing::streamingaead_test_vector
     tink::subtle::aes_gcm_hkdf_streaming
     tink::subtle::common_enums
     tink::subtle::random
     tink::subtle::streaming_aead_test_util
     tink::subtle::test_util
+    tink::util::input_stream_util
     tink::util::istream_input_stream
     tink::util::ostream_output_stream
     tink::util::secret_data
@@ -288,16 +439,24 @@ tink_cc_test(
     aes_ctr_hmac_streaming_key_manager_test.cc
   DEPS
     tink::streamingaead::aes_ctr_hmac_streaming_key_manager
+    tink::streamingaead::streaming_aead_config
     gmock
     absl::memory
     absl::status
     absl::strings
+    tink::core::input_stream
+    tink::core::key_status
+    tink::core::keyset_handle
     tink::core::streaming_aead
+    tink::config::global_registry
+    tink::streamingaead::internal::testing::aes_ctr_hmac_streaming_test_vectors
+    tink::streamingaead::internal::testing::streamingaead_test_vector
     tink::subtle::aes_ctr_hmac_streaming
     tink::subtle::common_enums
     tink::subtle::random
     tink::subtle::streaming_aead_test_util
     tink::subtle::test_util
+    tink::util::input_stream_util
     tink::util::istream_input_stream
     tink::util::ostream_output_stream
     tink::util::secret_data
@@ -331,20 +490,37 @@ tink_cc_test(
   SRCS
     streaming_aead_config_test.cc
   DEPS
+    tink::streamingaead::aes_ctr_hmac_streaming_key
     tink::streamingaead::aes_ctr_hmac_streaming_key_manager
+    tink::streamingaead::aes_ctr_hmac_streaming_parameters
+    tink::streamingaead::aes_gcm_hkdf_streaming_key
     tink::streamingaead::aes_gcm_hkdf_streaming_key_manager
+    tink::streamingaead::aes_gcm_hkdf_streaming_parameters
+    tink::streamingaead::key_gen_config_v0
     tink::streamingaead::streaming_aead_config
     tink::streamingaead::streaming_aead_key_templates
     gmock
     absl::memory
     absl::status
+    tink::core::insecure_secret_key_access_testonly
+    tink::core::key_status
     tink::core::keyset_handle
+    tink::core::keyset_handle_builder
+    tink::core::partial_key_access
     tink::core::primitive_set
     tink::core::registry
+    tink::core::restricted_data
     tink::core::streaming_aead
     tink::config::global_registry
     tink::config::tink_fips
+    tink::internal::fips_utils
+    tink::internal::legacy_proto_key
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::subtle::random
     tink::util::status
+    tink::util::statusor
     tink::util::test_matchers
     tink::util::test_util
     tink::proto::tink_cc_proto
@@ -471,5 +647,127 @@ tink_cc_test(
     tink::util::ostream_output_stream
     tink::util::statusor
     tink::util::test_matchers
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME aes_ctr_hmac_streaming_parameters_test
+  SRCS
+    aes_ctr_hmac_streaming_parameters_test.cc
+  DEPS
+    tink::streamingaead::aes_ctr_hmac_streaming_parameters
+    gmock
+    absl::status
+    tink::core::parameters
+    tink::util::statusor
+    tink::util::test_matchers
+)
+
+tink_cc_test(
+  NAME aes_ctr_hmac_streaming_key_test
+  SRCS
+    aes_ctr_hmac_streaming_key_test.cc
+  DEPS
+    tink::streamingaead::aes_ctr_hmac_streaming_key
+    tink::streamingaead::aes_ctr_hmac_streaming_parameters
+    gmock
+    absl::status
+    absl::optional
+    tink::core::key
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::util::statusor
+    tink::util::test_matchers
+)
+
+tink_cc_test(
+  NAME aes_ctr_hmac_streaming_proto_serialization_test
+  SRCS
+    aes_ctr_hmac_streaming_proto_serialization_test.cc
+  DEPS
+    tink::streamingaead::aes_ctr_hmac_streaming_key
+    tink::streamingaead::aes_ctr_hmac_streaming_parameters
+    tink::streamingaead::aes_ctr_hmac_streaming_proto_serialization
+    gmock
+    absl::status
+    absl::statusor
+    absl::string_view
+    absl::optional
+    tink::core::insecure_secret_key_access_testonly
+    tink::core::key
+    tink::core::parameters
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::serialization
+    tink::internal::tink_proto_structs
+    tink::subtle::random
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::proto::aes_ctr_hmac_streaming_cc_proto
+    tink::proto::common_cc_proto
+    tink::proto::hmac_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME aes_gcm_hkdf_streaming_parameters_test
+  SRCS
+    aes_gcm_hkdf_streaming_parameters_test.cc
+  DEPS
+    tink::streamingaead::aes_gcm_hkdf_streaming_parameters
+    gmock
+    absl::status
+    tink::core::parameters
+    tink::util::statusor
+    tink::util::test_matchers
+)
+
+tink_cc_test(
+  NAME aes_gcm_hkdf_streaming_key_test
+  SRCS
+    aes_gcm_hkdf_streaming_key_test.cc
+  DEPS
+    tink::streamingaead::aes_gcm_hkdf_streaming_key
+    tink::streamingaead::aes_gcm_hkdf_streaming_parameters
+    gmock
+    absl::status
+    absl::optional
+    tink::core::key
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::util::statusor
+    tink::util::test_matchers
+)
+
+tink_cc_test(
+  NAME aes_gcm_hkdf_streaming_proto_serialization_test
+  SRCS
+    aes_gcm_hkdf_streaming_proto_serialization_test.cc
+  DEPS
+    tink::streamingaead::aes_gcm_hkdf_streaming_key
+    tink::streamingaead::aes_gcm_hkdf_streaming_parameters
+    tink::streamingaead::aes_gcm_hkdf_streaming_proto_serialization
+    gmock
+    absl::status
+    absl::string_view
+    absl::optional
+    tink::core::insecure_secret_key_access_testonly
+    tink::core::key
+    tink::core::parameters
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::serialization
+    tink::internal::tink_proto_structs
+    tink::subtle::random
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::proto::aes_gcm_hkdf_streaming_cc_proto
+    tink::proto::common_cc_proto
     tink::proto::tink_cc_proto
 )

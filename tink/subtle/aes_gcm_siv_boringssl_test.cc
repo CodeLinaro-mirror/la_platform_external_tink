@@ -23,7 +23,6 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "tink/aead.h"
@@ -34,6 +33,7 @@
 #include "tink/util/secret_data.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
+#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
@@ -63,20 +63,20 @@ TEST(AesGcmSivBoringSslTest, EncryptDecrypt) {
   }
 
   util::SecretData key =
-      util::SecretDataFromStringView(absl::HexStringToBytes(kKey256Hex));
+      util::SecretDataFromStringView(test::HexDecodeOrDie(kKey256Hex));
   if (!internal::IsBoringSsl()) {
     EXPECT_THAT(AesGcmSivBoringSsl::New(key).status(),
                 StatusIs(absl::StatusCode::kUnimplemented));
   } else {
-    util::StatusOr<std::unique_ptr<Aead>> aead = AesGcmSivBoringSsl::New(key);
+    absl::StatusOr<std::unique_ptr<Aead>> aead = AesGcmSivBoringSsl::New(key);
     ASSERT_THAT(aead, IsOk());
 
-    util::StatusOr<std::string> ciphertext =
+    absl::StatusOr<std::string> ciphertext =
         (*aead)->Encrypt(kMessage, kAssociatedData);
     ASSERT_THAT(ciphertext, IsOk());
     EXPECT_THAT(*ciphertext,
                 SizeIs(kMessage.size() + kIvSizeInBytes + kTagSizeInBytes));
-    util::StatusOr<std::string> plaintext =
+    absl::StatusOr<std::string> plaintext =
         (*aead)->Decrypt(*ciphertext, kAssociatedData);
     ASSERT_THAT(plaintext, IsOk());
     EXPECT_EQ(*plaintext, kMessage);
@@ -92,8 +92,8 @@ TEST(AesGcmSivBoringSslTest, DecryptFailsIfCiphertextTooSmall) {
   }
 
   util::SecretData key =
-      util::SecretDataFromStringView(absl::HexStringToBytes(kKey256Hex));
-  util::StatusOr<std::unique_ptr<Aead>> aead = AesGcmSivBoringSsl::New(key);
+      util::SecretDataFromStringView(test::HexDecodeOrDie(kKey256Hex));
+  absl::StatusOr<std::unique_ptr<Aead>> aead = AesGcmSivBoringSsl::New(key);
   ASSERT_THAT(aead, IsOk());
 
   for (int i = 1; i < kIvSizeInBytes + kTagSizeInBytes; i++) {
@@ -113,10 +113,9 @@ TEST(AesGcmSivBoringSslTest, TestFipsOnly) {
   }
 
   util::SecretData key128 = util::SecretDataFromStringView(
-      absl::HexStringToBytes("000102030405060708090a0b0c0d0e0f"));
-  util::SecretData key256 =
-      util::SecretDataFromStringView(absl::HexStringToBytes(
-          "000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f"));
+      test::HexDecodeOrDie("000102030405060708090a0b0c0d0e0f"));
+  util::SecretData key256 = util::SecretDataFromStringView(test::HexDecodeOrDie(
+      "000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f"));
 
   EXPECT_THAT(AesGcmSivBoringSsl::New(key128).status(),
               StatusIs(absl::StatusCode::kInternal));
@@ -148,11 +147,11 @@ class AesGcmSivBoringSslWycheproofTest
 TEST_P(AesGcmSivBoringSslWycheproofTest, Decrypt) {
   internal::WycheproofTestVector test_vector = GetParam();
   util::SecretData key = util::SecretDataFromStringView(test_vector.key);
-  util::StatusOr<std::unique_ptr<Aead>> cipher = AesGcmSivBoringSsl::New(key);
+  absl::StatusOr<std::unique_ptr<Aead>> cipher = AesGcmSivBoringSsl::New(key);
   ASSERT_THAT(cipher, IsOk());
   std::string ciphertext =
       absl::StrCat(test_vector.nonce, test_vector.ct, test_vector.tag);
-  util::StatusOr<std::string> plaintext =
+  absl::StatusOr<std::string> plaintext =
       (*cipher)->Decrypt(ciphertext, test_vector.aad);
   if (plaintext.ok()) {
     EXPECT_NE(test_vector.expected, "invalid");

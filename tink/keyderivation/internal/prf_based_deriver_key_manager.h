@@ -47,7 +47,7 @@ class PrfBasedDeriverKeyManager
                             List<KeysetDeriver>> {
  public:
   class KeysetDeriverFactory : public PrimitiveFactory<KeysetDeriver> {
-    crypto::tink::util::StatusOr<std::unique_ptr<KeysetDeriver>> Create(
+    absl::StatusOr<std::unique_ptr<KeysetDeriver>> Create(
         const google::crypto::tink::PrfBasedDeriverKey& key) const override {
       return internal::PrfBasedDeriver::New(
           key.prf_key(), key.params().derived_key_template());
@@ -68,43 +68,41 @@ class PrfBasedDeriverKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::PrfBasedDeriverKey& key) const override {
-    crypto::tink::util::Status status =
-        ValidateVersion(key.version(), get_version());
+    absl::Status status = ValidateVersion(key.version(), get_version());
     if (!status.ok()) return status;
     if (!key.has_prf_key()) {
-      return crypto::tink::util::Status(absl::StatusCode::kInvalidArgument,
-                                        "key.prf_key() must be set");
+      return absl::Status(absl::StatusCode::kInvalidArgument,
+                          "key.prf_key() must be set");
     }
     if (!key.params().has_derived_key_template()) {
-      return crypto::tink::util::Status(
-          absl::StatusCode::kInvalidArgument,
-          "key.params().derived_key_template() must be set");
+      return absl::Status(absl::StatusCode::kInvalidArgument,
+                          "key.params().derived_key_template() must be set");
     }
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::PrfBasedDeriverKeyFormat& key_format)
       const override {
     if (!key_format.has_prf_key_template()) {
-      return crypto::tink::util::Status(absl::StatusCode::kInvalidArgument,
-                                        "key.prf_key_template() must be set");
+      return absl::Status(absl::StatusCode::kInvalidArgument,
+                          "key.prf_key_template() must be set");
     }
     if (!key_format.params().has_derived_key_template()) {
-      return crypto::tink::util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "key_format.params().derived_key_template() must be set");
     }
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
-  crypto::tink::util::StatusOr<google::crypto::tink::PrfBasedDeriverKey>
-  CreateKey(const google::crypto::tink::PrfBasedDeriverKeyFormat& key_format)
+  absl::StatusOr<google::crypto::tink::PrfBasedDeriverKey> CreateKey(
+      const google::crypto::tink::PrfBasedDeriverKeyFormat& key_format)
       const override {
-    crypto::tink::util::StatusOr<std::unique_ptr<google::crypto::tink::KeyData>>
-        prf_key = CreateKeyData(key_format.prf_key_template());
+    absl::StatusOr<std::unique_ptr<google::crypto::tink::KeyData>> prf_key =
+        CreateKeyData(key_format.prf_key_template());
     if (!prf_key.ok()) return prf_key.status();
 
     // Java and Go implementations perform additional verification by getting a
@@ -121,8 +119,7 @@ class PrfBasedDeriverKeyManager
   }
 
  protected:
-  virtual crypto::tink::util::StatusOr<
-      std::unique_ptr<google::crypto::tink::KeyData>>
+  virtual absl::StatusOr<std::unique_ptr<google::crypto::tink::KeyData>>
   CreateKeyData(const google::crypto::tink::KeyTemplate& key_template) const {
     return Registry::NewKeyData(key_template);
   }

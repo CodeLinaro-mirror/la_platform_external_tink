@@ -41,8 +41,11 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":aes_cmac_prf_key_manager",
+        ":aes_cmac_prf_proto_serialization",
         ":hkdf_prf_key_manager",
+        ":hkdf_prf_proto_serialization",
         ":hmac_prf_key_manager",
+        ":hmac_prf_proto_serialization",
         ":prf_set_wrapper",
         "//proto:tink_cc_proto",
         "//tink:registry",
@@ -118,8 +121,8 @@ cc_library(
         "//tink:core/template_util",
         "//tink:input_stream",
         "//tink:key_manager",
+        "//tink/mac/internal:stateful_cmac_boringssl",
         "//tink/subtle:random",
-        "//tink/subtle:stateful_cmac_boringssl",
         "//tink/subtle/prf:prf_set_util",
         "//tink/util:constants",
         "//tink/util:errors",
@@ -149,9 +152,9 @@ cc_library(
         "//tink:input_stream",
         "//tink:key_manager",
         "//tink/internal:fips_utils",
+        "//tink/mac/internal:stateful_hmac_boringssl",
         "//tink/subtle:common_enums",
         "//tink/subtle:random",
-        "//tink/subtle:stateful_hmac_boringssl",
         "//tink/subtle/prf:prf_set_util",
         "//tink/util:constants",
         "//tink/util:enums",
@@ -168,6 +171,203 @@ cc_library(
         "@com_google_absl//absl/types:optional",
     ],
 )
+
+cc_library(
+    name = "failing_prfset",
+    srcs = ["failing_prfset.cc"],
+    hdrs = ["failing_prfset.h"],
+    include_prefix = "tink/prf",
+    deps = [
+        ":prf_set",
+        "//tink/util:status",
+        "//tink/util:statusor",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
+    name = "config_v0",
+    srcs = ["config_v0.cc"],
+    hdrs = ["config_v0.h"],
+    include_prefix = "tink/prf",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tink:configuration",
+        "//tink/prf/internal:config_v0",
+        "@com_google_absl//absl/log:check",
+    ],
+)
+
+cc_library(
+    name = "key_gen_config_v0",
+    srcs = ["key_gen_config_v0.cc"],
+    hdrs = ["key_gen_config_v0.h"],
+    include_prefix = "tink/prf",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tink:key_gen_configuration",
+        "//tink/prf/internal:key_gen_config_v0",
+        "@com_google_absl//absl/log:check",
+    ],
+)
+
+cc_library(
+    name = "prf_parameters",
+    hdrs = ["prf_parameters.h"],
+    include_prefix = "tink/prf",
+    visibility = ["//visibility:public"],
+    deps = ["//tink:parameters"],
+)
+
+cc_library(
+    name = "prf_key",
+    hdrs = ["prf_key.h"],
+    include_prefix = "tink/prf",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":prf_parameters",
+        "//tink:key",
+        "@com_google_absl//absl/types:optional",
+    ],
+)
+
+cc_library(
+    name = "aes_cmac_prf_parameters",
+    srcs = ["aes_cmac_prf_parameters.cc"],
+    hdrs = ["aes_cmac_prf_parameters.h"],
+    include_prefix = "tink/prf",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":prf_parameters",
+        "//tink:parameters",
+        "//tink/util:status",
+        "//tink/util:statusor",
+        "@com_google_absl//absl/status",
+    ],
+)
+
+cc_library(
+    name = "aes_cmac_prf_key",
+    srcs = ["aes_cmac_prf_key.cc"],
+    hdrs = ["aes_cmac_prf_key.h"],
+    include_prefix = "tink/prf",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aes_cmac_prf_parameters",
+        ":prf_key",
+        "//tink:key",
+        "//tink:partial_key_access_token",
+        "//tink:restricted_data",
+        "//tink/util:statusor",
+    ],
+)
+
+cc_library(
+    name = "aes_cmac_prf_proto_serialization",
+    hdrs = ["aes_cmac_prf_proto_serialization.h"],
+    include_prefix = "tink/prf",
+    deps = [
+        "//tink/internal:mutable_serialization_registry",
+        "//tink/prf/internal:aes_cmac_prf_proto_serialization_impl",
+        "//tink/util:status",
+    ],
+)
+
+cc_library(
+    name = "hmac_prf_parameters",
+    srcs = ["hmac_prf_parameters.cc"],
+    hdrs = ["hmac_prf_parameters.h"],
+    include_prefix = "tink/prf",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":prf_parameters",
+        "//tink:parameters",
+        "//tink/util:status",
+        "//tink/util:statusor",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
+    name = "hmac_prf_key",
+    srcs = ["hmac_prf_key.cc"],
+    hdrs = ["hmac_prf_key.h"],
+    include_prefix = "tink/prf",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":hmac_prf_parameters",
+        ":prf_key",
+        "//tink:key",
+        "//tink:partial_key_access_token",
+        "//tink:restricted_data",
+        "//tink/util:status",
+        "//tink/util:statusor",
+        "@com_google_absl//absl/status",
+    ],
+)
+
+cc_library(
+    name = "hmac_prf_proto_serialization",
+    hdrs = ["hmac_prf_proto_serialization.h"],
+    include_prefix = "tink/prf",
+    deps = [
+        "//tink/internal:mutable_serialization_registry",
+        "//tink/prf/internal:hmac_prf_proto_serialization_impl",
+        "//tink/util:status",
+    ],
+)
+
+cc_library(
+    name = "hkdf_prf_parameters",
+    srcs = ["hkdf_prf_parameters.cc"],
+    hdrs = ["hkdf_prf_parameters.h"],
+    include_prefix = "tink/prf",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":prf_parameters",
+        "//tink:parameters",
+        "//tink/util:status",
+        "//tink/util:statusor",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:optional",
+    ],
+)
+
+cc_library(
+    name = "hkdf_prf_key",
+    srcs = ["hkdf_prf_key.cc"],
+    hdrs = ["hkdf_prf_key.h"],
+    include_prefix = "tink/prf",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":hkdf_prf_parameters",
+        ":prf_key",
+        "//tink:key",
+        "//tink:partial_key_access_token",
+        "//tink:restricted_data",
+        "//tink/util:status",
+        "//tink/util:statusor",
+        "@com_google_absl//absl/status",
+    ],
+)
+
+cc_library(
+    name = "hkdf_prf_proto_serialization",
+    hdrs = ["hkdf_prf_proto_serialization.h"],
+    include_prefix = "tink/prf",
+    deps = [
+        "//tink/internal:mutable_serialization_registry",
+        "//tink/prf/internal:hkdf_prf_proto_serialization_impl",
+        "//tink/util:status",
+    ],
+)
+
+# tests
 
 cc_test(
     name = "hkdf_prf_key_manager_test",
@@ -301,36 +501,37 @@ cc_test(
     srcs = ["prf_config_test.cc"],
     tags = ["fips"],
     deps = [
+        ":aes_cmac_prf_key",
+        ":aes_cmac_prf_parameters",
+        ":hkdf_prf_key",
+        ":hkdf_prf_parameters",
+        ":hmac_prf_key",
         ":hmac_prf_key_manager",
+        ":hmac_prf_parameters",
+        ":key_gen_config_v0",
         ":prf_config",
         ":prf_key_templates",
         ":prf_set",
         "//proto:tink_cc_proto",
+        "//tink:insecure_secret_key_access_testonly",
+        "//tink:key_status",
         "//tink:keyset_handle",
+        "//tink:partial_key_access",
         "//tink:registry",
+        "//tink:restricted_data",
         "//tink/config:global_registry",
         "//tink/internal:fips_utils",
-        "//tink/util:status",
+        "//tink/internal:legacy_proto_key",
+        "//tink/internal:mutable_serialization_registry",
+        "//tink/internal:proto_key_serialization",
+        "//tink/internal:proto_parameters_serialization",
+        "//tink/subtle:random",
+        "//tink/util:statusor",
         "//tink/util:test_matchers",
-        "//tink/util:test_util",
         "@boringssl//:crypto",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:optional",
         "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
-    name = "failing_prfset",
-    srcs = ["failing_prfset.cc"],
-    hdrs = ["failing_prfset.h"],
-    include_prefix = "tink/prf",
-    deps = [
-        ":prf_set",
-        "//tink/util:status",
-        "//tink/util:statusor",
-        "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -346,30 +547,6 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "config_v0",
-    srcs = ["config_v0.cc"],
-    hdrs = ["config_v0.h"],
-    include_prefix = "tink/prf",
-    deps = [
-        "//tink:configuration",
-        "//tink/prf/internal:config_v0",
-        "@com_google_absl//absl/log:check",
-    ],
-)
-
-cc_library(
-    name = "key_gen_config_v0",
-    srcs = ["key_gen_config_v0.cc"],
-    hdrs = ["key_gen_config_v0.h"],
-    include_prefix = "tink/prf",
-    deps = [
-        "//tink:key_gen_configuration",
-        "//tink/prf/internal:key_gen_config_v0",
-        "@com_google_absl//absl/log:check",
-    ],
-)
-
 cc_test(
     name = "config_v0_test",
     srcs = ["config_v0_test.cc"],
@@ -382,6 +559,193 @@ cc_test(
         "//tink:keyset_handle",
         "//tink/util:statusor",
         "//tink/util:test_matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "aes_cmac_prf_parameters_test",
+    srcs = ["aes_cmac_prf_parameters_test.cc"],
+    deps = [
+        ":aes_cmac_prf_parameters",
+        "//tink:parameters",
+        "//tink/util:statusor",
+        "//tink/util:test_matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "aes_cmac_prf_key_test",
+    srcs = ["aes_cmac_prf_key_test.cc"],
+    deps = [
+        ":aes_cmac_prf_key",
+        ":aes_cmac_prf_parameters",
+        "//tink:key",
+        "//tink:partial_key_access",
+        "//tink:restricted_data",
+        "//tink/util:statusor",
+        "//tink/util:test_matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "aes_cmac_prf_proto_serialization_test",
+    srcs = ["aes_cmac_prf_proto_serialization_test.cc"],
+    deps = [
+        ":aes_cmac_prf_key",
+        ":aes_cmac_prf_parameters",
+        ":aes_cmac_prf_proto_serialization",
+        "//proto:aes_cmac_prf_cc_proto",
+        "//proto:tink_cc_proto",
+        "//tink:insecure_secret_key_access_testonly",
+        "//tink:key",
+        "//tink:parameters",
+        "//tink:partial_key_access",
+        "//tink:restricted_data",
+        "//tink/internal:mutable_serialization_registry",
+        "//tink/internal:proto_key_serialization",
+        "//tink/internal:proto_parameters_serialization",
+        "//tink/internal:serialization",
+        "//tink/internal:tink_proto_structs",
+        "//tink/subtle:random",
+        "//tink/util:statusor",
+        "//tink/util:test_matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "hmac_prf_parameters_test",
+    srcs = ["hmac_prf_parameters_test.cc"],
+    deps = [
+        ":hmac_prf_parameters",
+        "//tink:parameters",
+        "//tink/util:statusor",
+        "//tink/util:test_matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "hmac_prf_key_test",
+    srcs = ["hmac_prf_key_test.cc"],
+    deps = [
+        ":hmac_prf_key",
+        ":hmac_prf_parameters",
+        "//tink:key",
+        "//tink:partial_key_access",
+        "//tink:restricted_data",
+        "//tink/util:statusor",
+        "//tink/util:test_matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "hmac_prf_proto_serialization_test",
+    srcs = ["hmac_prf_proto_serialization_test.cc"],
+    deps = [
+        ":hmac_prf_key",
+        ":hmac_prf_parameters",
+        ":hmac_prf_proto_serialization",
+        "//proto:common_cc_proto",
+        "//proto:hmac_prf_cc_proto",
+        "//proto:tink_cc_proto",
+        "//tink:insecure_secret_key_access",
+        "//tink:key",
+        "//tink:parameters",
+        "//tink:partial_key_access",
+        "//tink:restricted_data",
+        "//tink/internal:mutable_serialization_registry",
+        "//tink/internal:proto_key_serialization",
+        "//tink/internal:proto_parameters_serialization",
+        "//tink/internal:serialization",
+        "//tink/internal:tink_proto_structs",
+        "//tink/subtle:random",
+        "//tink/util:statusor",
+        "//tink/util:test_matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "hkdf_prf_parameters_test",
+    srcs = ["hkdf_prf_parameters_test.cc"],
+    deps = [
+        ":hkdf_prf_parameters",
+        "//tink:parameters",
+        "//tink/util:statusor",
+        "//tink/util:test_matchers",
+        "//tink/util:test_util",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "hkdf_prf_key_test",
+    srcs = ["hkdf_prf_key_test.cc"],
+    deps = [
+        ":hkdf_prf_key",
+        ":hkdf_prf_parameters",
+        "//tink:key",
+        "//tink:partial_key_access",
+        "//tink:restricted_data",
+        "//tink/util:statusor",
+        "//tink/util:test_matchers",
+        "//tink/util:test_util",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "hkdf_prf_proto_serialization_test",
+    srcs = ["hkdf_prf_proto_serialization_test.cc"],
+    deps = [
+        ":hkdf_prf_key",
+        ":hkdf_prf_parameters",
+        ":hkdf_prf_proto_serialization",
+        "//proto:common_cc_proto",
+        "//proto:hkdf_prf_cc_proto",
+        "//proto:tink_cc_proto",
+        "//tink:insecure_secret_key_access",
+        "//tink:key",
+        "//tink:parameters",
+        "//tink:partial_key_access",
+        "//tink:restricted_data",
+        "//tink/internal:mutable_serialization_registry",
+        "//tink/internal:proto_key_serialization",
+        "//tink/internal:proto_parameters_serialization",
+        "//tink/internal:serialization",
+        "//tink/internal:tink_proto_structs",
+        "//tink/subtle:random",
+        "//tink/util:statusor",
+        "//tink/util:test_matchers",
+        "//tink/util:test_util",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:optional",
         "@com_google_googletest//:gtest_main",
     ],
 )

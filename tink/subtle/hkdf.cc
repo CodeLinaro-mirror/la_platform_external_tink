@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <string>
 
-#include "absl/algorithm/container.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
@@ -36,7 +35,9 @@
 #else
 #include "openssl/kdf.h"
 #endif
+#include "tink/internal/call_with_core_dump_protection.h"
 #include "tink/internal/md_util.h"
+#include "tink/internal/safe_stringops.h"
 #include "tink/internal/ssl_unique_ptr.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/subtle_util.h"
@@ -47,11 +48,14 @@
 namespace crypto {
 namespace tink {
 namespace subtle {
+
+using crypto::tink::internal::CallWithCoreDumpProtection;
+
 namespace {
 
 // Compute HKDF using `evp_md` hashing, key `ikm`, salt `salt` and info `info`.
 // The result is written to `key`.
-util::Status SslHkdf(const EVP_MD *evp_md, absl::string_view ikm,
+absl::Status SslHkdf(const EVP_MD *evp_md, absl::string_view ikm,
                      absl::string_view salt, absl::string_view info,
                      absl::Span<uint8_t> out_key) {
   const uint8_t *ikm_ptr = reinterpret_cast<const uint8_t *>(ikm.data());
@@ -60,9 +64,9 @@ util::Status SslHkdf(const EVP_MD *evp_md, absl::string_view ikm,
 #ifdef OPENSSL_IS_BORINGSSL
   if (HKDF(out_key.data(), out_key.size(), evp_md, ikm_ptr, ikm.size(),
            salt_ptr, salt.size(), info_ptr, info.size()) != 1) {
-    return util::Status(absl::StatusCode::kInternal, "HKDF failed");
+    return absl::Status(absl::StatusCode::kInternal, "HKDF failed");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 #else
   internal::SslUniquePtr<EVP_PKEY_CTX> pctx(
       EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, /*e=*/nullptr));
@@ -84,38 +88,39 @@ util::Status SslHkdf(const EVP_MD *evp_md, absl::string_view ikm,
 
 }  // namespace
 
-util::StatusOr<util::SecretData> Hkdf::ComputeHkdf(HashType hash,
+absl::StatusOr<util::SecretData> Hkdf::ComputeHkdf(HashType hash,
                                                    const util::SecretData &ikm,
                                                    absl::string_view salt,
                                                    absl::string_view info,
                                                    size_t out_len) {
-  util::StatusOr<const EVP_MD *> evp_md = internal::EvpHashFromHashType(hash);
+  absl::StatusOr<const EVP_MD *> evp_md = internal::EvpHashFromHashType(hash);
   if (!evp_md.ok()) {
     return evp_md.status();
   }
 
-  util::SecretData out_key(out_len);
-  util::Status result =
-      SslHkdf(*evp_md, util::SecretDataAsStringView(ikm), salt, info,
-              absl::MakeSpan(out_key.data(), out_key.size()));
+  internal::SecretBuffer out_key(out_len);
+  absl::Status result = CallWithCoreDumpProtection([&]() {
+    return SslHkdf(*evp_md, util::SecretDataAsStringView(ikm), salt, info,
+                   absl::MakeSpan(out_key.data(), out_key.size()));
+  });
   if (!result.ok()) {
     return result;
   }
-  return out_key;
+  return util::internal::AsSecretData(std::move(out_key));
 }
 
-util::StatusOr<std::string> Hkdf::ComputeHkdf(HashType hash,
+absl::StatusOr<std::string> Hkdf::ComputeHkdf(HashType hash,
                                               absl::string_view ikm,
                                               absl::string_view salt,
                                               absl::string_view info,
                                               size_t out_len) {
-  util::StatusOr<const EVP_MD *> evp_md = internal::EvpHashFromHashType(hash);
+  absl::StatusOr<const EVP_MD *> evp_md = internal::EvpHashFromHashType(hash);
   if (!evp_md.ok()) {
     return evp_md.status();
   }
   std::string out_key;
   ResizeStringUninitialized(&out_key, out_len);
-  util::Status result = SslHkdf(
+  absl::Status result = SslHkdf(
       *evp_md, ikm, salt, info,
       absl::MakeSpan(reinterpret_cast<uint8_t *>(&out_key[0]), out_key.size()));
   if (!result.ok()) {
@@ -124,14 +129,16 @@ util::StatusOr<std::string> Hkdf::ComputeHkdf(HashType hash,
   return out_key;
 }
 
-util::StatusOr<util::SecretData> Hkdf::ComputeEciesHkdfSymmetricKey(
+absl::StatusOr<util::SecretData> Hkdf::ComputeEciesHkdfSymmetricKey(
     HashType hash, absl::string_view kem_bytes,
     const util::SecretData &shared_secret, absl::string_view salt,
     absl::string_view info, size_t out_len) {
-  util::SecretData ikm(kem_bytes.size() + shared_secret.size());
-  absl::c_copy(kem_bytes, ikm.begin());
-  absl::c_copy(shared_secret, ikm.begin() + kem_bytes.size());
-  return Hkdf::ComputeHkdf(hash, ikm, salt, info, out_len);
+  internal::SecretBuffer ikm(kem_bytes.size() + shared_secret.size());
+  internal::SafeMemCopy(ikm.data(), kem_bytes.data(), kem_bytes.size());
+  internal::SafeMemCopy(ikm.data() + kem_bytes.size(), shared_secret.data(),
+                        shared_secret.size());
+  return Hkdf::ComputeHkdf(hash, util::internal::AsSecretData(std::move(ikm)),
+                           salt, info, out_len);
 }
 
 }  // namespace subtle

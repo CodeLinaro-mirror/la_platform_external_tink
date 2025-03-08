@@ -17,6 +17,8 @@
 #ifndef TINK_SIGNATURE_ED25519_PARAMETERS_H_
 #define TINK_SIGNATURE_ED25519_PARAMETERS_H_
 
+#include <memory>
+
 #include "tink/parameters.h"
 #include "tink/signature/signature_parameters.h"
 #include "tink/util/statusor.h"
@@ -48,7 +50,7 @@ class Ed25519Parameters : public SignatureParameters {
   Ed25519Parameters& operator=(Ed25519Parameters&& other) = default;
 
   // Creates a new Ed25519 parameters object unless `variant` is invalid.
-  static util::StatusOr<Ed25519Parameters> Create(Variant variant);
+  static absl::StatusOr<Ed25519Parameters> Create(Variant variant);
 
   Variant GetVariant() const { return variant_; }
 
@@ -57,6 +59,10 @@ class Ed25519Parameters : public SignatureParameters {
   }
 
   bool operator==(const Parameters& other) const override;
+
+  std::unique_ptr<Parameters> Clone() const override {
+    return std::make_unique<Ed25519Parameters>(*this);
+  }
 
  private:
   explicit Ed25519Parameters(Variant variant) : variant_(variant) {}

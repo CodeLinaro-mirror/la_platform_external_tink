@@ -21,9 +21,10 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/string_view.h"
 #include "tink/insecure_secret_key_access.h"
+#include "tink/util/secret_data.h"
+#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
@@ -49,20 +50,28 @@ constexpr absl::string_view kHexBigIntPadded =
     "09c8647f5d524c0f2e7620a3416b9623cadc0f097af573261c98c8400aa12af38e43cad84"
     "d";
 
+TEST(RestrictedBigIntegerTest, DefaultConstructor) {
+  RestrictedBigInteger b;
+  EXPECT_THAT(b.SizeInBytes(), Eq(0));
+}
+
 TEST(RestrictedBigIntegerTest, CreateAndGetSecret) {
-  const std::string secret_bytes = absl::HexStringToBytes(kHexBigInt);
+  const std::string secret_bytes = test::HexDecodeOrDie(kHexBigInt);
   RestrictedBigInteger restricted_big_integer(secret_bytes,
                                               InsecureSecretKeyAccess::Get());
 
   EXPECT_THAT(restricted_big_integer.SizeInBytes(), Eq(256));
   EXPECT_THAT(restricted_big_integer.GetSecret(InsecureSecretKeyAccess::Get()),
               Eq(secret_bytes));
+  EXPECT_THAT(util::SecretDataAsStringView(restricted_big_integer.GetSecretData(
+                  InsecureSecretKeyAccess::Get())),
+              Eq(secret_bytes));
 }
 
 TEST(RestrictedBigIntegerTest, CreateAndGetSecretPadded) {
-  const std::string secret_bytes = absl::HexStringToBytes(kHexBigInt);
+  const std::string secret_bytes = test::HexDecodeOrDie(kHexBigInt);
   const std::string padded_secret_bytes =
-      absl::HexStringToBytes(kHexBigIntPadded);
+      test::HexDecodeOrDie(kHexBigIntPadded);
   RestrictedBigInteger from_padded_big_integer(padded_secret_bytes,
                                                InsecureSecretKeyAccess::Get());
 
@@ -71,6 +80,33 @@ TEST(RestrictedBigIntegerTest, CreateAndGetSecretPadded) {
                    InsecureSecretKeyAccess::Get()) == padded_secret_bytes);
   EXPECT_THAT(from_padded_big_integer.GetSecret(InsecureSecretKeyAccess::Get()),
               Eq(secret_bytes));
+}
+
+TEST(RestrictedBigIntegerTest, CreateFromSecretData) {
+  const util::SecretData secret_bytes =
+      util::SecretDataFromStringView(test::HexDecodeOrDie(kHexBigInt));
+  RestrictedBigInteger restricted_big_integer(secret_bytes,
+                                              InsecureSecretKeyAccess::Get());
+
+  EXPECT_THAT(restricted_big_integer.SizeInBytes(), Eq(256));
+  EXPECT_THAT(restricted_big_integer.GetSecret(InsecureSecretKeyAccess::Get()),
+              Eq(util::SecretDataAsStringView(secret_bytes)));
+}
+
+TEST(RestrictedBigIntegerTest, CreateFromPaddedSecretData) {
+  const util::SecretData secret_bytes =
+      util::SecretDataFromStringView(test::HexDecodeOrDie(kHexBigInt));
+  const util::SecretData padded_secret_bytes =
+      util::SecretDataFromStringView(test::HexDecodeOrDie(kHexBigIntPadded));
+  RestrictedBigInteger from_padded_big_integer(padded_secret_bytes,
+                                               InsecureSecretKeyAccess::Get());
+
+  EXPECT_THAT(from_padded_big_integer.SizeInBytes(), Eq(256));
+  EXPECT_FALSE(
+      from_padded_big_integer.GetSecret(InsecureSecretKeyAccess::Get()) ==
+      util::SecretDataAsStringView(padded_secret_bytes));
+  EXPECT_THAT(from_padded_big_integer.GetSecret(InsecureSecretKeyAccess::Get()),
+              Eq(util::SecretDataAsStringView(secret_bytes)));
 }
 
 TEST(RestrictedBigIntegerTest, CreateAndGetEmptyStringWorks) {
@@ -94,7 +130,7 @@ TEST(RestrictedBigIntegerTest, CreateAndGetNullCharactersWorks) {
 }
 
 TEST(RestrictedBigIntegerTest, Equals) {
-  const std::string secret_bytes = absl::HexStringToBytes(kHexBigInt);
+  const std::string secret_bytes = test::HexDecodeOrDie(kHexBigInt);
   RestrictedBigInteger restricted_big_integer(secret_bytes,
                                               InsecureSecretKeyAccess::Get());
   RestrictedBigInteger same_restricted_big_integer(
@@ -107,10 +143,10 @@ TEST(RestrictedBigIntegerTest, Equals) {
 }
 
 TEST(RestricteddBigIntegerTest, EqualsPadded) {
-  RestrictedBigInteger restricted_big_integer(
-      absl::HexStringToBytes(kHexBigInt), InsecureSecretKeyAccess::Get());
+  RestrictedBigInteger restricted_big_integer(test::HexDecodeOrDie(kHexBigInt),
+                                              InsecureSecretKeyAccess::Get());
   RestrictedBigInteger padded_restricted_big_integer(
-      absl::HexStringToBytes(kHexBigIntPadded), InsecureSecretKeyAccess::Get());
+      test::HexDecodeOrDie(kHexBigIntPadded), InsecureSecretKeyAccess::Get());
 
   EXPECT_TRUE(restricted_big_integer == padded_restricted_big_integer);
   EXPECT_TRUE(padded_restricted_big_integer == restricted_big_integer);
@@ -119,7 +155,7 @@ TEST(RestricteddBigIntegerTest, EqualsPadded) {
 }
 
 TEST(RestrictedRestrictedBigIntegerTest, NotEquals) {
-  const std::string other_big_integer_256 = absl::HexStringToBytes(
+  const std::string other_big_integer_256 = test::HexDecodeOrDie(
       "00c2410a2bcd4ce644c5b594ae5059e12b2f054b658d5da5959a2fdf1871b808bc3df3e6"
       "28d2792e51aad5c124b43bda453dca5cde4bcf28e7bd4effba0cb4b742bbb6d5a013cb63"
       "d1aa3a89e02627ef5398b52c0cfd97d208abeb8d7c9bce0bbeb019a86ddb589beb29a5b7"
@@ -129,8 +165,8 @@ TEST(RestrictedRestrictedBigIntegerTest, NotEquals) {
       "5b0b15db09c8647f5d524c0f2e7620a3416b9623cadc0f097af573261c98c8400aa12af3"
       "8e43cad84d");
 
-  RestrictedBigInteger restricted_big_integer(
-      absl::HexStringToBytes(kHexBigInt), InsecureSecretKeyAccess::Get());
+  RestrictedBigInteger restricted_big_integer(test::HexDecodeOrDie(kHexBigInt),
+                                              InsecureSecretKeyAccess::Get());
   RestrictedBigInteger diff_restricted_big_integer(
       other_big_integer_256, InsecureSecretKeyAccess::Get());
 
@@ -144,7 +180,7 @@ TEST(RestrictedRestrictedBigIntegerTest, NotEquals) {
 }
 
 TEST(RestrictedRestrictedBigIntegerTest, NotEqualsDifferentSize) {
-  const std::string other_big_integer_258 = absl::HexStringToBytes(
+  const std::string other_big_integer_258 = test::HexDecodeOrDie(
       "b3510a2bcd4ce644c5b594ae5059e12b2f054b658d5da5959a2fdf1871b808bc3df3e628"
       "d2792e51aad5c124b43bda453dca5cde4bcf28e7bd4effba0cb4b742bbb6d5a013cb63d1"
       "aa3a89e02627ef5398b52c0cfd97d208abeb8d7c9bce0bbeb019a86ddb589beb29a5b74b"
@@ -154,8 +190,8 @@ TEST(RestrictedRestrictedBigIntegerTest, NotEqualsDifferentSize) {
       "0b15db09c8647f5d524c0f2e7620a3416b9623cadc0f097af573261c98c8400aa12af38e"
       "43cad84dbfff");
 
-  RestrictedBigInteger restricted_big_integer(
-      absl::HexStringToBytes(kHexBigInt), InsecureSecretKeyAccess::Get());
+  RestrictedBigInteger restricted_big_integer(test::HexDecodeOrDie(kHexBigInt),
+                                              InsecureSecretKeyAccess::Get());
   RestrictedBigInteger diff_restricted_big_integer(
       other_big_integer_258, InsecureSecretKeyAccess::Get());
 
@@ -169,8 +205,8 @@ TEST(RestrictedRestrictedBigIntegerTest, NotEqualsDifferentSize) {
 }
 
 TEST(RestrictedRestrictedBigIntegerTest, CopyConstructor) {
-  RestrictedBigInteger restricted_big_integer(
-      absl::HexStringToBytes(kHexBigInt), InsecureSecretKeyAccess::Get());
+  RestrictedBigInteger restricted_big_integer(test::HexDecodeOrDie(kHexBigInt),
+                                              InsecureSecretKeyAccess::Get());
   RestrictedBigInteger copy(restricted_big_integer);
 
   EXPECT_THAT(copy.SizeInBytes(), Eq(256));
@@ -180,33 +216,34 @@ TEST(RestrictedRestrictedBigIntegerTest, CopyConstructor) {
 }
 
 TEST(RestrictedRestrictedBigIntegerTest, CopyAssignment) {
-  RestrictedBigInteger restricted_big_integer(
-      absl::HexStringToBytes(kHexBigInt), InsecureSecretKeyAccess::Get());
+  RestrictedBigInteger restricted_big_integer(test::HexDecodeOrDie(kHexBigInt),
+                                              InsecureSecretKeyAccess::Get());
   RestrictedBigInteger copy = restricted_big_integer;
 
   EXPECT_THAT(copy.SizeInBytes(), Eq(256));
   EXPECT_THAT(copy.GetSecret(InsecureSecretKeyAccess::Get()),
-              Eq(absl::HexStringToBytes(kHexBigInt)));
+              Eq(test::HexDecodeOrDie(kHexBigInt)));
 }
 
 TEST(RestrictedRestrictedBigIntegerTest, MoveConstructor) {
-  RestrictedBigInteger restricted_big_integer(
-      absl::HexStringToBytes(kHexBigInt), InsecureSecretKeyAccess::Get());
+  RestrictedBigInteger restricted_big_integer(test::HexDecodeOrDie(kHexBigInt),
+                                              InsecureSecretKeyAccess::Get());
   RestrictedBigInteger move(std::move(restricted_big_integer));
 
   EXPECT_THAT(move.SizeInBytes(), Eq(256));
   EXPECT_THAT(move.GetSecret(InsecureSecretKeyAccess::Get()),
-              Eq(absl::HexStringToBytes(kHexBigInt)));
+              Eq(test::HexDecodeOrDie(kHexBigInt)));
 }
 
 TEST(RestrictedRestrictedBigIntegerTest, MoveAssignment) {
-  RestrictedBigInteger restricted_big_integer(
-      absl::HexStringToBytes(kHexBigInt), InsecureSecretKeyAccess::Get());
-  RestrictedBigInteger move = std::move(restricted_big_integer);
+  RestrictedBigInteger restricted_big_integer(test::HexDecodeOrDie(kHexBigInt),
+                                              InsecureSecretKeyAccess::Get());
+  RestrictedBigInteger moved_to;
+  moved_to = std::move(restricted_big_integer);
 
-  EXPECT_THAT(move.SizeInBytes(), Eq(256));
-  EXPECT_THAT(move.GetSecret(InsecureSecretKeyAccess::Get()),
-              Eq(absl::HexStringToBytes(kHexBigInt)));
+  EXPECT_THAT(moved_to.SizeInBytes(), Eq(256));
+  EXPECT_THAT(moved_to.GetSecret(InsecureSecretKeyAccess::Get()),
+              Eq(test::HexDecodeOrDie(kHexBigInt)));
 }
 
 }  // namespace tink

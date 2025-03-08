@@ -16,11 +16,13 @@
 
 #include "tink/jwt/jwt_ecdsa_parameters.h"
 
+#include <memory>
 #include <tuple>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "tink/parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 
@@ -66,7 +68,7 @@ TEST_P(JwtEcdsaParametersTest, Create) {
   JwtEcdsaParameters::Algorithm algorithm;
   std::tie(tuple, algorithm) = GetParam();
 
-  util::StatusOr<JwtEcdsaParameters> parameters =
+  absl::StatusOr<JwtEcdsaParameters> parameters =
       JwtEcdsaParameters::Create(tuple.kid_strategy, algorithm);
   ASSERT_THAT(parameters, IsOk());
 
@@ -97,7 +99,7 @@ TEST(JwtEcdsaParametersTest, CreateWithInvalidAlgorithmFails) {
 }
 
 TEST(JwtEcdsaParametersTest, CopyConstructor) {
-  util::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
+  absl::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
       JwtEcdsaParameters::KidStrategy::kBase64EncodedKeyId,
       JwtEcdsaParameters::Algorithm::kEs512);
   ASSERT_THAT(parameters, IsOk());
@@ -111,7 +113,7 @@ TEST(JwtEcdsaParametersTest, CopyConstructor) {
 }
 
 TEST(JwtEcdsaParametersTest, CopyAssignment) {
-  util::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
+  absl::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
       JwtEcdsaParameters::KidStrategy::kBase64EncodedKeyId,
       JwtEcdsaParameters::Algorithm::kEs512);
   ASSERT_THAT(parameters, IsOk());
@@ -129,11 +131,11 @@ TEST_P(JwtEcdsaParametersTest, ParametersEquals) {
   JwtEcdsaParameters::Algorithm algorithm;
   std::tie(tuple, algorithm) = GetParam();
 
-  util::StatusOr<JwtEcdsaParameters> parameters =
+  absl::StatusOr<JwtEcdsaParameters> parameters =
       JwtEcdsaParameters::Create(tuple.kid_strategy, algorithm);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<JwtEcdsaParameters> other_parameters =
+  absl::StatusOr<JwtEcdsaParameters> other_parameters =
       JwtEcdsaParameters::Create(tuple.kid_strategy, algorithm);
   ASSERT_THAT(other_parameters, IsOk());
 
@@ -144,12 +146,12 @@ TEST_P(JwtEcdsaParametersTest, ParametersEquals) {
 }
 
 TEST(JwtEcdsaParametersTest, KidStrategyNotEqual) {
-  util::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
+  absl::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
       JwtEcdsaParameters::KidStrategy::kBase64EncodedKeyId,
       JwtEcdsaParameters::Algorithm::kEs256);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<JwtEcdsaParameters> other_parameters =
+  absl::StatusOr<JwtEcdsaParameters> other_parameters =
       JwtEcdsaParameters::Create(JwtEcdsaParameters::KidStrategy::kCustom,
                                  JwtEcdsaParameters::Algorithm::kEs256);
   ASSERT_THAT(other_parameters, IsOk());
@@ -159,12 +161,12 @@ TEST(JwtEcdsaParametersTest, KidStrategyNotEqual) {
 }
 
 TEST(JwtEcdsaParametersTest, AlgorithmNotEqual) {
-  util::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
+  absl::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
       JwtEcdsaParameters::KidStrategy::kBase64EncodedKeyId,
       JwtEcdsaParameters::Algorithm::kEs256);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<JwtEcdsaParameters> other_parameters =
+  absl::StatusOr<JwtEcdsaParameters> other_parameters =
       JwtEcdsaParameters::Create(
           JwtEcdsaParameters::KidStrategy::kBase64EncodedKeyId,
           JwtEcdsaParameters::Algorithm::kEs384);
@@ -172,6 +174,16 @@ TEST(JwtEcdsaParametersTest, AlgorithmNotEqual) {
 
   EXPECT_TRUE(*parameters != *other_parameters);
   EXPECT_FALSE(*parameters == *other_parameters);
+}
+
+TEST(JwtEcdsaParametersTest, Clone) {
+  absl::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
+      JwtEcdsaParameters::KidStrategy::kBase64EncodedKeyId,
+      JwtEcdsaParameters::Algorithm::kEs256);
+  ASSERT_THAT(parameters, IsOk());
+
+  std::unique_ptr<Parameters> cloned_parameters = parameters->Clone();
+  ASSERT_THAT(*cloned_parameters, Eq(*parameters));
 }
 
 }  // namespace

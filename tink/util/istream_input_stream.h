@@ -41,14 +41,14 @@ class IstreamInputStream : public crypto::tink::InputStream {
 
   ~IstreamInputStream() override;
 
-  crypto::tink::util::StatusOr<int> Next(const void** data) override;
+  absl::StatusOr<int> Next(const void** data) override;
 
   void BackUp(int count) override;
 
   int64_t Position() const override;
 
  private:
-  util::Status status_;
+  absl::Status status_;
   std::unique_ptr<std::istream> input_;
   std::unique_ptr<uint8_t[]> buffer_;
   const int buffer_size_;

@@ -61,10 +61,18 @@ if (TINK_BUILD_TESTS)
   else()
     http_archive(
       NAME googletest
-      URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-      SHA256 1f357c27ca988c3f7c6b4bf68a9395005ac6761f034046e9dde0896e3aba00e4
+      URL https://github.com/google/googletest/releases/download/v1.15.2/googletest-1.15.2.tar.gz
+      SHA256 7b42b4d6ed48810c5362c265a17faebe90dc2373c885e5216439d37927f02926
     )
   endif()
+
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Tink dependency override" FORCE)
+
+  http_archive(
+      NAME benchmark
+      URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz
+      SHA256 32131c08ee31eeff2c8968d7e874f3cb648034377dfc32a4c377fa8796d84981
+    )
 
   http_archive(
     NAME wycheproof
@@ -79,11 +87,11 @@ if (TINK_BUILD_TESTS)
 endif()
 
 if (NOT TINK_USE_INSTALLED_ABSEIL)
-  # Release from 2023-09-18.
+  # Release from 2024-01-22.
   http_archive(
     NAME abseil
-    URL https://github.com/abseil/abseil-cpp/archive/refs/tags/20230802.1.zip
-    SHA256 497ebdc3a4885d9209b9bd416e8c3f71e7a1fb8af249f6c2a80b7cbeefcd7e21
+    URL https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz
+    SHA256 f50e5ac311a81382da7fa75b97310e4b9006474f9560ac46f54a9967f07d4ae3
   )
 else()
   # This is everything that needs to be done here. Abseil already defines its
@@ -95,12 +103,11 @@ endif()
 # defined.
 if (NOT TARGET crypto)
   if (NOT TINK_USE_SYSTEM_OPENSSL)
-    # Commit from 2024-04-11.
+    # Release from 2024-10-03.
     http_archive(
       NAME boringssl
-      URL https://github.com/google/boringssl/archive/07fa2780386fbbc001937fabf116c1fe4ddd2705.zip
-      SHA256 7042eac2edf6daaf2c82ca514293869f1e1a237111247aed77aee0d31a2d42f2
-      CMAKE_SUBDIR src
+      URL https://github.com/google/boringssl/releases/download/0.20240930.0/boringssl-0.20240930.0.tar.gz
+      SHA256 812f77dd57fef845c4ed630430f1f8efc7e255c4d572fa58b71e6e3ce1692a4a
     )
     # BoringSSL targets do not carry include directory info, this fixes it.
     target_include_directories(crypto PUBLIC
@@ -116,19 +123,6 @@ else()
   message(STATUS "crypto Include Dir: ${crypto_INCLUDE_DIR}")
 endif()
 
-set(RAPIDJSON_BUILD_DOC OFF CACHE BOOL "Tink dependency override" FORCE)
-set(RAPIDJSON_BUILD_EXAMPLES OFF CACHE BOOL "Tink dependency override" FORCE)
-set(RAPIDJSON_BUILD_TESTS OFF CACHE BOOL "Tink dependency override" FORCE)
-
-http_archive(
-  NAME rapidjson
-  URL https://github.com/Tencent/rapidjson/archive/v1.1.0.tar.gz
-  SHA256 bf7ced29704a1e696fbccf2a2b4ea068e7774fa37f6d7dd4039d0787f8bed98e
-)
-# Rapidjson is a header-only library with no explicit target. Here we create one.
-add_library(rapidjson INTERFACE)
-target_include_directories(rapidjson INTERFACE "${rapidjson_SOURCE_DIR}")
-
 if (NOT TINK_USE_INSTALLED_PROTOBUF)
   set(protobuf_BUILD_TESTS OFF CACHE BOOL "Tink dependency override" FORCE)
   set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "Tink dependency override" FORCE)
@@ -136,8 +130,8 @@ if (NOT TINK_USE_INSTALLED_PROTOBUF)
 
   http_archive(
     NAME com_google_protobuf
-    URL https://github.com/protocolbuffers/protobuf/releases/download/v26.1/protobuf-26.1.zip
-    SHA256 e15c272392df84ae95797759c685a9225fe5e88838bab3e0650c29239bdfccdd
+    URL https://github.com/protocolbuffers/protobuf/releases/download/v27.4/protobuf-27.4.tar.gz
+    SHA256 023e2bb164b234af644c5049c6dac1d9c9f6dd2acb133b960d9009105b4226bd
   )
 else()
   find_package(Protobuf REQUIRED CONFIG)

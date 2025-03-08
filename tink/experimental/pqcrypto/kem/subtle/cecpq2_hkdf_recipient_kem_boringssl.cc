@@ -30,6 +30,7 @@
 #include "openssl/hrss.h"
 #include "tink/experimental/pqcrypto/kem/subtle/cecpq2_hkdf_sender_kem_boringssl.h"
 #include "tink/internal/fips_utils.h"
+#include "tink/internal/secret_buffer.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/hkdf.h"
 #include "tink/util/errors.h"
@@ -46,7 +47,7 @@ namespace subtle {
 // Curve25519. This method was designed to be generic enough to faciliate the
 // extension of this hybrid KEM to support other curves.
 // static
-util::StatusOr<std::unique_ptr<Cecpq2HkdfRecipientKemBoringSsl>>
+absl::StatusOr<std::unique_ptr<Cecpq2HkdfRecipientKemBoringSsl>>
 Cecpq2HkdfRecipientKemBoringSsl::New(EllipticCurveType curve,
                                      util::SecretData ec_private_key,
                                      util::SecretData hrss_private_key_seed) {
@@ -55,13 +56,13 @@ Cecpq2HkdfRecipientKemBoringSsl::New(EllipticCurveType curve,
       return Cecpq2HkdfX25519RecipientKemBoringSsl::New(
           curve, std::move(ec_private_key), std::move(hrss_private_key_seed));
     default:
-      return util::Status(absl::StatusCode::kUnimplemented,
+      return absl::Status(absl::StatusCode::kUnimplemented,
                           "Unsupported elliptic curve");
   }
 }
 
 // static
-util::StatusOr<std::unique_ptr<Cecpq2HkdfRecipientKemBoringSsl>>
+absl::StatusOr<std::unique_ptr<Cecpq2HkdfRecipientKemBoringSsl>>
 Cecpq2HkdfX25519RecipientKemBoringSsl::New(
     EllipticCurveType curve, util::SecretData ec_private_key,
     util::SecretData hrss_private_key_seed) {
@@ -71,11 +72,11 @@ Cecpq2HkdfX25519RecipientKemBoringSsl::New(
 
   // Basic input checking
   if (curve != CURVE25519) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "curve is not CURVE25519");
   }
   if (ec_private_key.size() != X25519_PRIVATE_KEY_LEN) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "priv has unexpected length");
   }
   // If all input parameters are ok, create a CECPQ2 Recipient KEM instance
@@ -83,29 +84,29 @@ Cecpq2HkdfX25519RecipientKemBoringSsl::New(
       std::move(ec_private_key), std::move(hrss_private_key_seed)))};
 }
 
-crypto::tink::util::StatusOr<util::SecretData>
+absl::StatusOr<util::SecretData>
 Cecpq2HkdfX25519RecipientKemBoringSsl::GenerateKey(
     absl::string_view kem_bytes, HashType hash, absl::string_view hkdf_salt,
     absl::string_view hkdf_info, uint32_t key_size_in_bytes,
     EcPointFormat point_format) const {
   // Basic input checking
   if (point_format != EcPointFormat::COMPRESSED) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "X25519 only supports compressed elliptic curve points");
   }
   if (kem_bytes.size() != X25519_PUBLIC_VALUE_LEN + HRSS_PUBLIC_KEY_BYTES) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "kem_bytes has unexpected size");
   }
   if (key_size_in_bytes < 32) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "key size length is smaller than 32 bytes "
                         "and thus not post-quantum secure.");
   }
 
   // Recover X25519 shared secret
-  util::SecretData x25519_shared_secret(X25519_SHARED_KEY_LEN);
+  internal::SecretBuffer x25519_shared_secret(X25519_SHARED_KEY_LEN);
   X25519(x25519_shared_secret.data(), private_key_x25519_.data(),
          reinterpret_cast<const uint8_t*>(kem_bytes.data()));
 
@@ -117,7 +118,7 @@ Cecpq2HkdfX25519RecipientKemBoringSsl::GenerateKey(
                     private_key_hrss_seed_.data());
 
   // Recover HRSS shared secret from kem_bytes and private key
-  util::SecretData hrss_shared_secret(HRSS_KEY_BYTES);
+  internal::SecretBuffer hrss_shared_secret(HRSS_KEY_BYTES);
   HRSS_decap(reinterpret_cast<uint8_t*>(hrss_shared_secret.data()),
              hrss_private_key.get(),
              reinterpret_cast<const uint8_t*>(kem_bytes.data() +
@@ -125,9 +126,9 @@ Cecpq2HkdfX25519RecipientKemBoringSsl::GenerateKey(
              HRSS_CIPHERTEXT_BYTES);
 
   // Concatenate both shared secrets and kem_bytes
-  util::SecretData ikm = util::SecretDataFromStringView(absl::StrCat(
-      kem_bytes, util::SecretDataAsStringView(x25519_shared_secret),
-      util::SecretDataAsStringView(hrss_shared_secret)));
+  util::SecretData ikm = util::SecretDataFromStringView(
+      absl::StrCat(kem_bytes, x25519_shared_secret.AsStringView(),
+                   hrss_shared_secret.AsStringView()));
 
   // Compute symmetric key from both shared secrets, kem_bytes, hkdf_salt and
   // hkdf_info using HKDF

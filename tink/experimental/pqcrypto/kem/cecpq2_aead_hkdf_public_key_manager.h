@@ -43,7 +43,7 @@ class Cecpq2AeadHkdfPublicKeyManager
                             List<HybridEncrypt>> {
  public:
   class HybridEncryptFactory : public PrimitiveFactory<HybridEncrypt> {
-    crypto::tink::util::StatusOr<std::unique_ptr<HybridEncrypt>> Create(
+    absl::StatusOr<std::unique_ptr<HybridEncrypt>> Create(
         const google::crypto::tink::Cecpq2AeadHkdfPublicKey& cecpq2_public_key)
         const override {
       return Cecpq2AeadHkdfHybridEncrypt::New(cecpq2_public_key);
@@ -62,10 +62,10 @@ class Cecpq2AeadHkdfPublicKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::Cecpq2AeadHkdfPublicKey& key) const override;
 
-  crypto::tink::util::Status ValidateParams(
+  absl::Status ValidateParams(
       const google::crypto::tink::Cecpq2AeadHkdfParams& params) const;
 
  private:

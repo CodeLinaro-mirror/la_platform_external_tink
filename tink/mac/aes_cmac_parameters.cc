@@ -34,23 +34,23 @@
 namespace crypto {
 namespace tink {
 
-util::StatusOr<AesCmacParameters> AesCmacParameters::Create(
+absl::StatusOr<AesCmacParameters> AesCmacParameters::Create(
     int key_size_in_bytes, int cryptographic_tag_size_in_bytes,
     Variant variant) {
   if (key_size_in_bytes != 16 && key_size_in_bytes != 32) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Key size should be either 16 or 32 bytes, got ",
                      key_size_in_bytes, " bytes."));
   }
   if (cryptographic_tag_size_in_bytes < 10) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Tag size should be at least 10 bytes, got ",
                      cryptographic_tag_size_in_bytes, " bytes."));
   }
   if (cryptographic_tag_size_in_bytes > 16) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Tag size should not exceed 16 bytes, got ",
                      cryptographic_tag_size_in_bytes, " bytes."));
@@ -59,7 +59,7 @@ util::StatusOr<AesCmacParameters> AesCmacParameters::Create(
       new std::set<Variant>({Variant::kTink, Variant::kCrunchy,
                              Variant::kLegacy, Variant::kNoPrefix});
   if (supported_variants->find(variant) == supported_variants->end()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create AES-CMAC parameters with unknown variant.");
   }

@@ -18,11 +18,14 @@
 
 #include <memory>
 
+#include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "tink/internal/bn_util.h"
+#include "tink/internal/call_with_core_dump_protection.h"
 #ifdef OPENSSL_IS_BORINGSSL
 #include "openssl/base.h"
 #include "openssl/ec_key.h"
@@ -47,7 +50,7 @@ namespace crypto {
 namespace tink {
 namespace {
 
-util::StatusOr<subtle::EllipticCurveType> CurveTypeFromKemId(
+absl::StatusOr<subtle::EllipticCurveType> CurveTypeFromKemId(
     HpkeParameters::KemId kem_id) {
   switch (kem_id) {
     case HpkeParameters::KemId::kDhkemP256HkdfSha256:
@@ -59,12 +62,12 @@ util::StatusOr<subtle::EllipticCurveType> CurveTypeFromKemId(
     case HpkeParameters::KemId::kDhkemX25519HkdfSha256:
       return subtle::EllipticCurveType::CURVE25519;
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           absl::StrCat("Unknown KEM ID: ", kem_id));
   }
 }
 
-util::Status ValidatePrivateKeyLength(HpkeParameters::KemId kem_id,
+absl::Status ValidatePrivateKeyLength(HpkeParameters::KemId kem_id,
                                       int length) {
   int expected_length;
   switch (kem_id) {
@@ -83,20 +86,20 @@ util::Status ValidatePrivateKeyLength(HpkeParameters::KemId kem_id,
       expected_length = 32;
       break;
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           absl::StrCat("Unknown KEM ID: ", kem_id));
   }
 
   // Validate key length.
   if (expected_length != length) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrFormat(
             "Invalid private key length for KEM %d (expected %d, got %d)",
             kem_id, expected_length, length));
   }
 
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 bool IsNistKem(HpkeParameters::KemId kem_id) {
@@ -105,11 +108,11 @@ bool IsNistKem(HpkeParameters::KemId kem_id) {
          kem_id == HpkeParameters::KemId::kDhkemP521HkdfSha512;
 }
 
-util::Status ValidateNistEcKeyPair(subtle::EllipticCurveType curve,
+absl::Status ValidateNistEcKeyPair(subtle::EllipticCurveType curve,
                                    absl::string_view public_key_bytes,
                                    const util::SecretData& private_key_bytes) {
   // Construct EC_KEY from public and private key bytes.
-  util::StatusOr<internal::SslUniquePtr<EC_GROUP>> group =
+  absl::StatusOr<internal::SslUniquePtr<EC_GROUP>> group =
       internal::EcGroupFromCurveType(curve);
   if (!group.ok()) {
     return group.status();
@@ -117,7 +120,7 @@ util::Status ValidateNistEcKeyPair(subtle::EllipticCurveType curve,
   internal::SslUniquePtr<EC_KEY> key(EC_KEY_new());
   EC_KEY_set_group(key.get(), group->get());
 
-  util::StatusOr<internal::SslUniquePtr<EC_POINT>> public_key =
+  absl::StatusOr<internal::SslUniquePtr<EC_POINT>> public_key =
       internal::EcPointDecode(curve, subtle::EcPointFormat::UNCOMPRESSED,
                               public_key_bytes);
   if (!public_key.ok()) {
@@ -125,35 +128,39 @@ util::Status ValidateNistEcKeyPair(subtle::EllipticCurveType curve,
   }
 
   if (!EC_KEY_set_public_key(key.get(), public_key->get())) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Invalid public key: ", internal::GetSslErrors()));
   }
 
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> priv_key =
-      internal::StringToBignum(util::SecretDataAsStringView(private_key_bytes));
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> priv_key =
+      internal::SecretDataToBignum(private_key_bytes);
   if (!priv_key.ok()) {
     return priv_key.status();
   }
-  if (!EC_KEY_set_private_key(key.get(), priv_key->get())) {
-    return util::Status(
+  int ec_key_set_private_key_result = internal::CallWithCoreDumpProtection(
+      [&] { return EC_KEY_set_private_key(key.get(), priv_key->get()); });
+  if (!ec_key_set_private_key_result) {
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Invalid private key: ", internal::GetSslErrors()));
   }
 
   // Check that EC_KEY is valid.
-  if (!EC_KEY_check_key(key.get())) {
-    return util::Status(
+  int ec_key_check_key_result = internal::CallWithCoreDumpProtection(
+      [&] { return EC_KEY_check_key(key.get()); });
+  if (!ec_key_check_key_result) {
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Invalid EC key pair: ", internal::GetSslErrors()));
   }
 
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::Status ValidateX25519KeyPair(absl::string_view public_key_bytes,
+absl::Status ValidateX25519KeyPair(absl::string_view public_key_bytes,
                                    const util::SecretData& private_key_bytes) {
-  util::StatusOr<std::unique_ptr<internal::X25519Key>> x25519_key =
+  absl::StatusOr<std::unique_ptr<internal::X25519Key>> x25519_key =
       internal::X25519KeyFromPrivateKey(private_key_bytes);
   if (!x25519_key.ok()) {
     return x25519_key.status();
@@ -162,14 +169,14 @@ util::Status ValidateX25519KeyPair(absl::string_view public_key_bytes,
       reinterpret_cast<const char*>((*x25519_key)->public_value),
       internal::X25519KeyPubKeySize());
   if (public_key_bytes != public_key_bytes_from_private) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "X25519 private key does not match the specified X25519 public key.");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::Status ValidateKeyPair(const HpkePublicKey& public_key,
+absl::Status ValidateKeyPair(const HpkePublicKey& public_key,
                              const RestrictedData& private_key_bytes,
                              PartialKeyAccessToken token) {
   HpkeParameters::KemId kem_id = public_key.GetParameters().GetKemId();
@@ -178,7 +185,7 @@ util::Status ValidateKeyPair(const HpkePublicKey& public_key,
       private_key_bytes.Get(InsecureSecretKeyAccess::Get());
 
   if (IsNistKem(kem_id)) {
-    util::StatusOr<subtle::EllipticCurveType> curve =
+    absl::StatusOr<subtle::EllipticCurveType> curve =
         CurveTypeFromKemId(kem_id);
     if (!curve.ok()) {
       return curve.status();
@@ -190,15 +197,15 @@ util::Status ValidateKeyPair(const HpkePublicKey& public_key,
 
 }  // namespace
 
-util::StatusOr<HpkePrivateKey> HpkePrivateKey::Create(
+absl::StatusOr<HpkePrivateKey> HpkePrivateKey::Create(
     const HpkePublicKey& public_key, const RestrictedData& private_key_bytes,
     PartialKeyAccessToken token) {
-  util::Status key_length_validation = ValidatePrivateKeyLength(
+  absl::Status key_length_validation = ValidatePrivateKeyLength(
       public_key.GetParameters().GetKemId(), private_key_bytes.size());
   if (!key_length_validation.ok()) {
     return key_length_validation;
   }
-  util::Status key_pair_validation =
+  absl::Status key_pair_validation =
       ValidateKeyPair(public_key, private_key_bytes, token);
   if (!key_pair_validation.ok()) {
     return key_pair_validation;

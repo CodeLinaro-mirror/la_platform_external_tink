@@ -46,7 +46,7 @@ class EciesAeadHkdfPrivateKeyManager
           google::crypto::tink::EciesAeadHkdfPublicKey, List<HybridDecrypt>> {
  public:
   class HybridDecryptFactory : public PrimitiveFactory<HybridDecrypt> {
-    crypto::tink::util::StatusOr<std::unique_ptr<HybridDecrypt>> Create(
+    absl::StatusOr<std::unique_ptr<HybridDecrypt>> Create(
         const google::crypto::tink::EciesAeadHkdfPrivateKey& ecies_private_key)
         const override {
       return EciesAeadHkdfHybridDecrypt::New(ecies_private_key);
@@ -65,19 +65,19 @@ class EciesAeadHkdfPrivateKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::EciesAeadHkdfPrivateKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::EciesAeadHkdfKeyFormat& ecies_key_format)
       const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::EciesAeadHkdfPrivateKey>
-  CreateKey(const google::crypto::tink::EciesAeadHkdfKeyFormat& key_format)
+  absl::StatusOr<google::crypto::tink::EciesAeadHkdfPrivateKey> CreateKey(
+      const google::crypto::tink::EciesAeadHkdfKeyFormat& key_format)
       const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::EciesAeadHkdfPublicKey>
-  GetPublicKey(const google::crypto::tink::EciesAeadHkdfPrivateKey& private_key)
+  absl::StatusOr<google::crypto::tink::EciesAeadHkdfPublicKey> GetPublicKey(
+      const google::crypto::tink::EciesAeadHkdfPrivateKey& private_key)
       const override;
 
  private:

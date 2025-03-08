@@ -45,7 +45,7 @@ class SphincsSignKeyManager
                                    List<PublicKeySign>> {
  public:
   class PublicKeySignFactory : public PrimitiveFactory<PublicKeySign> {
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicKeySign>> Create(
+    absl::StatusOr<std::unique_ptr<PublicKeySign>> Create(
         const google::crypto::tink::SphincsPrivateKey& private_key)
         const override;
   };
@@ -62,19 +62,17 @@ class SphincsSignKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::SphincsPrivateKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
-      const google::crypto::tink::SphincsKeyFormat& key_format)
-      const override;
+  absl::Status ValidateKeyFormat(
+      const google::crypto::tink::SphincsKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::SphincsPrivateKey>
-  CreateKey(const google::crypto::tink::SphincsKeyFormat& key_format)
-      const override;
+  absl::StatusOr<google::crypto::tink::SphincsPrivateKey> CreateKey(
+      const google::crypto::tink::SphincsKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::SphincsPublicKey>
-  GetPublicKey(const google::crypto::tink::SphincsPrivateKey& private_key)
+  absl::StatusOr<google::crypto::tink::SphincsPublicKey> GetPublicKey(
+      const google::crypto::tink::SphincsPrivateKey& private_key)
       const override {
     return private_key.public_key();
   }

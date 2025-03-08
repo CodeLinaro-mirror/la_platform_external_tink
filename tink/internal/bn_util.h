@@ -32,28 +32,57 @@ namespace crypto {
 namespace tink {
 namespace internal {
 
+// A BIGNUM that is allocated inline if possible.
+class InlineBignum {
+ public:
+  explicit InlineBignum() {
+#if defined(OPENSSL_IS_BORINGSSL)
+    BN_init(&inline_storage_);
+    bignum_ = internal::SslUniquePtr<BIGNUM>(&inline_storage_);
+#else
+    bignum_ = internal::SslUniquePtr<BIGNUM>(BN_new());
+#endif
+  }
+  // Returns a pointer to the BIGNUM.
+  BIGNUM* get() {
+    return bignum_.get();
+  }
+  // Releases BIGNUM to the caller.
+  // get() will return nullptr after this.
+  void release() {
+    bignum_.release();
+  }
+ private:
+#if defined(OPENSSL_IS_BORINGSSL)
+  BIGNUM inline_storage_;
+#endif
+  internal::SslUniquePtr<BIGNUM> bignum_;
+};
+
 // Compares `bignum` with the given `word`. It returns a result < 0 if `bignum`
 // < `word`, 0 if `bignum` == `word`, and > 0 if `bignum` > `word`.
 int CompareBignumWithWord(const BIGNUM* bignum, BN_ULONG word);
 
 // Converts the absolute value of `bignum` into a big-endian form, and writes it
 // in `buffer`.
-crypto::tink::util::Status BignumToBinaryPadded(absl::Span<char> buffer,
-                                                const BIGNUM* bignum);
+absl::Status BignumToBinaryPadded(absl::Span<char> buffer,
+                                  const BIGNUM* bignum);
 
 // Retuns a string that encodes `bn` in big-endian form of size `len` with
 // leading zeroes.
-crypto::tink::util::StatusOr<std::string> BignumToString(const BIGNUM* bn,
-                                                         size_t len);
+absl::StatusOr<std::string> BignumToString(const BIGNUM* bn, size_t len);
 
 // Retuns a SecretData object that encodes `bn` in big-endian form of size `len`
 // with leading zeroes.
-crypto::tink::util::StatusOr<crypto::tink::util::SecretData> BignumToSecretData(
+absl::StatusOr<crypto::tink::util::SecretData> BignumToSecretData(
     const BIGNUM* bn, size_t len);
+
+absl::StatusOr<internal::SslUniquePtr<BIGNUM>> SecretDataToBignum(
+    const util::SecretData& bigendian_bn_str);
 
 // Returns an OpenSSL/BoringSSL BIGNUM constructed from a bigendian string
 // representation `bigendian_bn_str`.
-crypto::tink::util::StatusOr<internal::SslUniquePtr<BIGNUM>> StringToBignum(
+absl::StatusOr<internal::SslUniquePtr<BIGNUM>> StringToBignum(
     absl::string_view bigendian_bn_str);
 
 }  // namespace internal

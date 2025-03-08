@@ -21,6 +21,7 @@
 #include "tink/aead/aes_eax_key_manager.h"
 #include "tink/aead/aes_gcm_key_manager.h"
 #include "tink/aead/aes_gcm_siv_key_manager.h"
+#include "tink/aead/x_aes_gcm_key_manager.h"
 #include "tink/aead/xchacha20_poly1305_key_manager.h"
 #include "tink/internal/key_gen_configuration_impl.h"
 #include "tink/key_gen_configuration.h"
@@ -30,9 +31,9 @@ namespace crypto {
 namespace tink {
 namespace internal {
 
-util::Status AddAeadKeyGenV0(KeyGenConfiguration& config) {
+absl::Status AddAeadKeyGenV0(KeyGenConfiguration& config) {
   // TODO(b/296630956): Alphabetize in all AEAD config files.
-  util::Status status = internal::KeyGenConfigurationImpl::AddKeyTypeManager(
+  absl::Status status = internal::KeyGenConfigurationImpl::AddKeyTypeManager(
       absl::make_unique<AesCtrHmacAeadKeyManager>(), config);
   if (!status.ok()) {
     return status;
@@ -49,6 +50,11 @@ util::Status AddAeadKeyGenV0(KeyGenConfiguration& config) {
   }
   status = internal::KeyGenConfigurationImpl::AddKeyTypeManager(
       absl::make_unique<AesEaxKeyManager>(), config);
+  if (!status.ok()) {
+    return status;
+  }
+  status = internal::KeyGenConfigurationImpl::AddKeyTypeManager(
+      CreateXAesGcmKeyManager(), config);
   if (!status.ok()) {
     return status;
   }

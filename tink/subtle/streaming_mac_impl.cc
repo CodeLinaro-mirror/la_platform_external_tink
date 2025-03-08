@@ -28,8 +28,10 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "openssl/crypto.h"
+#include "tink/internal/safe_stringops.h"
+#include "tink/mac/internal/stateful_mac.h"
 #include "tink/output_stream_with_result.h"
-#include "tink/subtle/mac/stateful_mac.h"
+#include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
@@ -43,8 +45,8 @@ constexpr size_t kBufferSize = 4096;
 
 class ComputeMacOutputStream : public OutputStreamWithResult<std::string> {
  public:
-  explicit ComputeMacOutputStream(std::unique_ptr<StatefulMac> mac)
-      : status_(util::OkStatus()),
+  explicit ComputeMacOutputStream(std::unique_ptr<internal::StatefulMac> mac)
+      : status_(absl::OkStatus()),
         mac_(std::move(mac)),
         position_(0),
         buffer_position_(0),
@@ -52,24 +54,24 @@ class ComputeMacOutputStream : public OutputStreamWithResult<std::string> {
     buffer_.resize(kBufferSize);
   }
 
-  util::StatusOr<int> NextBuffer(void** buffer) override;
-  util::StatusOr<std::string> CloseStreamAndComputeResult() override;
+  absl::StatusOr<int> NextBuffer(void** buffer) override;
+  absl::StatusOr<std::string> CloseStreamAndComputeResult() override;
   void BackUp(int count) override;
   int64_t Position() const override { return position_; }
 
  private:
   void WriteIntoMac();
 
-  util::Status status_;
-  const std::unique_ptr<StatefulMac> mac_;
+  absl::Status status_;
+  const std::unique_ptr<internal::StatefulMac> mac_;
   int64_t position_;
   int buffer_position_;
   std::string buffer_;
 };
 
-util::StatusOr<std::unique_ptr<OutputStreamWithResult<std::string>>>
+absl::StatusOr<std::unique_ptr<OutputStreamWithResult<std::string>>>
 StreamingMacImpl::NewComputeMacOutputStream() const {
-  util::StatusOr<std::unique_ptr<StatefulMac>> mac_status =
+  absl::StatusOr<std::unique_ptr<internal::StatefulMac>> mac_status =
       mac_factory_->Create();
 
   if (!mac_status.ok()) {
@@ -81,7 +83,7 @@ StreamingMacImpl::NewComputeMacOutputStream() const {
   return std::move(string_to_return);
 }
 
-util::StatusOr<int> ComputeMacOutputStream::NextBuffer(void** buffer) {
+absl::StatusOr<int> ComputeMacOutputStream::NextBuffer(void** buffer) {
   if (!status_.ok()) {
     return status_;
   }
@@ -92,15 +94,19 @@ util::StatusOr<int> ComputeMacOutputStream::NextBuffer(void** buffer) {
   return buffer_position_;
 }
 
-util::StatusOr<std::string>
+absl::StatusOr<std::string>
 ComputeMacOutputStream::CloseStreamAndComputeResult() {
   if (!status_.ok()) {
     return status_;
   }
   WriteIntoMac();
   status_ =
-      util::Status(absl::StatusCode::kFailedPrecondition, "Stream Closed");
-  return mac_->Finalize();
+      absl::Status(absl::StatusCode::kFailedPrecondition, "Stream Closed");
+  absl::StatusOr<util::SecretData> result = mac_->FinalizeAsSecretData();
+  if (!result.ok()) {
+    return result.status();
+  }
+  return std::string(util::SecretDataAsStringView(*result));
 }
 
 void ComputeMacOutputStream::BackUp(int count) {
@@ -120,11 +126,11 @@ void ComputeMacOutputStream::WriteIntoMac() {
   buffer_.replace(0, buffer_position_, buffer_position_, 0);
 }
 
-class VerifyMacOutputStream : public OutputStreamWithResult<util::Status> {
+class VerifyMacOutputStream : public OutputStreamWithResult<absl::Status> {
  public:
   VerifyMacOutputStream(const std::string& expected,
-                        std::unique_ptr<StatefulMac> mac)
-      : status_(util::OkStatus()),
+                        std::unique_ptr<internal::StatefulMac> mac)
+      : status_(absl::OkStatus()),
         mac_(std::move(mac)),
         position_(0),
         buffer_position_(0),
@@ -133,9 +139,9 @@ class VerifyMacOutputStream : public OutputStreamWithResult<util::Status> {
     buffer_.resize(kBufferSize);
   }
 
-  util::StatusOr<int> NextBuffer(void** buffer) override;
+  absl::StatusOr<int> NextBuffer(void** buffer) override;
 
-  util::Status CloseStreamAndComputeResult() override;
+  absl::Status CloseStreamAndComputeResult() override;
 
   void BackUp(int count) override;
   int64_t Position() const override { return position_; }
@@ -145,15 +151,15 @@ class VerifyMacOutputStream : public OutputStreamWithResult<util::Status> {
 
   // Stream status: Initialized as OK, and
   // changed to ERROR:FAILED_PRECONDITION when the stream is closed.
-  util::Status status_;
-  std::unique_ptr<StatefulMac> mac_;
+  absl::Status status_;
+  std::unique_ptr<internal::StatefulMac> mac_;
   int64_t position_;
   int buffer_position_;
   std::string buffer_;
   std::string expected_;
 };
 
-util::StatusOr<int> VerifyMacOutputStream::NextBuffer(void** buffer) {
+absl::StatusOr<int> VerifyMacOutputStream::NextBuffer(void** buffer) {
   if (!status_.ok()) {
     return status_;
   }
@@ -164,14 +170,14 @@ util::StatusOr<int> VerifyMacOutputStream::NextBuffer(void** buffer) {
   return buffer_position_;
 }
 
-util::Status VerifyMacOutputStream::CloseStreamAndComputeResult() {
+absl::Status VerifyMacOutputStream::CloseStreamAndComputeResult() {
   if (!status_.ok()) {
     return status_;
   }
   WriteIntoMac();
   status_ =
-      util::Status(absl::StatusCode::kFailedPrecondition, "Stream Closed");
-  util::StatusOr<std::string> mac_actual = mac_->Finalize();
+      absl::Status(absl::StatusCode::kFailedPrecondition, "Stream Closed");
+  absl::StatusOr<util::SecretData> mac_actual = mac_->FinalizeAsSecretData();
   if (!mac_actual.ok()) {
     return mac_actual.status();
   }
@@ -180,9 +186,9 @@ util::Status VerifyMacOutputStream::CloseStreamAndComputeResult() {
         absl::StrCat("Invalid MAC size; expected ", expected_.size(), ", got ",
                      mac_actual->size()));
   }
-  if (!CRYPTO_memcmp(mac_actual->data(), expected_.data(),
-                     mac_actual->size())) {
-    return util::OkStatus();
+  if (internal::SafeCryptoMemEquals(mac_actual->data(), expected_.data(),
+                                    mac_actual->size())) {
+    return absl::OkStatus();
   }
   return absl::InvalidArgumentError("Incorrect MAC");
 }
@@ -204,14 +210,14 @@ void VerifyMacOutputStream::WriteIntoMac() {
   buffer_.replace(0, buffer_position_, buffer_position_, 0);
 }
 
-util::StatusOr<std::unique_ptr<OutputStreamWithResult<util::Status>>>
+absl::StatusOr<std::unique_ptr<OutputStreamWithResult<absl::Status>>>
 StreamingMacImpl::NewVerifyMacOutputStream(const std::string& mac_value) const {
-  util::StatusOr<std::unique_ptr<StatefulMac>> mac_status =
+  absl::StatusOr<std::unique_ptr<internal::StatefulMac>> mac_status =
       mac_factory_->Create();
   if (!mac_status.ok()) {
     return mac_status.status();
   }
-  return std::unique_ptr<OutputStreamWithResult<util::Status>>(
+  return std::unique_ptr<OutputStreamWithResult<absl::Status>>(
       absl::make_unique<VerifyMacOutputStream>(mac_value,
                                                std::move(mac_status.value())));
 }

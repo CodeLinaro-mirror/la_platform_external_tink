@@ -15,12 +15,18 @@
 ///////////////////////////////////////////////////////////////////////////////
 #include "tink/internal/bn_encoding_util.h"
 
+#include <cstring>
 #include <string>
 
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
+#include "tink/internal/safe_stringops.h"
+#include "tink/internal/secret_buffer.h"
+#include "tink/restricted_big_integer.h"
+#include "tink/secret_key_access_token.h"
+#include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
@@ -28,14 +34,14 @@ namespace crypto {
 namespace tink {
 namespace internal {
 
-util::StatusOr<std::string> GetValueOfFixedLength(
+absl::StatusOr<std::string> GetValueOfFixedLength(
     absl::string_view big_integer_encoding, int length) {
   if (big_integer_encoding.size() == length) {
     return std::string(big_integer_encoding);
   }
 
   if (big_integer_encoding.size() > length) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrFormat(
             "Value too large for the given length. Expected %d, got %d", length,
@@ -44,6 +50,28 @@ util::StatusOr<std::string> GetValueOfFixedLength(
 
   std::string padded_string(length - big_integer_encoding.size(), 0);
   return absl::StrCat(padded_string, big_integer_encoding);
+}
+
+absl::StatusOr<util::SecretData> GetSecretValueOfFixedLength(
+    const RestrictedBigInteger& big_integer, int length,
+    SecretKeyAccessToken token) {
+  if (big_integer.SizeInBytes() == length) {
+    return util::SecretDataFromStringView(big_integer.GetSecret(token));
+  }
+
+  if (big_integer.SizeInBytes() > length) {
+    return absl::Status(
+        absl::StatusCode::kInvalidArgument,
+        absl::StrFormat(
+            "Value too large for the given length. Expected %d, got %d", length,
+            big_integer.SizeInBytes()));
+  }
+
+  internal::SecretBuffer padded(length, 0);
+  crypto::tink::internal::SafeMemCopy(
+      padded.data() + length - big_integer.SizeInBytes(),
+      big_integer.GetSecret(token).data(), big_integer.GetSecret(token).size());
+  return util::internal::AsSecretData(padded);
 }
 
 }  // namespace internal

@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc.
+// Copyright 2018 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,8 +22,10 @@
 #include <utility>
 
 #include "absl/status/status.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "absl/strings/strip.h"
 #include "openssl/bn.h"
 #include "openssl/evp.h"
 #include "openssl/rsa.h"
@@ -32,6 +34,10 @@
 #include "tink/internal/rsa_util.h"
 #include "tink/internal/ssl_unique_ptr.h"
 #include "tink/internal/util.h"
+#include "tink/partial_key_access.h"
+#include "tink/public_key_verify.h"
+#include "tink/signature/rsa_ssa_pkcs1_parameters.h"
+#include "tink/signature/rsa_ssa_pkcs1_public_key.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/util/errors.h"
 #include "tink/util/status.h"
@@ -41,22 +47,59 @@ namespace crypto {
 namespace tink {
 namespace subtle {
 
-util::StatusOr<std::unique_ptr<RsaSsaPkcs1VerifyBoringSsl>>
+absl::StatusOr<std::unique_ptr<PublicKeyVerify>>
+RsaSsaPkcs1VerifyBoringSsl::New(const RsaSsaPkcs1PublicKey& key) {
+  internal::RsaPublicKey public_key;
+  public_key.n = std::string(key.GetModulus(GetPartialKeyAccess()).GetValue());
+  public_key.e =
+      std::string(key.GetParameters().GetPublicExponent().GetValue());
+  internal::RsaSsaPkcs1Params params;
+  switch (key.GetParameters().GetHashType()) {
+    case crypto::tink::RsaSsaPkcs1Parameters::HashType::kSha256:
+      params.hash_type = SHA256;
+      break;
+    case crypto::tink::RsaSsaPkcs1Parameters::HashType::kSha384:
+      params.hash_type = SHA384;
+      break;
+    case crypto::tink::RsaSsaPkcs1Parameters::HashType::kSha512:
+      params.hash_type = SHA512;
+      break;
+    default:
+      return absl::Status(
+          absl::StatusCode::kInvalidArgument,
+          absl::StrCat("Unsupported hash:", key.GetParameters().GetHashType()));
+  }
+  return New(public_key, params, key.GetOutputPrefix(),
+             key.GetParameters().GetVariant() ==
+                     RsaSsaPkcs1Parameters::Variant::kLegacy
+                 ? std::string(1, 0)
+                 : "");
+}
+
+absl::StatusOr<std::unique_ptr<RsaSsaPkcs1VerifyBoringSsl>>
 RsaSsaPkcs1VerifyBoringSsl::New(const internal::RsaPublicKey& pub_key,
                                 const internal::RsaSsaPkcs1Params& params) {
-  util::Status status =
+  return New(pub_key, params, "", "");
+}
+
+absl::StatusOr<std::unique_ptr<RsaSsaPkcs1VerifyBoringSsl>>
+RsaSsaPkcs1VerifyBoringSsl::New(const internal::RsaPublicKey& pub_key,
+                                const internal::RsaSsaPkcs1Params& params,
+                                absl::string_view output_prefix,
+                                absl::string_view message_suffix) {
+  absl::Status status =
       internal::CheckFipsCompatibility<RsaSsaPkcs1VerifyBoringSsl>();
   if (!status.ok()) {
     return status;
   }
 
   // Check if the hash type is safe to use.
-  util::Status is_safe = internal::IsHashTypeSafeForSignature(params.hash_type);
+  absl::Status is_safe = internal::IsHashTypeSafeForSignature(params.hash_type);
   if (!is_safe.ok()) {
     return is_safe;
   }
 
-  util::StatusOr<const EVP_MD*> sig_hash =
+  absl::StatusOr<const EVP_MD*> sig_hash =
       internal::EvpHashFromHashType(params.hash_type);
   if (!sig_hash.ok()) {
     return sig_hash.status();
@@ -64,24 +107,48 @@ RsaSsaPkcs1VerifyBoringSsl::New(const internal::RsaPublicKey& pub_key,
 
   // The RSA modulus and exponent are checked as part of the conversion to
   // internal::SslUniquePtr<RSA>.
-  util::StatusOr<internal::SslUniquePtr<RSA>> rsa =
-      internal::RsaPublicKeyToRsa(pub_key);
-  if (!rsa.ok()) {
-    return rsa.status();
+  internal::SslUniquePtr<RSA> rsa(RSA_new());
+  if (rsa.get() == nullptr) {
+    return absl::Status(absl::StatusCode::kInternal, "RSA allocation error");
   }
 
   std::unique_ptr<RsaSsaPkcs1VerifyBoringSsl> verify(
-      new RsaSsaPkcs1VerifyBoringSsl(*std::move(rsa), *sig_hash));
+      new RsaSsaPkcs1VerifyBoringSsl(std::move(rsa), *sig_hash, output_prefix,
+                                     message_suffix));
+  if (!BN_bin2bn(reinterpret_cast<const uint8_t*>(pub_key.n.data()),
+                 pub_key.n.size(), verify->modulus_.get())) {
+    return absl::Status(absl::StatusCode::kInternal,
+                        "Could not convert modulus to BIGNUM.");
+  }
+  if (!BN_bin2bn(reinterpret_cast<const uint8_t*>(pub_key.e.data()),
+                 pub_key.e.size(), verify->public_exponent_.get())) {
+    return absl::Status(absl::StatusCode::kInternal,
+                        "Could not convert public exponent to BIGNUM.");
+  }
+  status =
+      internal::ValidateRsaModulusSize(BN_num_bits(verify->modulus_.get()));
+  if (!status.ok()) {
+    return status;
+  }
+  if (!RSA_set0_key(verify->rsa_.get(), verify->modulus_.get(),
+                    verify->public_exponent_.get(),
+                    /*d=*/nullptr)) {
+    return absl::Status(absl::StatusCode::kInternal, "Could not set RSA key.");
+  }
+  // A successful RSA_set0_key() takes ownership of the BIGNUMs, hence we
+  // release them here.
+  verify->modulus_.release();
+  verify->public_exponent_.release();
   return std::move(verify);
 }
 
-util::Status RsaSsaPkcs1VerifyBoringSsl::Verify(absl::string_view signature,
-                                                absl::string_view data) const {
+absl::Status RsaSsaPkcs1VerifyBoringSsl::VerifyWithoutPrefix(
+    absl::string_view signature, absl::string_view data) const {
   // BoringSSL expects a non-null pointer for data,
   // regardless of whether the size is 0.
   data = internal::EnsureStringNonNull(data);
 
-  util::StatusOr<std::string> digest = internal::ComputeHash(data, *sig_hash_);
+  absl::StatusOr<std::string> digest = internal::ComputeHash(data, *sig_hash_);
   if (!digest.ok()) {
     return digest.status();
   }
@@ -93,11 +160,31 @@ util::Status RsaSsaPkcs1VerifyBoringSsl::Verify(absl::string_view signature,
                  /*sig_len=*/signature.length(),
                  /*rsa=*/rsa_.get()) != 1) {
     // Signature is invalid.
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Signature is not valid.");
   }
 
-  return util::OkStatus();
+  return absl::OkStatus();
+}
+
+absl::Status RsaSsaPkcs1VerifyBoringSsl::Verify(absl::string_view signature,
+                                                absl::string_view data) const {
+  if (output_prefix_.empty() && message_suffix_.empty()) {
+    return VerifyWithoutPrefix(signature, data);
+  }
+  if (!absl::StartsWith(signature, output_prefix_)) {
+    return absl::Status(absl::StatusCode::kInvalidArgument,
+                        "OutputPrefix does not match");
+  }
+  // Stores a copy of the data in case message_suffix_ is not empty.
+  // Needs to stay alive until this method is done.
+  std::string data_copy_holder;
+  if (!message_suffix_.empty()) {
+    data_copy_holder = absl::StrCat(data, message_suffix_);
+    data = data_copy_holder;
+  }
+  return VerifyWithoutPrefix(absl::StripPrefix(signature, output_prefix_),
+                             data);
 }
 
 }  // namespace subtle

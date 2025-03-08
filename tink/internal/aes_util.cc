@@ -38,10 +38,10 @@ namespace crypto {
 namespace tink {
 namespace internal {
 
-util::Status AesCtr128Crypt(absl::string_view data, uint8_t iv[AesBlockSize()],
+absl::Status AesCtr128Crypt(absl::string_view data, uint8_t iv[AesBlockSize()],
                             const AES_KEY* key, absl::Span<char> out) {
   if (out.size() < data.size()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Invalid size for output buffer; expected at least ",
                      data.size(), " got ", out.size()));
@@ -50,12 +50,12 @@ util::Status AesCtr128Crypt(absl::string_view data, uint8_t iv[AesBlockSize()],
   // Only full overlap or no overlap is allowed.
   if (!BuffersAreIdentical(data, absl::string_view(out.data(), out.size())) &&
       BuffersOverlap(data, absl::string_view(out.data(), out.size()))) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Buffers must not partially overlap");
   }
 
   unsigned int num = 0;
-  std::vector<uint8_t> ecount_buf(AesBlockSize(), 0);
+  uint8_t ecount_buf[AesBlockSize()];
   // OpenSSL >= v1.1.0 public APIs no longer exposes an AES_ctr128_encrypt
   // function; as an alternative we use CRYPTO_ctr128_encrypt when OpenSSL is
   // used as a backend. The latter is not part of the public API of BoringSSL,
@@ -63,17 +63,17 @@ util::Status AesCtr128Crypt(absl::string_view data, uint8_t iv[AesBlockSize()],
 #ifdef OPENSSL_IS_BORINGSSL
   AES_ctr128_encrypt(reinterpret_cast<const uint8_t*>(data.data()),
                      reinterpret_cast<uint8_t*>(out.data()), data.size(), key,
-                     iv, ecount_buf.data(), &num);
+                     iv, ecount_buf, &num);
 #else
   CRYPTO_ctr128_encrypt(reinterpret_cast<const uint8_t*>(data.data()),
                         reinterpret_cast<uint8_t*>(out.data()), data.size(),
-                        key, iv, ecount_buf.data(), &num,
+                        key, iv, ecount_buf, &num,
                         reinterpret_cast<block128_f>(AES_encrypt));
 #endif
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::StatusOr<const EVP_CIPHER*> GetAesCtrCipherForKeySize(
+absl::StatusOr<const EVP_CIPHER *> GetAesCtrCipherForKeySize(
     uint32_t key_size_in_bytes) {
   switch (key_size_in_bytes) {
     case 16:
@@ -81,12 +81,12 @@ util::StatusOr<const EVP_CIPHER*> GetAesCtrCipherForKeySize(
     case 32:
       return EVP_aes_256_ctr();
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           absl::StrCat("Invalid key size ", key_size_in_bytes));
   }
 }
 
-util::StatusOr<const EVP_CIPHER*> GetAesCbcCipherForKeySize(
+absl::StatusOr<const EVP_CIPHER *> GetAesCbcCipherForKeySize(
     uint32_t key_size_in_bytes) {
   switch (key_size_in_bytes) {
     case 16:
@@ -94,7 +94,7 @@ util::StatusOr<const EVP_CIPHER*> GetAesCbcCipherForKeySize(
     case 32:
       return EVP_aes_256_cbc();
   }
-  return util::Status(absl::StatusCode::kInvalidArgument,
+  return absl::Status(absl::StatusCode::kInvalidArgument,
                       absl::StrCat("Invalid key size ", key_size_in_bytes));
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@
 #include "openssl/evp.h"
 #include "tink/internal/fips_utils.h"
 #include "tink/public_key_sign.h"
+#include "tink/signature/ecdsa_private_key.h"
 #include "tink/signature/internal/ecdsa_raw_sign_boringssl.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/subtle_util_boringssl.h"
@@ -37,25 +38,42 @@ namespace subtle {
 // ECDSA signing using Boring SSL, generating signatures in DER-encoding.
 class EcdsaSignBoringSsl : public PublicKeySign {
  public:
-  static crypto::tink::util::StatusOr<std::unique_ptr<EcdsaSignBoringSsl>> New(
+  static absl::StatusOr<std::unique_ptr<EcdsaSignBoringSsl>> New(
+      const EcdsaPrivateKey& private_key);
+
+  static absl::StatusOr<std::unique_ptr<EcdsaSignBoringSsl>> New(
       const SubtleUtilBoringSSL::EcKey& ec_key, HashType hash_type,
-      EcdsaSignatureEncoding encoding);
+      EcdsaSignatureEncoding encoding) {
+    return New(ec_key, hash_type, encoding, "", "");
+  }
 
   // Computes the signature for 'data'.
-  crypto::tink::util::StatusOr<std::string> Sign(
-      absl::string_view data) const override;
+  absl::StatusOr<std::string> Sign(absl::string_view data) const override;
 
   static constexpr crypto::tink::internal::FipsCompatibility kFipsStatus =
       crypto::tink::internal::FipsCompatibility::kRequiresBoringCrypto;
 
  private:
+  static absl::StatusOr<std::unique_ptr<EcdsaSignBoringSsl>> New(
+      const SubtleUtilBoringSSL::EcKey& ec_key, HashType hash_type,
+      EcdsaSignatureEncoding encoding, absl::string_view output_prefix,
+      absl::string_view message_suffix);
+
   explicit EcdsaSignBoringSsl(
       const EVP_MD* hash,
-      std::unique_ptr<internal::EcdsaRawSignBoringSsl> raw_signer)
-      : hash_(hash), raw_signer_(std::move(raw_signer)) {}
+      std::unique_ptr<internal::EcdsaRawSignBoringSsl> raw_signer,
+      absl::string_view output_prefix, absl::string_view message_suffix)
+      : hash_(hash),
+        raw_signer_(std::move(raw_signer)),
+        output_prefix_(output_prefix),
+        message_suffix_(message_suffix) {}
+
+  absl::StatusOr<std::string> SignWithoutPrefix(absl::string_view data) const;
 
   const EVP_MD* hash_;  // Owned by BoringSSL.
   std::unique_ptr<internal::EcdsaRawSignBoringSsl> raw_signer_;
+  std::string output_prefix_;
+  std::string message_suffix_;
 };
 
 }  // namespace subtle

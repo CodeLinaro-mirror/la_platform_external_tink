@@ -42,14 +42,14 @@ class BufferedInputStream : public crypto::tink::InputStream {
 
   ~BufferedInputStream() override;
 
-  crypto::tink::util::StatusOr<int> Next(const void** data) override;
+  absl::StatusOr<int> Next(const void** data) override;
 
   void BackUp(int count) override;
 
   int64_t Position() const override;
 
   // Rewinds this stream to the beginning (if rewinding is still enabled).
-  crypto::tink::util::Status Rewind();
+  absl::Status Rewind();
 
   // Disables rewinding.
   void DisableRewinding();
@@ -61,7 +61,7 @@ class BufferedInputStream : public crypto::tink::InputStream {
   // The fields below are valid and in use iff direct_access_ is false.
   // Once direct_access_ becomes true, all the calls to this stream's methods
   // are directly relayed to methods of input_stream_.
-  crypto::tink::util::Status status_;
+  absl::Status status_;
   std::vector<uint8_t> buffer_;
   bool after_rewind_;       // true iff no Next has been called after rewind
   bool rewinding_enabled_;  // true iff this stream can be rewound

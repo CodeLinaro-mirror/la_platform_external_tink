@@ -44,10 +44,10 @@ IstreamInputStream::IstreamInputStream(std::unique_ptr<std::istream> input,
   position_ = 0;
   buffer_ = absl::make_unique<uint8_t[]>(buffer_size_);
   buffer_offset_ = 0;
-  status_ = util::OkStatus();
+  status_ = absl::OkStatus();
 }
 
-crypto::tink::util::StatusOr<int> IstreamInputStream::Next(const void** data) {
+absl::StatusOr<int> IstreamInputStream::Next(const void** data) {
   if (!status_.ok()) return status_;
   if (count_backedup_ > 0) {  // Return the backed-up bytes.
     buffer_offset_ = buffer_offset_ + (count_in_buffer_ - count_backedup_);
@@ -64,7 +64,7 @@ crypto::tink::util::StatusOr<int> IstreamInputStream::Next(const void** data) {
     if (input_->good()) return count_read;  // No bytes could be read.
     // If !good(), distinguish EOF from other failures.
     if (input_->eof()) {
-      status_ = Status(absl::StatusCode::kOutOfRange, "EOF");
+      status_ = absl::Status(absl::StatusCode::kOutOfRange, "EOF");
     } else {
       status_ = ToStatusF(absl::StatusCode::kInternal, "I/O error: %s",
                           strerror(errno));

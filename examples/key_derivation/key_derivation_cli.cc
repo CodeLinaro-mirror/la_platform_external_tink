@@ -45,7 +45,6 @@ using ::crypto::tink::AeadConfig;
 using ::crypto::tink::KeyDerivationConfig;
 using ::crypto::tink::KeysetDeriver;
 using ::crypto::tink::KeysetHandle;
-using ::crypto::tink::util::OkStatus;
 using ::crypto::tink::util::Status;
 using ::crypto::tink::util::StatusOr;
 
@@ -63,17 +62,17 @@ void ValidateParams() {
 // Verifies `handle` contains a valid AEAD primitive.
 Status VerifyDerivedAeadKeyset(const KeysetHandle& handle) {
   // [START_EXCLUDE]
-  StatusOr<std::unique_ptr<Aead>> aead =
+  absl::StatusOr<std::unique_ptr<Aead>> aead =
       handle.GetPrimitive<crypto::tink::Aead>(
           crypto::tink::ConfigGlobalRegistry());
   if (!aead.ok()) return aead.status();
 
   std::string plaintext = "plaintext";
   std::string ad = "ad";
-  StatusOr<std::string> ciphertext = (*aead)->Encrypt(plaintext, ad);
+  absl::StatusOr<std::string> ciphertext = (*aead)->Encrypt(plaintext, ad);
   if (!ciphertext.ok()) return ciphertext.status();
 
-  StatusOr<std::string> got = (*aead)->Decrypt(*ciphertext, ad);
+  absl::StatusOr<std::string> got = (*aead)->Decrypt(*ciphertext, ad);
   if (!got.ok()) return got.status();
 
   if (*got != plaintext) {
@@ -81,7 +80,7 @@ Status VerifyDerivedAeadKeyset(const KeysetHandle& handle) {
         absl::StatusCode::kInternal,
         "AEAD obtained from derived keyset failed to decrypt correctly");
   }
-  return OkStatus();
+  return absl::OkStatus();
   // [END_EXCLUDE]
 }
 
@@ -98,23 +97,23 @@ Status KeyDerivationCli(const std::string& keyset_filename,
   if (!result.ok()) return result;
 
   // Read keyset from file.
-  StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
       ReadJsonCleartextKeyset(keyset_filename);
   if (!keyset_handle.ok()) return keyset_handle.status();
 
   // Get the primitive.
-  StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
+  absl::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
       (*keyset_handle)
           ->GetPrimitive<crypto::tink::KeysetDeriver>(
               crypto::tink::ConfigGlobalRegistry());
   if (!deriver.ok()) return deriver.status();
 
   // Read the salt.
-  StatusOr<std::string> salt_file_content = ReadFile(salt_filename);
+  absl::StatusOr<std::string> salt_file_content = ReadFile(salt_filename);
   if (!salt_file_content.ok()) return salt_file_content.status();
 
   // Derive new keyset.
-  StatusOr<std::unique_ptr<KeysetHandle>> derived_handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> derived_handle =
       (*deriver)->DeriveKeyset(*salt_file_content);
   if (!derived_handle.ok()) return derived_handle.status();
 

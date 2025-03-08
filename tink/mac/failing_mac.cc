@@ -36,17 +36,17 @@ class AlwaysFailMac : public Mac {
  public:
   explicit AlwaysFailMac(std::string message) : message_(std::move(message)) {}
 
-  util::StatusOr<std::string> ComputeMac(
+  absl::StatusOr<std::string> ComputeMac(
       absl::string_view /*data*/) const override {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInternal,
         absl::StrCat("AlwaysFailMac will always fail on ComputeMac (msg=",
                      message_, ")"));
   }
 
-  util::Status VerifyMac(absl::string_view /*mac_value*/,
+  absl::Status VerifyMac(absl::string_view /*mac_value*/,
                          absl::string_view /*data*/) const override {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInternal,
         absl::StrCat("AlwaysFailMac will always fail on VerifyMac (msg=",
                      message_, ")"));

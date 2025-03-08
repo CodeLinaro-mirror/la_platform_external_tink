@@ -39,21 +39,21 @@ constexpr char kKeyTypePrefix[] = "type.googleapis.com/google.crypto.";
 // Constructs a MonitoringKeySetInfo object from a PrimitiveSet `primitive_set`
 // for a given primitive P.
 template <class P>
-crypto::tink::util::StatusOr<MonitoringKeySetInfo>
-MonitoringKeySetInfoFromPrimitiveSet(const PrimitiveSet<P>& primitive_set) {
+absl::StatusOr<MonitoringKeySetInfo> MonitoringKeySetInfoFromPrimitiveSet(
+    const PrimitiveSet<P>& primitive_set) {
   const std::vector<typename PrimitiveSet<P>::template Entry<P>*>
       primitive_set_entries = primitive_set.get_all();
   if (primitive_set_entries.empty()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "The primitive set is empty");
   }
   if (primitive_set.get_primary() == nullptr) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "The primary keys must not be null");
   }
   std::vector<MonitoringKeySetInfo::Entry> keyset_info_entries = {};
   for (const auto& entry : primitive_set_entries) {
-    util::StatusOr<KeyStatus> key_status =
+    absl::StatusOr<KeyStatus> key_status =
         FromKeyStatusType(entry->get_status());
     if (!key_status.ok()) return key_status.status();
 

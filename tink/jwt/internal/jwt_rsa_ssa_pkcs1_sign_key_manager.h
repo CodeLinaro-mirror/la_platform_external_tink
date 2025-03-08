@@ -26,7 +26,6 @@
 #include "tink/internal/fips_utils.h"
 #include "tink/jwt/internal/jwt_public_key_sign_internal.h"
 #include "tink/jwt/internal/raw_jwt_rsa_ssa_pkcs1_sign_key_manager.h"
-#include "tink/jwt/jwt_public_key_sign.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "proto/jwt_rsa_ssa_pkcs1.pb.h"
@@ -45,8 +44,8 @@ class JwtRsaSsaPkcs1SignKeyManager
  public:
   class PublicKeySignFactory
       : public PrimitiveFactory<JwtPublicKeySignInternal> {
-    crypto::tink::util::StatusOr<std::unique_ptr<JwtPublicKeySignInternal>>
-    Create(const google::crypto::tink::JwtRsaSsaPkcs1PrivateKey& private_key)
+    absl::StatusOr<std::unique_ptr<JwtPublicKeySignInternal>> Create(
+        const google::crypto::tink::JwtRsaSsaPkcs1PrivateKey& private_key)
         const override;
 
    private:
@@ -63,20 +62,20 @@ class JwtRsaSsaPkcs1SignKeyManager
 
   const std::string& get_key_type() const override;
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::JwtRsaSsaPkcs1PrivateKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::JwtRsaSsaPkcs1KeyFormat& key_format)
       const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::JwtRsaSsaPkcs1PrivateKey>
-  CreateKey(const google::crypto::tink::JwtRsaSsaPkcs1KeyFormat& key_format)
+  absl::StatusOr<google::crypto::tink::JwtRsaSsaPkcs1PrivateKey> CreateKey(
+      const google::crypto::tink::JwtRsaSsaPkcs1KeyFormat& key_format)
       const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::JwtRsaSsaPkcs1PublicKey>
-  GetPublicKey(const google::crypto::tink::JwtRsaSsaPkcs1PrivateKey&
-                   private_key) const override;
+  absl::StatusOr<google::crypto::tink::JwtRsaSsaPkcs1PublicKey> GetPublicKey(
+      const google::crypto::tink::JwtRsaSsaPkcs1PrivateKey& private_key)
+      const override;
 
   internal::FipsCompatibility FipsStatus() const override {
     return internal::FipsCompatibility::kRequiresBoringCrypto;

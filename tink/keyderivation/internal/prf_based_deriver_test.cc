@@ -117,10 +117,10 @@ TEST_F(PrfBasedDeriverTest, NewWithInvalidDerivedKeyTemplate) {
 }
 
 TEST_F(PrfBasedDeriverTest, DeriveKeysetPlaceholders) {
-  util::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
+  absl::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
       PrfBasedDeriver::New(valid_prf_key_data_, AeadKeyTemplates::Aes128Gcm());
   ASSERT_THAT(deriver, IsOk());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       (*deriver)->DeriveKeyset("salt");
   ASSERT_THAT(handle, IsOk());
   ASSERT_THAT(**handle, SizeIs(1));
@@ -142,19 +142,13 @@ TEST_F(PrfBasedDeriverTest, DeriveKeysetPlaceholders) {
 }
 
 TEST_F(PrfBasedDeriverTest, DeriveKeysetPlaceholdersWithGlobalRegistry) {
-  Registry::Reset();
-  ASSERT_THAT(PrfBasedDeriver::New(valid_prf_key_data_,
-                                   AeadKeyTemplates::Aes128CtrHmacSha256())
-                  .status(),
-              StatusIs(absl::StatusCode::kNotFound));
-
   ASSERT_THAT(Registry::RegisterKeyTypeManager(
                   absl::make_unique<AesCtrHmacAeadKeyManager>(), true),
               IsOk());
-  util::StatusOr<std::unique_ptr<KeysetDeriver>> deriver = PrfBasedDeriver::New(
+  absl::StatusOr<std::unique_ptr<KeysetDeriver>> deriver = PrfBasedDeriver::New(
       valid_prf_key_data_, AeadKeyTemplates::Aes128CtrHmacSha256());
   ASSERT_THAT(deriver, IsOk());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       (*deriver)->DeriveKeyset("salt");
   ASSERT_THAT(handle, IsOk());
   ASSERT_THAT(**handle, SizeIs(1));
@@ -176,10 +170,10 @@ TEST_F(PrfBasedDeriverTest, DeriveKeysetWithDifferentPrfKeys) {
   KeyTemplate key_template = AeadKeyTemplates::Aes128Gcm();
   std::string salt = "salt";
   {
-    util::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
+    absl::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
         PrfBasedDeriver::New(valid_prf_key_data_, key_template);
     ASSERT_THAT(deriver, IsOk());
-    util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+    absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
         (*deriver)->DeriveKeyset(salt);
     ASSERT_THAT(handle, IsOk());
     Keyset keyset = CleartextKeysetHandle::GetKeyset(**handle);
@@ -191,10 +185,10 @@ TEST_F(PrfBasedDeriverTest, DeriveKeysetWithDifferentPrfKeys) {
     different_prf_key.set_key_value(subtle::Random::GetRandomBytes(32));
     KeyData different_key_data =
         test::AsKeyData(different_prf_key, KeyData::SYMMETRIC);
-    util::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
+    absl::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
         PrfBasedDeriver::New(different_key_data, key_template);
     ASSERT_THAT(deriver, IsOk());
-    util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+    absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
         (*deriver)->DeriveKeyset(salt);
     ASSERT_THAT(handle, IsOk());
     Keyset keyset = CleartextKeysetHandle::GetKeyset(**handle);
@@ -207,14 +201,14 @@ TEST_F(PrfBasedDeriverTest, DeriveKeysetWithDifferentPrfKeys) {
 }
 
 TEST_F(PrfBasedDeriverTest, DeriveKeysetWithDifferentSalts) {
-  util::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
+  absl::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
       PrfBasedDeriver::New(valid_prf_key_data_, AeadKeyTemplates::Aes128Gcm());
   ASSERT_THAT(deriver, IsOk());
 
   google::crypto::tink::AesGcmKey derived_key_0;
   google::crypto::tink::AesGcmKey derived_key_1;
   {
-    util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+    absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
         (*deriver)->DeriveKeyset("salt");
     ASSERT_THAT(handle, IsOk());
     Keyset keyset = CleartextKeysetHandle::GetKeyset(**handle);
@@ -222,7 +216,7 @@ TEST_F(PrfBasedDeriverTest, DeriveKeysetWithDifferentSalts) {
         derived_key_0.ParseFromString(keyset.key(0).key_data().value()));
   }
   {
-    util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+    absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
         (*deriver)->DeriveKeyset("different_salt");
     ASSERT_THAT(handle, IsOk());
     Keyset keyset = CleartextKeysetHandle::GetKeyset(**handle);
@@ -274,10 +268,10 @@ TEST_F(PrfBasedDeriverRfcVectorTest, AesGcm) {
   KeyTemplate key_template = AeadKeyTemplates::Aes256Gcm();
 
   // Derive key with hard-coded map.
-  util::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
+  absl::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
       PrfBasedDeriver::New(prf_key_from_rfc_vector_, key_template);
   ASSERT_THAT(deriver, IsOk());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       (*deriver)->DeriveKeyset(salt_);
   ASSERT_THAT(handle, IsOk());
   const AesGcmKey* key =
@@ -293,13 +287,13 @@ TEST_F(PrfBasedDeriverRfcVectorTest, AesGcm) {
   ASSERT_THAT(Registry::RegisterKeyTypeManager(
                   absl::make_unique<HkdfPrfKeyManager>(), true),
               IsOk());
-  util::StatusOr<std::unique_ptr<StreamingPrf>> streaming_prf =
+  absl::StatusOr<std::unique_ptr<StreamingPrf>> streaming_prf =
       Registry::GetPrimitive<StreamingPrf>(prf_key_from_rfc_vector_);
   ASSERT_THAT(streaming_prf, IsOk());
   ASSERT_THAT(Registry::RegisterKeyTypeManager(
                   absl::make_unique<AesGcmKeyManager>(), true),
               IsOk());
-  util::StatusOr<KeyData> proto_generic_key =
+  absl::StatusOr<KeyData> proto_generic_key =
       RegistryImpl::GlobalInstance().DeriveKey(
           key_template, (*streaming_prf)->ComputePrf(salt_).get());
   ASSERT_THAT(proto_generic_key, IsOk());
@@ -360,10 +354,10 @@ TEST_P(PrfBasedDeriverJavaVectorsTest, AesGcm) {
   prf_key.set_key_value(test_vector.prf_key_value);
   KeyData key_data = test::AsKeyData(prf_key, KeyData::SYMMETRIC);
 
-  util::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
+  absl::StatusOr<std::unique_ptr<KeysetDeriver>> deriver =
       PrfBasedDeriver::New(key_data, AeadKeyTemplates::Aes128Gcm());
   ASSERT_THAT(deriver, IsOk());
-  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> handle =
       (*deriver)->DeriveKeyset(test_vector.deriving_salt);
   ASSERT_THAT(handle, IsOk());
 

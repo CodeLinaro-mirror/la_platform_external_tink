@@ -22,13 +22,17 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>  // IWYU pragma: keep
 
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "openssl/crypto.h"
 #include "tink/internal/call_with_core_dump_protection.h"
 #include "tink/internal/safe_stringops.h"
-#include "tink/util/secret_data_internal.h"
+#include "tink/internal/sanitizing_allocator.h"
+#include "tink/internal/secret_buffer.h"
+#include "tink/util/secret_data_internal_class.h"  // IWYU pragma: export
 
 namespace crypto {
 namespace tink {
@@ -58,7 +62,19 @@ struct SanitizingDeleter {
 //  private:
 //   const util::SecretData key_;
 // }
+
+// TINK-PENDING-REMOVAL-IN-3.0.0-START
+#ifndef TINK_CPP_SECRET_DATA_IS_STD_VECTOR
+#define TINK_CPP_SECRET_DATA_IS_STD_VECTOR 1
+#endif
+// TINK-PENDING-REMOVAL-IN-3.0.0-END
+
+#if TINK_CPP_SECRET_DATA_IS_STD_VECTOR
 using SecretData = std::vector<uint8_t, internal::SanitizingAllocator<uint8_t>>;
+#else
+using SecretData = internal::SecretDataInternalClass;
+#endif
+
 
 // Constant-time comparison for SecretData
 // SecretDataEquals should be used instead of regular operator== in most cases.
@@ -135,13 +151,72 @@ inline absl::string_view SecretDataAsStringView(const SecretData& secret) {
 }
 
 inline SecretData SecretDataFromStringView(absl::string_view secret) {
+#if TINK_CPP_SECRET_DATA_IS_STD_VECTOR
   return {secret.begin(), secret.end()};
+#else
+  return internal::SecretDataInternalClassFromStringView(secret);
+#endif
 }
 
 inline SecretData SecretDataFromSpan(absl::Span<const uint8_t> span) {
   return SecretDataFromStringView(absl::string_view(
       reinterpret_cast<const char*>(span.data()), span.size()));
 }
+
+namespace internal {
+
+// This function is needed within Tink because the open source implementation
+// of Tink uses TINK_CPP_SECRET_DATA_IS_STD_VECTOR. Within Google, use
+// SecretData(buffer);
+inline SecretData AsSecretData(
+    const ::crypto::tink::internal::SecretBuffer& buffer) {
+#if TINK_CPP_SECRET_DATA_IS_STD_VECTOR
+  return SecretDataFromStringView(buffer.AsStringView());
+#else
+  return SecretData(buffer);
+#endif
+}
+
+// This function is needed within Tink because the open source implementation
+// of Tink uses TINK_CPP_SECRET_DATA_IS_STD_VECTOR. Within Google, use
+// SecretData(std::move(buffer));
+inline SecretData AsSecretData(
+    ::crypto::tink::internal::SecretBuffer&& buffer) {
+#if TINK_CPP_SECRET_DATA_IS_STD_VECTOR
+  // This needs to make a copy since we cannot give a vector an already
+  // allocated slice.
+  return SecretDataFromStringView(buffer.AsStringView());
+#else
+  return SecretData(std::move(buffer));
+#endif
+}
+
+// This function is needed within Tink because the open source implementation
+// of Tink uses TINK_CPP_SECRET_DATA_IS_STD_VECTOR. Within Google, use
+// data.AsSecretBuffer()
+inline crypto::tink::internal::SecretBuffer AsSecretBuffer(
+    const ::crypto::tink::util::SecretData& data) {
+#if TINK_CPP_SECRET_DATA_IS_STD_VECTOR
+  return crypto::tink::internal::SecretBuffer(SecretDataAsStringView(data));
+#else
+  return data.AsSecretBuffer();
+#endif
+}
+
+// This function is needed within Tink because the open source implementation
+// of Tink uses TINK_CPP_SECRET_DATA_IS_STD_VECTOR. Within Google, use
+// std::move(data).AsSecretBuffer()
+inline crypto::tink::internal::SecretBuffer AsSecretBuffer(
+    ::crypto::tink::util::SecretData&& data) {
+#if TINK_CPP_SECRET_DATA_IS_STD_VECTOR
+  // This needs to make a copy since we cannot steal the data from a vector
+  return crypto::tink::internal::SecretBuffer(SecretDataAsStringView(data));
+#else
+  return std::move(data).AsSecretBuffer();
+#endif
+}
+
+}  // namespace internal
 
 // The same as SecretUniquePtr, but with value semantics.
 //
@@ -174,7 +249,7 @@ class SecretValue {
 };
 
 inline void SafeZeroMemory(void* ptr, std::size_t size) {
-  internal::SafeZeroMemory(ptr, size);
+  OPENSSL_cleanse(ptr, size);
 }
 
 inline void SafeZeroString(std::string* str) {

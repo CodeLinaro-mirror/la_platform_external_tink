@@ -24,16 +24,16 @@
 namespace crypto {
 namespace tink {
 
-util::StatusOr<MlKemParameters> MlKemParameters::Create(int key_size,
+absl::StatusOr<MlKemParameters> MlKemParameters::Create(int key_size,
                                                         Variant variant) {
   if (key_size != 768) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Invalid ML-KEM key size. Only 768 keys are "
                         "currently supported.");
   }
 
   if (variant != Variant::kTink) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create ML-KEM parameters with unknown Variant.");
   }

@@ -39,34 +39,34 @@ namespace tink {
 namespace subtle {
 
 namespace {
-util::Status Validate(const AesGcmHkdfStreaming::Params& params) {
+absl::Status Validate(const AesGcmHkdfStreaming::Params& params) {
   if (!(params.hkdf_hash == SHA1 || params.hkdf_hash == SHA256 ||
         params.hkdf_hash == SHA512)) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "unsupported hkdf_hash");
   }
   if (params.ikm.size() < 16 || params.ikm.size() < params.derived_key_size) {
-    return util::Status(absl::StatusCode::kInvalidArgument, "ikm too small");
+    return absl::Status(absl::StatusCode::kInvalidArgument, "ikm too small");
   }
   if (params.derived_key_size != 16 && params.derived_key_size != 32) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "derived_key_size must be 16 or 32");
   }
   if (params.ciphertext_offset < 0) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "ciphertext_offset must be non-negative");
   }
   if (params.ciphertext_segment_size <=
       params.ciphertext_offset + params.derived_key_size +
           AesGcmHkdfStreamSegmentEncrypter::kTagSizeInBytes) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "ciphertext_segment_size too small");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 }  // namespace
 
-util::StatusOr<std::unique_ptr<AesGcmHkdfStreaming>> AesGcmHkdfStreaming::New(
+absl::StatusOr<std::unique_ptr<AesGcmHkdfStreaming>> AesGcmHkdfStreaming::New(
     Params params) {
   auto status = internal::CheckFipsCompatibility<AesGcmHkdfStreaming>();
   if (!status.ok()) return status;
@@ -76,7 +76,7 @@ util::StatusOr<std::unique_ptr<AesGcmHkdfStreaming>> AesGcmHkdfStreaming::New(
   return {absl::WrapUnique(new AesGcmHkdfStreaming(std::move(params)))};
 }
 
-util::StatusOr<std::unique_ptr<StreamSegmentEncrypter>>
+absl::StatusOr<std::unique_ptr<StreamSegmentEncrypter>>
 AesGcmHkdfStreaming::NewSegmentEncrypter(
     absl::string_view associated_data) const {
   AesGcmHkdfStreamSegmentEncrypter::Params params;
@@ -90,7 +90,7 @@ AesGcmHkdfStreaming::NewSegmentEncrypter(
   return AesGcmHkdfStreamSegmentEncrypter::New(std::move(params));
 }
 
-util::StatusOr<std::unique_ptr<StreamSegmentDecrypter>>
+absl::StatusOr<std::unique_ptr<StreamSegmentDecrypter>>
 AesGcmHkdfStreaming::NewSegmentDecrypter(
     absl::string_view associated_data) const {
   AesGcmHkdfStreamSegmentDecrypter::Params params;

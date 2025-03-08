@@ -16,6 +16,8 @@
 
 #include "tink/internal/keyset_handle_builder_entry.h"
 
+#include <sys/stat.h>
+
 #include <string>
 
 #include "gmock/gmock.h"
@@ -23,25 +25,30 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/types/optional.h"
+#include "tink/aead/xchacha20_poly1305_key.h"
+#include "tink/aead/xchacha20_poly1305_key_manager.h"
+#include "tink/aead/xchacha20_poly1305_parameters.h"
+#include "tink/aead/xchacha20_poly1305_proto_serialization.h"
+#include "tink/config/global_registry.h"
 #include "tink/config/tink_config.h"
 #include "tink/insecure_secret_key_access.h"
+#include "tink/internal/key_gen_configuration_impl.h"
 #include "tink/internal/legacy_proto_key.h"
 #include "tink/internal/legacy_proto_parameters.h"
 #include "tink/internal/proto_key_serialization.h"
 #include "tink/internal/proto_parameters_serialization.h"
-#include "tink/key.h"
+#include "tink/internal/tink_proto_structs.h"
+#include "tink/key_gen_configuration.h"
 #include "tink/key_status.h"
 #include "tink/keyset_handle.h"
 #include "tink/keyset_handle_builder.h"
 #include "tink/mac/aes_cmac_key.h"
 #include "tink/mac/aes_cmac_parameters.h"
 #include "tink/mac/mac_key_templates.h"
-#include "tink/parameters.h"
 #include "tink/partial_key_access.h"
 #include "tink/restricted_data.h"
 #include "tink/secret_key_access_token.h"
 #include "tink/util/secret_proto.h"
-#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "proto/tink.pb.h"
@@ -62,16 +69,29 @@ using ::testing::IsFalse;
 using ::testing::IsTrue;
 using ::testing::Test;
 
-util::StatusOr<LegacyProtoParameters> CreateLegacyProtoParameters() {
-  util::StatusOr<ProtoParametersSerialization> serialization =
+absl::StatusOr<LegacyProtoParameters> CreateLegacyProtoParameters() {
+  absl::StatusOr<ProtoParametersSerialization> serialization =
       ProtoParametersSerialization::Create(MacKeyTemplates::AesCmac());
   if (!serialization.ok()) return serialization.status();
 
   return LegacyProtoParameters(*serialization);
 }
 
+// Creates an XChaCha20Poly1305Key from the given parameters.
+absl::StatusOr<std::unique_ptr<XChaCha20Poly1305Key>>
+CreateXChaCha20Poly1305Key(const XChaCha20Poly1305Parameters& params,
+                           absl::optional<int> id_requirement) {
+  RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
+  absl::StatusOr<XChaCha20Poly1305Key> key = XChaCha20Poly1305Key::Create(
+      params.GetVariant(), secret, id_requirement, GetPartialKeyAccess());
+  if (!key.ok()) {
+    return key.status();
+  }
+  return absl::make_unique<crypto::tink::XChaCha20Poly1305Key>(*key);
+}
+
 TEST(KeysetHandleBuilderEntryTest, Status) {
-  util::StatusOr<LegacyProtoParameters> parameters =
+  absl::StatusOr<LegacyProtoParameters> parameters =
       CreateLegacyProtoParameters();
   ASSERT_THAT(parameters, IsOk());
 
@@ -89,7 +109,7 @@ TEST(KeysetHandleBuilderEntryTest, Status) {
 }
 
 TEST(KeysetHandleBuilderEntryTest, IdStrategy) {
-  util::StatusOr<LegacyProtoParameters> parameters =
+  absl::StatusOr<LegacyProtoParameters> parameters =
       CreateLegacyProtoParameters();
   ASSERT_THAT(parameters, IsOk());
 
@@ -110,7 +130,7 @@ TEST(KeysetHandleBuilderEntryTest, IdStrategy) {
 }
 
 TEST(KeysetHandleBuilderEntryTest, Primary) {
-  util::StatusOr<LegacyProtoParameters> parameters =
+  absl::StatusOr<LegacyProtoParameters> parameters =
       CreateLegacyProtoParameters();
   ASSERT_THAT(parameters, IsOk());
 
@@ -124,13 +144,13 @@ TEST(KeysetHandleBuilderEntryTest, Primary) {
   EXPECT_THAT(entry.IsPrimary(), IsFalse());
 }
 
-class CreateKeysetKeyTest : public Test {
+class CreateKeysetKeyTestGlobalRegistry : public Test {
  protected:
   void SetUp() override { ASSERT_THAT(TinkConfig::Register(), IsOk()); }
 };
 
-TEST_F(CreateKeysetKeyTest, CreateKeysetKeyFromParameters) {
-  util::StatusOr<LegacyProtoParameters> parameters =
+TEST_F(CreateKeysetKeyTestGlobalRegistry, CreateKeysetKeyFromParameters) {
+  absl::StatusOr<LegacyProtoParameters> parameters =
       CreateLegacyProtoParameters();
   ASSERT_THAT(parameters, IsOk());
 
@@ -138,21 +158,23 @@ TEST_F(CreateKeysetKeyTest, CreateKeysetKeyFromParameters) {
       ParametersEntry(absl::make_unique<LegacyProtoParameters>(*parameters));
   entry.SetStatus(KeyStatus::kEnabled);
   entry.SetFixedId(123);
-  util::StatusOr<util::SecretProto<Keyset::Key>> keyset_key =
-      entry.CreateKeysetKey(/*id=*/123);
+  absl::StatusOr<util::SecretProto<Keyset::Key>> keyset_key =
+      entry.CreateKeysetKey(/*id=*/123, KeyGenConfigGlobalRegistry());
   ASSERT_THAT(keyset_key, IsOk());
 
   EXPECT_THAT((*keyset_key)->status(), Eq(KeyStatusType::ENABLED));
   EXPECT_THAT((*keyset_key)->key_id(), Eq(123));
+  const KeyTemplateStruct& key_template =
+      parameters->Serialization().GetKeyTemplateStruct();
   EXPECT_THAT(
       (*keyset_key)->output_prefix_type(),
-      Eq(parameters->Serialization().GetKeyTemplate().output_prefix_type()));
-  EXPECT_THAT((*keyset_key)->key_data().type_url(),
-              Eq(parameters->Serialization().GetKeyTemplate().type_url()));
+      Eq(static_cast<OutputPrefixType>(key_template.output_prefix_type)));
+  EXPECT_THAT((*keyset_key)->key_data().type_url(), Eq(key_template.type_url));
 }
 
-TEST_F(CreateKeysetKeyTest, CreateKeysetKeyFromParametersWithDifferentKeyId) {
-  util::StatusOr<LegacyProtoParameters> parameters =
+TEST_F(CreateKeysetKeyTestGlobalRegistry,
+       CreateKeysetKeyFromParametersWithDifferentKeyId) {
+  absl::StatusOr<LegacyProtoParameters> parameters =
       CreateLegacyProtoParameters();
   ASSERT_THAT(parameters, IsOk());
 
@@ -160,30 +182,84 @@ TEST_F(CreateKeysetKeyTest, CreateKeysetKeyFromParametersWithDifferentKeyId) {
       ParametersEntry(absl::make_unique<LegacyProtoParameters>(*parameters));
   entry.SetStatus(KeyStatus::kEnabled);
   entry.SetFixedId(123);
-  util::StatusOr<util::SecretProto<Keyset::Key>> keyset_key =
-      entry.CreateKeysetKey(/*id=*/456);
+  absl::StatusOr<util::SecretProto<Keyset::Key>> keyset_key =
+      entry.CreateKeysetKey(/*id=*/456, KeyGenConfigGlobalRegistry());
   EXPECT_THAT(keyset_key.status(),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST_F(CreateKeysetKeyTest, CreateKeysetKeyFromKey) {
+TEST(CreateKeysetKeyCustomConfigTest,
+     CreateKeysetKeyFromParametersCustomConfig) {
+  ASSERT_THAT(RegisterXChaCha20Poly1305ProtoSerialization(), IsOk());
+
+  absl::StatusOr<XChaCha20Poly1305Parameters> params =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kTink);
+  ASSERT_THAT(params, IsOk());
+
+  ParametersEntry entry =
+      ParametersEntry(absl::make_unique<XChaCha20Poly1305Parameters>(*params));
+  entry.SetStatus(KeyStatus::kEnabled);
+  entry.SetFixedId(123);
+
+  KeyGenConfiguration key_creator_config;
+  ASSERT_THAT(internal::KeyGenConfigurationImpl::AddKeyCreator<
+                  XChaCha20Poly1305Parameters>(CreateXChaCha20Poly1305Key,
+                                               key_creator_config),
+              IsOk());
+
+  KeyGenConfiguration key_manager_config;
+  ASSERT_THAT(
+      internal::KeyGenConfigurationImpl::AddKeyTypeManager(
+          absl::make_unique<XChaCha20Poly1305KeyManager>(), key_manager_config),
+      IsOk());
+
+  absl::StatusOr<util::SecretProto<Keyset::Key>> key_from_creator_fn =
+      entry.CreateKeysetKey(/*id=*/123, key_creator_config);
+  ASSERT_THAT(key_from_creator_fn, IsOk());
+
+  EXPECT_THAT((*key_from_creator_fn)->status(), Eq(KeyStatusType::ENABLED));
+  EXPECT_THAT((*key_from_creator_fn)->key_id(), Eq(123));
+  EXPECT_THAT((*key_from_creator_fn)->output_prefix_type(),
+              Eq(OutputPrefixType::TINK));
+  EXPECT_THAT(
+      (*key_from_creator_fn)->key_data().type_url(),
+      Eq("type.googleapis.com/google.crypto.tink.XChaCha20Poly1305Key"));
+
+  // The keyset key created from the key manager should be the same as the one
+  // created from the key creator.
+  absl::StatusOr<util::SecretProto<Keyset::Key>> key_from_manager =
+      entry.CreateKeysetKey(/*id=*/123, key_manager_config);
+  ASSERT_THAT(key_from_manager, IsOk());
+
+  EXPECT_THAT((*key_from_manager)->status(),
+              Eq((*key_from_creator_fn)->status()));
+  EXPECT_THAT((*key_from_manager)->key_id(),
+              Eq((*key_from_creator_fn)->key_id()));
+  EXPECT_THAT((*key_from_manager)->output_prefix_type(),
+              Eq((*key_from_creator_fn)->output_prefix_type()));
+  EXPECT_THAT((*key_from_manager)->key_data().type_url(),
+              Eq((*key_from_creator_fn)->key_data().type_url()));
+}
+
+TEST_F(CreateKeysetKeyTestGlobalRegistry, CreateKeysetKeyFromKey) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/123);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
   KeyEntry entry = KeyEntry(absl::make_unique<LegacyProtoKey>(*key));
   entry.SetStatus(KeyStatus::kEnabled);
   entry.SetFixedId(123);
-  util::StatusOr<util::SecretProto<Keyset::Key>> keyset_key =
-      entry.CreateKeysetKey(/*id=*/123);
+  absl::StatusOr<util::SecretProto<Keyset::Key>> keyset_key =
+      entry.CreateKeysetKey(/*id=*/123, KeyGenConfigGlobalRegistry());
   ASSERT_THAT(keyset_key, IsOk());
 
   EXPECT_THAT((*keyset_key)->status(), Eq(KeyStatusType::ENABLED));
@@ -195,58 +271,59 @@ TEST_F(CreateKeysetKeyTest, CreateKeysetKeyFromKey) {
   EXPECT_THAT((*keyset_key)->key_data().value(), Eq("serialized_key"));
 }
 
-TEST_F(CreateKeysetKeyTest, CreateKeysetKeyFromKeyWithDifferentEntryKeyId) {
+TEST_F(CreateKeysetKeyTestGlobalRegistry,
+       CreateKeysetKeyFromKeyWithDifferentEntryKeyId) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/123);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
   KeyEntry entry = KeyEntry(absl::make_unique<LegacyProtoKey>(*key));
   entry.SetStatus(KeyStatus::kEnabled);
   entry.SetFixedId(123);
-  util::StatusOr<util::SecretProto<Keyset::Key>> keyset_key =
-      entry.CreateKeysetKey(/*id=*/456);
+  absl::StatusOr<util::SecretProto<Keyset::Key>> keyset_key =
+      entry.CreateKeysetKey(/*id=*/456, KeyGenConfigGlobalRegistry());
   EXPECT_THAT(keyset_key.status(),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST_F(CreateKeysetKeyTest,
+TEST_F(CreateKeysetKeyTestGlobalRegistry,
        CreateKeysetKeyFromKeyWithDifferentSerializationKeyId) {
   RestrictedData serialized_key =
       RestrictedData("serialized_key", InsecureSecretKeyAccess::Get());
-  util::StatusOr<ProtoKeySerialization> serialization =
+  absl::StatusOr<ProtoKeySerialization> serialization =
       ProtoKeySerialization::Create("type_url", serialized_key,
                                     KeyData::SYMMETRIC, OutputPrefixType::TINK,
                                     /*id_requirement=*/123);
   ASSERT_THAT(serialization.status(), IsOk());
 
-  util::StatusOr<LegacyProtoKey> key =
+  absl::StatusOr<LegacyProtoKey> key =
       LegacyProtoKey::Create(*serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key.status(), IsOk());
 
   KeyEntry entry = KeyEntry(absl::make_unique<LegacyProtoKey>(*key));
   entry.SetStatus(KeyStatus::kEnabled);
-  util::StatusOr<util::SecretProto<Keyset::Key>> keyset_key =
-      entry.CreateKeysetKey(/*id=*/456);
+  absl::StatusOr<util::SecretProto<Keyset::Key>> keyset_key =
+      entry.CreateKeysetKey(/*id=*/456, KeyGenConfigGlobalRegistry());
   EXPECT_THAT(keyset_key.status(),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST_F(CreateKeysetKeyTest, CreateKeysetFromNonLegacyParameters) {
-  util::StatusOr<AesCmacParameters> aes_cmac_parameters =
+TEST_F(CreateKeysetKeyTestGlobalRegistry, CreateKeysetFromNonLegacyParameters) {
+  absl::StatusOr<AesCmacParameters> aes_cmac_parameters =
       AesCmacParameters::Create(/*key_size_in_bytes=*/32,
                                 /*cryptographic_tag_size_in_bytes=*/10,
                                 AesCmacParameters::Variant::kTink);
   ASSERT_THAT(aes_cmac_parameters, IsOk());
 
-  util::StatusOr<KeysetHandle> handle =
+  absl::StatusOr<KeysetHandle> handle =
       KeysetHandleBuilder()
           .AddEntry(KeysetHandleBuilder::Entry::CreateFromCopyableParams(
               *aes_cmac_parameters, KeyStatus::kEnabled, /*is_primary=*/true,
@@ -255,15 +332,15 @@ TEST_F(CreateKeysetKeyTest, CreateKeysetFromNonLegacyParameters) {
   ASSERT_THAT(handle, IsOk());
 }
 
-TEST_F(CreateKeysetKeyTest,
+TEST_F(CreateKeysetKeyTestGlobalRegistry,
        CreateKeysetWithAllowedParametersProhibitedByKeyManager) {
-  util::StatusOr<AesCmacParameters> aes_cmac_parameters =
+  absl::StatusOr<AesCmacParameters> aes_cmac_parameters =
       AesCmacParameters::Create(/*key_size_in_bytes=*/16,
                                 /*cryptographic_tag_size_in_bytes=*/10,
                                 AesCmacParameters::Variant::kTink);
   ASSERT_THAT(aes_cmac_parameters, IsOk());
 
-  util::StatusOr<KeysetHandle> handle =
+  absl::StatusOr<KeysetHandle> handle =
       KeysetHandleBuilder()
           .AddEntry(KeysetHandleBuilder::Entry::CreateFromCopyableParams(
               *aes_cmac_parameters, KeyStatus::kEnabled, /*is_primary=*/true,
@@ -272,17 +349,17 @@ TEST_F(CreateKeysetKeyTest,
   ASSERT_THAT(handle.status(), StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST_F(CreateKeysetKeyTest, CreateKeysetFromNonLegacyKey) {
-  util::StatusOr<AesCmacParameters> aes_cmac_parameters =
+TEST_F(CreateKeysetKeyTestGlobalRegistry, CreateKeysetFromNonLegacyKey) {
+  absl::StatusOr<AesCmacParameters> aes_cmac_parameters =
       AesCmacParameters::Create(/*key_size_in_bytes=*/32,
                                 /*cryptographic_tag_size_in_bytes=*/10,
                                 AesCmacParameters::Variant::kTink);
   ASSERT_THAT(aes_cmac_parameters, IsOk());
-  util::StatusOr<AesCmacKey> aes_cmac_key = AesCmacKey::Create(
+  absl::StatusOr<AesCmacKey> aes_cmac_key = AesCmacKey::Create(
       *aes_cmac_parameters, RestrictedData(32), 123, GetPartialKeyAccess());
   ASSERT_THAT(aes_cmac_key.status(), IsOk());
 
-  util::StatusOr<KeysetHandle> handle =
+  absl::StatusOr<KeysetHandle> handle =
       KeysetHandleBuilder()
           .AddEntry(KeysetHandleBuilder::Entry::CreateFromCopyableKey(
               *aes_cmac_key, KeyStatus::kEnabled, /*is_primary=*/true))

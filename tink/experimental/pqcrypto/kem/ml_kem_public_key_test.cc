@@ -17,6 +17,7 @@
 #include "tink/experimental/pqcrypto/kem/ml_kem_public_key.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include "gmock/gmock.h"
@@ -24,8 +25,9 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/optional.h"
-#include "openssl/experimental/kyber.h"
+#include "openssl/mlkem.h"
 #include "tink/experimental/pqcrypto/kem/ml_kem_parameters.h"
+#include "tink/key.h"
 #include "tink/partial_key_access.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/statusor.h"
@@ -59,11 +61,12 @@ INSTANTIATE_TEST_SUITE_P(
 
 std::string GeneratePublicKey() {
   std::string public_key_bytes;
-  public_key_bytes.resize(KYBER_PUBLIC_KEY_BYTES);
-  auto bssl_private_key = util::MakeSecretUniquePtr<KYBER_private_key>();
+  public_key_bytes.resize(MLKEM768_PUBLIC_KEY_BYTES);
+  auto bssl_private_key = util::MakeSecretUniquePtr<MLKEM768_private_key>();
 
-  KYBER_generate_key(reinterpret_cast<uint8_t *>(&public_key_bytes[0]),
-                     bssl_private_key.get());
+  MLKEM768_generate_key(reinterpret_cast<uint8_t *>(&public_key_bytes[0]),
+                        /* optional_out_seed = */ nullptr,
+                        bssl_private_key.get());
 
   return public_key_bytes;
 }
@@ -71,12 +74,12 @@ std::string GeneratePublicKey() {
 TEST_P(MlKemPublicKeyTest, CreatePublicKeyWorks) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<MlKemParameters> parameters =
+  absl::StatusOr<MlKemParameters> parameters =
       MlKemParameters::Create(/*key_size=*/768, test_case.variant);
   ASSERT_THAT(parameters, IsOk());
 
   std::string public_key_bytes = GeneratePublicKey();
-  util::StatusOr<MlKemPublicKey> public_key =
+  absl::StatusOr<MlKemPublicKey> public_key =
       MlKemPublicKey::Create(*parameters, public_key_bytes,
                              test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
@@ -91,19 +94,20 @@ TEST_P(MlKemPublicKeyTest, CreatePublicKeyWorks) {
 TEST_P(MlKemPublicKeyTest, CreateWithInvalidPublicKeyLengthFails) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<MlKemParameters> parameters =
+  absl::StatusOr<MlKemParameters> parameters =
       MlKemParameters::Create(/*key_size=*/768, test_case.variant);
   ASSERT_THAT(parameters, IsOk());
 
   std::string public_key_bytes = GeneratePublicKey();
   EXPECT_THAT(
       MlKemPublicKey::Create(
-          *parameters, public_key_bytes.substr(0, KYBER_PUBLIC_KEY_BYTES - 1),
+          *parameters,
+          public_key_bytes.substr(0, MLKEM768_PUBLIC_KEY_BYTES - 1),
           test_case.id_requirement, GetPartialKeyAccess())
           .status(),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr(absl::StrCat("Invalid ML-KEM public key size. Only ",
-                                      KYBER_PUBLIC_KEY_BYTES,
+                                      MLKEM768_PUBLIC_KEY_BYTES,
                                       "-byte keys are currently supported."))));
 
   public_key_bytes.push_back(0);
@@ -113,12 +117,12 @@ TEST_P(MlKemPublicKeyTest, CreateWithInvalidPublicKeyLengthFails) {
           .status(),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr(absl::StrCat("Invalid ML-KEM public key size. Only ",
-                                      KYBER_PUBLIC_KEY_BYTES,
+                                      MLKEM768_PUBLIC_KEY_BYTES,
                                       "-byte keys are currently supported."))));
 }
 
 TEST(MlKemPublicKeyTest, CreateKeyWithNoIdRequirementWithTinkParamsFails) {
-  util::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
+  absl::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
       /*key_size=*/768, MlKemParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
@@ -135,18 +139,18 @@ TEST(MlKemPublicKeyTest, CreateKeyWithNoIdRequirementWithTinkParamsFails) {
 TEST_P(MlKemPublicKeyTest, PublicKeyEquals) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
+  absl::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
       /*key_size=*/768, test_case.variant);
   ASSERT_THAT(parameters, IsOk());
 
   std::string public_key_bytes = GeneratePublicKey();
 
-  util::StatusOr<MlKemPublicKey> public_key =
+  absl::StatusOr<MlKemPublicKey> public_key =
       MlKemPublicKey::Create(*parameters, public_key_bytes,
                              test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
 
-  util::StatusOr<MlKemPublicKey> other_public_key =
+  absl::StatusOr<MlKemPublicKey> other_public_key =
       MlKemPublicKey::Create(*parameters, public_key_bytes,
                              test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(other_public_key, IsOk());
@@ -160,19 +164,19 @@ TEST_P(MlKemPublicKeyTest, PublicKeyEquals) {
 TEST_P(MlKemPublicKeyTest, DifferentPublicKeyBytesNotEqual) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
+  absl::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
       /*key_size=*/768, test_case.variant);
   ASSERT_THAT(parameters, IsOk());
 
   std::string public_key_bytes1 = GeneratePublicKey();
   std::string public_key_bytes2 = GeneratePublicKey();
 
-  util::StatusOr<MlKemPublicKey> public_key1 =
+  absl::StatusOr<MlKemPublicKey> public_key1 =
       MlKemPublicKey::Create(*parameters, public_key_bytes1,
                              test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(public_key1, IsOk());
 
-  util::StatusOr<MlKemPublicKey> public_key2 =
+  absl::StatusOr<MlKemPublicKey> public_key2 =
       MlKemPublicKey::Create(*parameters, public_key_bytes2,
                              test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(public_key2, IsOk());
@@ -186,18 +190,18 @@ TEST_P(MlKemPublicKeyTest, DifferentPublicKeyBytesNotEqual) {
 TEST_P(MlKemPublicKeyTest, DifferentIdRequirementNotEqual) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
+  absl::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
       /*key_size=*/768, test_case.variant);
   ASSERT_THAT(parameters, IsOk());
 
   std::string public_key_bytes = GeneratePublicKey();
 
-  util::StatusOr<MlKemPublicKey> public_key =
+  absl::StatusOr<MlKemPublicKey> public_key =
       MlKemPublicKey::Create(*parameters, public_key_bytes,
                              /*id_requirement=*/123, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
 
-  util::StatusOr<MlKemPublicKey> other_public_key =
+  absl::StatusOr<MlKemPublicKey> other_public_key =
       MlKemPublicKey::Create(*parameters, public_key_bytes,
                              /*id_requirement=*/456, GetPartialKeyAccess());
   ASSERT_THAT(other_public_key, IsOk());
@@ -206,6 +210,23 @@ TEST_P(MlKemPublicKeyTest, DifferentIdRequirementNotEqual) {
   EXPECT_TRUE(*other_public_key != *public_key);
   EXPECT_FALSE(*public_key == *other_public_key);
   EXPECT_FALSE(*other_public_key == *public_key);
+}
+
+TEST(MlKemPublicKeyTest, Clone) {
+  absl::StatusOr<MlKemParameters> parameters = MlKemParameters::Create(
+      /*key_size=*/768, MlKemParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  std::string public_key_bytes = GeneratePublicKey();
+  absl::StatusOr<MlKemPublicKey> public_key =
+      MlKemPublicKey::Create(*parameters, public_key_bytes,
+                             /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(public_key, IsOk());
+
+  // Clone the key.
+  std::unique_ptr<Key> cloned_key = public_key->Clone();
+
+  ASSERT_THAT(*cloned_key, Eq(*public_key));
 }
 
 }  // namespace

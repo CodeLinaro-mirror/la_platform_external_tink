@@ -30,10 +30,10 @@
 #include "tink/core/template_util.h"
 #include "tink/input_stream.h"
 #include "tink/key_manager.h"
+#include "tink/mac/internal/stateful_cmac_boringssl.h"
 #include "tink/prf/prf_set.h"
 #include "tink/subtle/prf/prf_set_util.h"
 #include "tink/subtle/random.h"
-#include "tink/subtle/stateful_cmac_boringssl.h"
 #include "tink/util/constants.h"
 #include "tink/util/errors.h"
 #include "tink/util/input_stream_util.h"
@@ -54,10 +54,10 @@ class AesCmacPrfKeyManager
                             List<Prf>> {
  public:
   class PrfSetFactory : public PrimitiveFactory<Prf> {
-    crypto::tink::util::StatusOr<std::unique_ptr<Prf>> Create(
+    absl::StatusOr<std::unique_ptr<Prf>> Create(
         const google::crypto::tink::AesCmacPrfKey& key) const override {
       return subtle::CreatePrfFromStatefulMacFactory(
-          absl::make_unique<subtle::StatefulCmacBoringSslFactory>(
+          absl::make_unique<internal::StatefulCmacBoringSslFactory>(
               AesCmacPrfKeyManager::MaxOutputLength(),
               util::SecretDataFromStringView(key.key_value())));
     }
@@ -77,34 +77,30 @@ class AesCmacPrfKeyManager
   static uint64_t MaxOutputLength() { return 16; }
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::AesCmacPrfKey& key) const override {
-    crypto::tink::util::Status status =
-        ValidateVersion(key.version(), get_version());
+    absl::Status status = ValidateVersion(key.version(), get_version());
     if (!status.ok()) return status;
     if (key.key_value().size() != kKeySizeInBytes) {
-      return crypto::tink::util::Status(
-          absl::StatusCode::kInvalidArgument,
-          "Invalid AesCmacPrfKey: key_value wrong length.");
+      return absl::Status(absl::StatusCode::kInvalidArgument,
+                          "Invalid AesCmacPrfKey: key_value wrong length.");
     }
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::AesCmacPrfKeyFormat& key_format)
       const override {
-    crypto::tink::util::Status status =
-        ValidateVersion(key_format.version(), get_version());
+    absl::Status status = ValidateVersion(key_format.version(), get_version());
     if (!status.ok()) return status;
     if (key_format.key_size() != kKeySizeInBytes) {
-      return crypto::tink::util::Status(
-          absl::StatusCode::kInvalidArgument,
-          "Invalid AesCmacPrfKeyFormat: invalid key_size.");
+      return absl::Status(absl::StatusCode::kInvalidArgument,
+                          "Invalid AesCmacPrfKeyFormat: invalid key_size.");
     }
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
-  crypto::tink::util::StatusOr<google::crypto::tink::AesCmacPrfKey> CreateKey(
+  absl::StatusOr<google::crypto::tink::AesCmacPrfKey> CreateKey(
       const google::crypto::tink::AesCmacPrfKeyFormat& key_format)
       const override {
     google::crypto::tink::AesCmacPrfKey key;
@@ -113,14 +109,14 @@ class AesCmacPrfKeyManager
     return key;
   }
 
-  crypto::tink::util::StatusOr<google::crypto::tink::AesCmacPrfKey> DeriveKey(
+  absl::StatusOr<google::crypto::tink::AesCmacPrfKey> DeriveKey(
       const google::crypto::tink::AesCmacPrfKeyFormat& key_format,
       InputStream* input_stream) const override {
     auto status = ValidateKeyFormat(key_format);
     if (!status.ok()) {
       return status;
     }
-    crypto::tink::util::StatusOr<std::string> randomness =
+    absl::StatusOr<std::string> randomness =
         ReadBytesFromStream(key_format.key_size(), input_stream);
     if (!randomness.status().ok()) {
       return randomness.status();

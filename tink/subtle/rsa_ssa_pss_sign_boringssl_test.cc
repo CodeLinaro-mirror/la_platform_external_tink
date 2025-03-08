@@ -15,19 +15,30 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "tink/subtle/rsa_ssa_pss_sign_boringssl.h"
+#include <memory>
+#include <string>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
+#include "absl/strings/str_cat.h"
 #include "openssl/bn.h"
 #include "openssl/rsa.h"
 #include "tink/internal/fips_utils.h"
 #include "tink/internal/rsa_util.h"
+#include "tink/internal/secret_buffer.h"
 #include "tink/internal/ssl_unique_ptr.h"
+#include "tink/public_key_sign.h"
+#include "tink/public_key_verify.h"
+#include "tink/signature/internal/testing/rsa_ssa_pss_test_vectors.h"
+#include "tink/signature/internal/testing/signature_test_vector.h"
+#include "tink/signature/rsa_ssa_pss_private_key.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/rsa_ssa_pss_verify_boringssl.h"
+#include "tink/util/secret_data.h"
+#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
+#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
@@ -38,6 +49,7 @@ using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
 using ::testing::IsEmpty;
 using ::testing::Not;
+using ::testing::NotNull;
 
 class RsaPssSignBoringsslTest : public ::testing::Test {
  public:
@@ -138,21 +150,27 @@ TEST_F(RsaPssSignBoringsslTest, RejectsInvalidCrtParams) {
   // Flip a few bits in the CRT parameters; check that creation fails.
   {
     internal::RsaPrivateKey key = private_key_;
-    key.crt[0] ^= 0x80;
+    internal::SecretBuffer crt_buffer = util::internal::AsSecretBuffer(key.crt);
+    crt_buffer[0] ^= 0x80;
+    key.crt = util::internal::AsSecretData(crt_buffer);
     auto signer_or = RsaSsaPssSignBoringSsl::New(key, params);
     EXPECT_THAT(signer_or.status(),
                 StatusIs(absl::StatusCode::kInvalidArgument));
   }
   {
     internal::RsaPrivateKey key = private_key_;
-    key.dq[0] ^= 0x08;
+    internal::SecretBuffer dq_buffer = util::internal::AsSecretBuffer(key.dq);
+    dq_buffer[0] ^= 0x08;
+    key.dq = util::internal::AsSecretData(dq_buffer);
     auto signer_or = RsaSsaPssSignBoringSsl::New(key, params);
     EXPECT_THAT(signer_or.status(),
                 StatusIs(absl::StatusCode::kInvalidArgument));
   }
   {
     internal::RsaPrivateKey key = private_key_;
-    key.dp[0] ^= 0x04;
+    internal::SecretBuffer dp_buffer = util::internal::AsSecretBuffer(key.dp);
+    dp_buffer[0] ^= 0x04;
+    key.dp = util::internal::AsSecretData(dp_buffer);
     auto signer_or = RsaSsaPssSignBoringSsl::New(key, params);
     EXPECT_THAT(signer_or.status(),
                 StatusIs(absl::StatusCode::kInvalidArgument));
@@ -208,6 +226,51 @@ TEST_F(RsaPssSignBoringsslTest, TestAllowedFipsModuli) {
   EXPECT_THAT(RsaSsaPssSignBoringSsl::New(private_key, params).status(),
               IsOk());
 }
+
+using RsaSsaPssSignBoringSSLTestVectorTest =
+    testing::TestWithParam<internal::SignatureTestVector>;
+
+// RsaSsaPss is probabilistic, so we can only check that a new signature is
+// verified by the verifier.
+TEST_P(RsaSsaPssSignBoringSSLTestVectorTest, FreshSignatureInTestVector) {
+  const internal::SignatureTestVector& param = GetParam();
+  const RsaSsaPssPrivateKey* typed_key =
+      dynamic_cast<const RsaSsaPssPrivateKey*>(
+          param.signature_private_key.get());
+  ASSERT_THAT(typed_key, NotNull());
+  if (internal::IsFipsModeEnabled() &&
+      typed_key->GetParameters().GetModulusSizeInBits() != 2048 &&
+      typed_key->GetParameters().GetModulusSizeInBits() != 3072) {
+    // Users wants FIPS but modulus size doesn't support FIPS
+    ASSERT_THAT(RsaSsaPssSignBoringSsl::New(*typed_key), Not(IsOk()));
+    return;
+  }
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
+    // Users wants FIPS, but we don't have FIPS.
+    ASSERT_THAT(RsaSsaPssSignBoringSsl::New(*typed_key), Not(IsOk()));
+    return;
+  }
+  absl::StatusOr<std::unique_ptr<PublicKeySign>> signer =
+      RsaSsaPssSignBoringSsl::New(*typed_key);
+  ASSERT_THAT(signer, IsOk());
+  absl::StatusOr<std::string> signature = (*signer)->Sign(param.message);
+  ASSERT_THAT(signature, IsOk());
+
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      RsaSsaPssVerifyBoringSsl::New(typed_key->GetPublicKey());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT((*verifier)->Verify(*signature, param.message), IsOk());
+
+  // Also check that the verifier doesn't simply verify everything: we change
+  // the message.
+  EXPECT_THAT((*verifier)->Verify(*signature, absl::StrCat(param.message, "x")),
+              Not(IsOk()));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    RsaSsaPssSignBoringSSLTestVectorTest,
+    RsaSsaPssSignBoringSSLTestVectorTest,
+    testing::ValuesIn(internal::CreateRsaSsaPssTestVectors()));
 
 }  // namespace
 }  // namespace subtle

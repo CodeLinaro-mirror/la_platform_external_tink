@@ -1,5 +1,7 @@
 tink_module(json)
 
+add_subdirectory(internal)
+
 tink_cc_library(
   NAME json_keyset_reader
   SRCS
@@ -8,11 +10,10 @@ tink_cc_library(
   DEPS
     absl::memory
     absl::status
-    absl::strings
     absl::string_view
-    rapidjson
+    protobuf::libprotobuf
     tink::core::keyset_reader
-    tink::util::enums
+    tink::json::internal::tink_type_resolver
     tink::util::status
     tink::util::statusor
     tink::proto::tink_cc_proto
@@ -25,11 +26,10 @@ tink_cc_library(
     json_keyset_writer.h
   DEPS
     absl::status
-    absl::strings
     absl::string_view
-    rapidjson
+    protobuf::libprotobuf
     tink::core::keyset_writer
-    tink::util::enums
+    tink::json::internal::tink_type_resolver
     tink::util::status
     tink::util::statusor
     tink::proto::tink_cc_proto
@@ -58,16 +58,24 @@ tink_cc_test(
   SRCS
     json_keyset_writer_test.cc
   DEPS
+    tink::json::json_keyset_reader
     tink::json::json_keyset_writer
     gmock
     absl::status
     absl::strings
-    rapidjson
-    tink::core::json_keyset_reader
-    tink::util::protobuf_helper
+    tink::core::binary_keyset_reader
+    tink::core::cleartext_keyset_handle
+    tink::core::keyset_handle
+    tink::core::keyset_reader
+    tink::core::keyset_writer
+    tink::util::status
+    tink::util::statusor
+    tink::util::test_keyset_handle
     tink::util::test_matchers
     tink::util::test_util
     tink::proto::aes_eax_cc_proto
     tink::proto::aes_gcm_cc_proto
+    tink::proto::aes_gcm_siv_cc_proto
+    tink::proto::ecdsa_cc_proto
     tink::proto::tink_cc_proto
 )

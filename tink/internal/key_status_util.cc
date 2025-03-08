@@ -30,7 +30,7 @@ namespace internal {
 
 using ::google::crypto::tink::KeyStatusType;
 
-util::StatusOr<KeyStatus> FromKeyStatusType(KeyStatusType status_type) {
+absl::StatusOr<KeyStatus> FromKeyStatusType(KeyStatusType status_type) {
   switch (status_type) {
     case KeyStatusType::ENABLED:
       return KeyStatus::kEnabled;
@@ -39,12 +39,12 @@ util::StatusOr<KeyStatus> FromKeyStatusType(KeyStatusType status_type) {
     case KeyStatusType::DESTROYED:
       return KeyStatus::kDestroyed;
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "Invalid key status type.");
   }
 }
 
-util::StatusOr<KeyStatusType> ToKeyStatusType(KeyStatus status) {
+absl::StatusOr<KeyStatusType> ToKeyStatusType(KeyStatus status) {
   switch (status) {
     case KeyStatus::kEnabled:
       return KeyStatusType::ENABLED;
@@ -53,7 +53,7 @@ util::StatusOr<KeyStatusType> ToKeyStatusType(KeyStatus status) {
     case KeyStatus::kDestroyed:
       return KeyStatusType::DESTROYED;
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "Invalid key status.");
   }
 }

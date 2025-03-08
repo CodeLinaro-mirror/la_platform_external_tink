@@ -17,6 +17,8 @@
 #ifndef TINK_HYBRID_ECIES_PRIVATE_KEY_H_
 #define TINK_HYBRID_ECIES_PRIVATE_KEY_H_
 
+#include <memory>
+
 #include "absl/types/optional.h"
 #include "tink/hybrid/ecies_public_key.h"
 #include "tink/hybrid/hybrid_private_key.h"
@@ -39,12 +41,12 @@ class EciesPrivateKey : public HybridPrivateKey {
   EciesPrivateKey(EciesPrivateKey&& other) = default;
   EciesPrivateKey& operator=(EciesPrivateKey&& other) = default;
 
-  static util::StatusOr<EciesPrivateKey> CreateForNistCurve(
+  static absl::StatusOr<EciesPrivateKey> CreateForNistCurve(
       const EciesPublicKey& public_key,
       const RestrictedBigInteger& private_key_value,
       PartialKeyAccessToken token);
 
-  static util::StatusOr<EciesPrivateKey> CreateForCurveX25519(
+  static absl::StatusOr<EciesPrivateKey> CreateForCurveX25519(
       const EciesPublicKey& public_key, const RestrictedData& private_key_bytes,
       PartialKeyAccessToken token);
 
@@ -61,6 +63,10 @@ class EciesPrivateKey : public HybridPrivateKey {
   const EciesPublicKey& GetPublicKey() const override { return public_key_; }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<EciesPrivateKey>(*this);
+  }
 
  private:
   // Creates a NIST curve-based ECIES private key.

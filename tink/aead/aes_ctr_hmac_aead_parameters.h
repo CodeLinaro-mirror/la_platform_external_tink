@@ -92,7 +92,7 @@ class AesCtrHmacAeadParameters : public AeadParameters {
     Builder& SetVariant(Variant variant);
 
     // Creates AES-CTR-HMAC-AEAD parameters object from this builder.
-    util::StatusOr<AesCtrHmacAeadParameters> Build();
+    absl::StatusOr<AesCtrHmacAeadParameters> Build();
 
    private:
     absl::optional<int> aes_key_size_in_bytes_;
@@ -132,6 +132,10 @@ class AesCtrHmacAeadParameters : public AeadParameters {
   }
 
   bool operator==(const Parameters& other) const override;
+
+  std::unique_ptr<Parameters> Clone() const override{
+    return std::make_unique<AesCtrHmacAeadParameters>(*this);
+  }
 
  private:
   AesCtrHmacAeadParameters(int aes_key_size_in_bytes,

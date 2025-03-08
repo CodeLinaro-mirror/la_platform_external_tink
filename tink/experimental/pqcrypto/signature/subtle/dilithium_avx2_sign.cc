@@ -48,7 +48,7 @@ namespace tink {
 namespace subtle {
 
 // static
-util::StatusOr<std::unique_ptr<PublicKeySign>> DilithiumAvx2Sign::New(
+absl::StatusOr<std::unique_ptr<PublicKeySign>> DilithiumAvx2Sign::New(
     DilithiumPrivateKeyPqclean private_key) {
   auto status = internal::CheckFipsCompatibility<DilithiumAvx2Sign>();
   if (!status.ok()) return status;
@@ -58,7 +58,7 @@ util::StatusOr<std::unique_ptr<PublicKeySign>> DilithiumAvx2Sign::New(
   if (key_size != PQCLEAN_DILITHIUM2_CRYPTO_SECRETKEYBYTES &&
       key_size != PQCLEAN_DILITHIUM3_CRYPTO_SECRETKEYBYTES &&
       key_size != PQCLEAN_DILITHIUM5_CRYPTO_SECRETKEYBYTES) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrFormat("Invalid private key size (%d). "
                         "The only valid sizes are %d, %d, %d.",
@@ -71,7 +71,7 @@ util::StatusOr<std::unique_ptr<PublicKeySign>> DilithiumAvx2Sign::New(
   return {absl::WrapUnique(new DilithiumAvx2Sign(std::move(private_key)))};
 }
 
-util::StatusOr<std::string> DilithiumAvx2Sign::Sign(
+absl::StatusOr<std::string> DilithiumAvx2Sign::Sign(
     absl::string_view data) const {
   size_t sig_length;
   int32_t key_size = private_key_.GetKeyData().size();
@@ -101,7 +101,7 @@ util::StatusOr<std::string> DilithiumAvx2Sign::Sign(
           break;
         }
         default: {
-          return util::Status(absl::StatusCode::kInternal,
+          return absl::Status(absl::StatusCode::kInternal,
                               "Invalid seed expansion.");
         }
       }
@@ -128,7 +128,7 @@ util::StatusOr<std::string> DilithiumAvx2Sign::Sign(
           break;
         }
         default: {
-          return util::Status(absl::StatusCode::kInternal,
+          return absl::Status(absl::StatusCode::kInternal,
                               "Invalid seed expansion.");
         }
       }
@@ -155,18 +155,18 @@ util::StatusOr<std::string> DilithiumAvx2Sign::Sign(
           break;
         }
         default: {
-          return util::Status(absl::StatusCode::kInternal,
+          return absl::Status(absl::StatusCode::kInternal,
                               "Invalid seed expansion.");
         }
       }
       break;
     }
     default:
-      return util::Status(absl::StatusCode::kInternal, "Invalid keysize.");
+      return absl::Status(absl::StatusCode::kInternal, "Invalid keysize.");
   }
 
   if (result != 0) {
-    return util::Status(absl::StatusCode::kInternal, "Signing failed.");
+    return absl::Status(absl::StatusCode::kInternal, "Signing failed.");
   }
 
   return signature;

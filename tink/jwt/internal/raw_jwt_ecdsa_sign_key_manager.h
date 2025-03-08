@@ -27,8 +27,6 @@
 #include "tink/internal/fips_utils.h"
 #include "tink/public_key_sign.h"
 #include "tink/util/constants.h"
-#include "tink/util/errors.h"
-#include "tink/util/protobuf_helper.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "proto/jwt_ecdsa.pb.h"
@@ -45,7 +43,7 @@ class RawJwtEcdsaSignKeyManager
                                    List<PublicKeySign>> {
  public:
   class PublicKeySignFactory : public PrimitiveFactory<PublicKeySign> {
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicKeySign>> Create(
+    absl::StatusOr<std::unique_ptr<PublicKeySign>> Create(
         const google::crypto::tink::JwtEcdsaPrivateKey& private_key)
         const override;
   };
@@ -62,18 +60,17 @@ class RawJwtEcdsaSignKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::JwtEcdsaPrivateKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::JwtEcdsaKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::JwtEcdsaPrivateKey>
-  CreateKey(
+  absl::StatusOr<google::crypto::tink::JwtEcdsaPrivateKey> CreateKey(
       const google::crypto::tink::JwtEcdsaKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::JwtEcdsaPublicKey>
-  GetPublicKey(const google::crypto::tink::JwtEcdsaPrivateKey& private_key)
+  absl::StatusOr<google::crypto::tink::JwtEcdsaPublicKey> GetPublicKey(
+      const google::crypto::tink::JwtEcdsaPrivateKey& private_key)
       const override {
     return private_key.public_key();
   }

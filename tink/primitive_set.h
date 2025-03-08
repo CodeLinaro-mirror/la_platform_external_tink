@@ -69,17 +69,22 @@ class PrimitiveSet {
         std::unique_ptr<P> primitive,
         const google::crypto::tink::KeysetInfo::KeyInfo& key_info) {
       if (key_info.status() != google::crypto::tink::KeyStatusType::ENABLED) {
-        return util::Status(absl::StatusCode::kInvalidArgument,
+        return absl::Status(absl::StatusCode::kInvalidArgument,
                             "The key must be ENABLED.");
       }
-      auto identifier_result = CryptoFormat::GetOutputPrefix(key_info);
-      if (!identifier_result.ok()) return identifier_result.status();
+      absl::StatusOr<std::string> identifier =
+          key_info.output_prefix_type() ==
+                  google::crypto::tink::OutputPrefixType::WITH_ID_REQUIREMENT
+              ? ""  // No associated prefix, so set to empty.
+              : CryptoFormat::GetOutputPrefix(key_info);
+      if (!identifier.ok()) {
+        return identifier.status();
+      }
       if (primitive == nullptr) {
-        return util::Status(absl::StatusCode::kInvalidArgument,
+        return absl::Status(absl::StatusCode::kInvalidArgument,
                             "The primitive must be non-null.");
       }
-      std::string identifier = identifier_result.value();
-      return absl::WrapUnique(new Entry(std::move(primitive), identifier,
+      return absl::WrapUnique(new Entry(std::move(primitive), *identifier,
                                         key_info.status(), key_info.key_id(),
                                         key_info.output_prefix_type(),
                                         key_info.type_url()));
@@ -87,6 +92,9 @@ class PrimitiveSet {
 
     P2& get_primitive() const { return *primitive_; }
 
+    // Returns an empty string if the output prefix type is WITH_ID_REQUIREMENT.
+    // Otherwise, it returns the corresponding output prefix according to
+    // `CryptoFormat::GetOutputPrefix()`.
     const std::string& get_identifier() const { return identifier_; }
 
     google::crypto::tink::KeyStatusType get_status() const { return status_; }
@@ -127,26 +135,26 @@ class PrimitiveSet {
   // Helper methods for mutations, used by the Builder and the deprecated
   // mutation methods on PrimitiveSet.
 
-  static crypto::tink::util::Status SetPrimaryImpl(
+  static absl::Status SetPrimaryImpl(
       Entry<P>** output, Entry<P>* primary,
       const CiphertextPrefixToPrimitivesMap& primitives) {
     if (!primary) {
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "The primary primitive must be non-null.");
     }
     if (primary->get_status() != google::crypto::tink::KeyStatusType::ENABLED) {
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "Primary has to be enabled.");
     }
 
     if (primitives.count(primary->get_identifier()) == 0) {
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "Primary cannot be set to an entry which is "
                           "not held by this primitive set.");
     }
 
     *output = primary;
-    return crypto::tink::util::OkStatus();
+    return absl::OkStatus();
   }
 
   static crypto::tink::util::StatusOr<Entry<P>*> AddPrimitiveImpl(
@@ -158,9 +166,10 @@ class PrimitiveSet {
     if (!entry_or.ok()) return entry_or.status();
 
     std::string identifier = entry_or.value()->get_identifier();
-    primitives[identifier].push_back(std::move(entry_or.value()));
+    auto& primitives_for_identifier = primitives[identifier];
+    primitives_for_identifier.push_back(std::move(entry_or.value()));
 
-    Entry<P>* stored_entry = primitives[identifier].back().get();
+    Entry<P>* stored_entry = primitives_for_identifier.back().get();
     primitives_in_keyset_order.push_back(stored_entry);
     return stored_entry;
   }
@@ -243,7 +252,7 @@ class PrimitiveSet {
     absl::flat_hash_map<std::string, std::string> annotations_
         ABSL_GUARDED_BY(mutex_);
     absl::Mutex mutex_;
-    crypto::tink::util::Status status_ ABSL_GUARDED_BY(mutex_);
+    absl::Status status_ ABSL_GUARDED_BY(mutex_);
   };
 
   // PrimitiveSet is movable, but not copyable
@@ -274,7 +283,7 @@ class PrimitiveSet {
       std::unique_ptr<P> primitive,
       const google::crypto::tink::KeysetInfo::KeyInfo& key_info) {
     if (!is_mutable()) {
-      return util::Status(absl::StatusCode::kFailedPrecondition,
+      return absl::Status(absl::StatusCode::kFailedPrecondition,
                           "PrimitiveSet is not mutable.");
     }
 
@@ -304,9 +313,9 @@ class PrimitiveSet {
   ABSL_DEPRECATED(
       "Mutating PrimitiveSets after construction is deprecated. Use "
       "PrimitiveSet<>::Builder instead.")
-  crypto::tink::util::Status set_primary(Entry<P>* primary) {
+  absl::Status set_primary(Entry<P>* primary) {
     if (!is_mutable()) {
-      return util::Status(absl::StatusCode::kFailedPrecondition,
+      return absl::Status(absl::StatusCode::kFailedPrecondition,
                           "PrimitiveSet is not mutable.");
     }
     absl::MutexLock lock(primitives_mutex_.get());

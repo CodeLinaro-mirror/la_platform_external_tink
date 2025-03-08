@@ -20,13 +20,13 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/string_view.h"
 #include "openssl/evp.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
+#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
@@ -64,11 +64,11 @@ TEST(MdUtil, IsHashTypeSafeForSignature) {
 }
 
 TEST(MdUtil, ComputeHashAcceptsNullStringView) {
-  util::StatusOr<std::string> null_hash =
+  absl::StatusOr<std::string> null_hash =
       ComputeHash(absl::string_view(nullptr, 0), *EVP_sha512());
-  util::StatusOr<std::string> empty_hash = ComputeHash("", *EVP_sha512());
+  absl::StatusOr<std::string> empty_hash = ComputeHash("", *EVP_sha512());
   std::string str;
-  util::StatusOr<std::string> empty_str_hash = ComputeHash(str, *EVP_sha512());
+  absl::StatusOr<std::string> empty_str_hash = ComputeHash(str, *EVP_sha512());
 
   ASSERT_THAT(null_hash, IsOk());
   ASSERT_THAT(empty_hash, IsOk());
@@ -120,11 +120,11 @@ GetMdUtilComputeHashSamplesTestParams() {
 
 TEST_P(MdUtilComputeHashSamplesTest, ComputesHash) {
   const MdUtilComputeHashSamplesTestParam& params = GetParam();
-  util::StatusOr<const EVP_MD*> hasher = EvpHashFromHashType(params.hash_type);
+  absl::StatusOr<const EVP_MD*> hasher = EvpHashFromHashType(params.hash_type);
   ASSERT_THAT(hasher, IsOk());
-  std::string data = absl::HexStringToBytes(params.data_hex);
+  std::string data = test::HexDecodeOrDie(params.data_hex);
   std::string expected_digest =
-      absl::HexStringToBytes(params.expected_digest_hex);
+      test::HexDecodeOrDie(params.expected_digest_hex);
   EXPECT_THAT(ComputeHash(data, **hasher), IsOkAndHolds(expected_digest));
 }
 

@@ -16,11 +16,14 @@
 
 #include "tink/daead/aes_siv_parameters.h"
 
+#include <memory>
 #include <tuple>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "tink/parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 
@@ -32,7 +35,6 @@ using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
 using ::testing::Combine;
 using ::testing::Eq;
-using ::testing::IsTrue;
 using ::testing::TestWithParam;
 using ::testing::Values;
 
@@ -56,7 +58,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(AesSivParametersBuildTest, Create) {
   CreateTestCase test_case = GetParam();
 
-  util::StatusOr<AesSivParameters> parameters =
+  absl::StatusOr<AesSivParameters> parameters =
       AesSivParameters::Create(test_case.key_size, test_case.variant);
   ASSERT_THAT(parameters, IsOk());
 
@@ -102,25 +104,55 @@ TEST(AesSivParametersTest, CreateWithInvalidKeySizeFails) {
 }
 
 TEST(AesSivParametersTest, CopyConstructor) {
-  util::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
+  absl::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
       /*key_size_in_bytes=*/64, AesSivParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
   AesSivParameters copy(*parameters);
+
   EXPECT_THAT(copy.KeySizeInBytes(), Eq(64));
   EXPECT_THAT(copy.GetVariant(), Eq(AesSivParameters::Variant::kTink));
-  EXPECT_THAT(copy.HasIdRequirement(), IsTrue());
 }
 
 TEST(AesSivParametersTest, CopyAssignment) {
-  util::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
+  absl::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
       /*key_size_in_bytes=*/64, AesSivParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
-  AesSivParameters copy = *parameters;
-  EXPECT_THAT(copy.KeySizeInBytes(), Eq(64));
-  EXPECT_THAT(copy.GetVariant(), Eq(AesSivParameters::Variant::kTink));
-  EXPECT_THAT(copy.HasIdRequirement(), IsTrue());
+  absl::StatusOr<AesSivParameters> copy = AesSivParameters::Create(
+      /*key_size_in_bytes=*/32, AesSivParameters::Variant::kNoPrefix);
+  ASSERT_THAT(copy, IsOk());
+
+  *copy = *parameters;
+
+  EXPECT_THAT(copy->KeySizeInBytes(), Eq(64));
+  EXPECT_THAT(copy->GetVariant(), Eq(AesSivParameters::Variant::kTink));
+}
+
+TEST(AesSivParametersTest, MoveConstructor) {
+  absl::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
+      /*key_size_in_bytes=*/64, AesSivParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  AesSivParameters move(std::move(*parameters));
+
+  EXPECT_THAT(move.KeySizeInBytes(), Eq(64));
+  EXPECT_THAT(move.GetVariant(), Eq(AesSivParameters::Variant::kTink));
+}
+
+TEST(AesSivParametersTest, MoveAssignment) {
+  absl::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
+      /*key_size_in_bytes=*/64, AesSivParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  absl::StatusOr<AesSivParameters> move = AesSivParameters::Create(
+      /*key_size_in_bytes=*/32, AesSivParameters::Variant::kNoPrefix);
+  ASSERT_THAT(move, IsOk());
+
+  *move = std::move(*parameters);
+
+  EXPECT_THAT(move->KeySizeInBytes(), Eq(64));
+  EXPECT_THAT(move->GetVariant(), Eq(AesSivParameters::Variant::kTink));
 }
 
 using AesSivParametersVariantTest =
@@ -138,11 +170,11 @@ TEST_P(AesSivParametersVariantTest, ParametersEquals) {
   AesSivParameters::Variant variant;
   std::tie(key_size, variant) = GetParam();
 
-  util::StatusOr<AesSivParameters> parameters =
+  absl::StatusOr<AesSivParameters> parameters =
       AesSivParameters::Create(key_size, variant);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesSivParameters> other_parameters =
+  absl::StatusOr<AesSivParameters> other_parameters =
       AesSivParameters::Create(key_size, variant);
   ASSERT_THAT(other_parameters, IsOk());
 
@@ -153,11 +185,11 @@ TEST_P(AesSivParametersVariantTest, ParametersEquals) {
 }
 
 TEST(AesSivParametersTest, KeySizeNotEqual) {
-  util::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
+  absl::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
       /*key_size_in_bytes=*/48, AesSivParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesSivParameters> other_parameters = AesSivParameters::Create(
+  absl::StatusOr<AesSivParameters> other_parameters = AesSivParameters::Create(
       /*key_size_in_bytes=*/64, AesSivParameters::Variant::kTink);
   ASSERT_THAT(other_parameters, IsOk());
 
@@ -166,16 +198,25 @@ TEST(AesSivParametersTest, KeySizeNotEqual) {
 }
 
 TEST(AesSivParametersTest, VariantNotEqual) {
-  util::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
+  absl::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
       /*key_size_in_bytes=*/64, AesSivParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesSivParameters> other_parameters = AesSivParameters::Create(
+  absl::StatusOr<AesSivParameters> other_parameters = AesSivParameters::Create(
       /*key_size_in_bytes=*/64, AesSivParameters::Variant::kNoPrefix);
   ASSERT_THAT(other_parameters, IsOk());
 
   EXPECT_TRUE(*parameters != *other_parameters);
   EXPECT_FALSE(*parameters == *other_parameters);
+}
+
+TEST(AesSivParametersTest, Clone) {
+  absl::StatusOr<AesSivParameters> parameters = AesSivParameters::Create(
+      /*key_size_in_bytes=*/64, AesSivParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  std::unique_ptr<Parameters> cloned_parameters = parameters->Clone();
+  ASSERT_THAT(*cloned_parameters, Eq(*parameters));
 }
 
 }  // namespace

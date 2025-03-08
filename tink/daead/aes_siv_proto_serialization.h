@@ -17,13 +17,19 @@
 #ifndef TINK_DAEAD_AES_SIV_PROTO_SERIALIZATION_H_
 #define TINK_DAEAD_AES_SIV_PROTO_SERIALIZATION_H_
 
+#include "tink/daead/internal/aes_siv_proto_serialization_impl.h"
+#include "tink/internal/mutable_serialization_registry.h"
 #include "tink/util/status.h"
 
 namespace crypto {
 namespace tink {
 
-// Registers proto parsers and serializers for AES-SIV parameters and keys.
-crypto::tink::util::Status RegisterAesSivProtoSerialization();
+// Registers proto parsers and serializers for AES-SIV parameters and keys into
+// global serialization registry.
+inline absl::Status RegisterAesSivProtoSerialization() {
+  return internal::RegisterAesSivProtoSerializationWithMutableRegistry(
+      internal::MutableSerializationRegistry::GlobalInstance());
+}
 
 }  // namespace tink
 }  // namespace crypto

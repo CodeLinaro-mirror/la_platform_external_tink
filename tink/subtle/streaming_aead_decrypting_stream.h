@@ -38,14 +38,13 @@ class StreamingAeadDecryptingStream : public InputStream {
   // underlying ciphertext by 'segment_decrypter', using 'associated_data' as
   // associated authenticated data, and the read bytes are bytes of the
   // resulting plaintext.
-  static
-  crypto::tink::util::StatusOr<std::unique_ptr<crypto::tink::InputStream>>
-      New(std::unique_ptr<StreamSegmentDecrypter> segment_decrypter,
-          std::unique_ptr<crypto::tink::InputStream> ciphertext_source);
+  static absl::StatusOr<std::unique_ptr<crypto::tink::InputStream>> New(
+      std::unique_ptr<StreamSegmentDecrypter> segment_decrypter,
+      std::unique_ptr<crypto::tink::InputStream> ciphertext_source);
 
   // -----------------------
   // Methods of InputStream-interface implemented by this class.
-  crypto::tink::util::StatusOr<int> Next(const void** data) override;
+  absl::StatusOr<int> Next(const void** data) override;
   void BackUp(int count) override;
   int64_t Position() const override;
 
@@ -57,7 +56,7 @@ class StreamingAeadDecryptingStream : public InputStream {
   std::vector<uint8_t> pt_buffer_;  // plaintext buffer
   int64_t position_;  // number of plaintext bytes read from this stream
   int64_t segment_number_;  // current segment number
-  crypto::tink::util::Status status_;  // status of the stream
+  absl::Status status_;     // status of the stream
 
   // Counters that describe the state of the data in pt_buffer_.
   int count_backedup_;    // # bytes in pt_buffer_ that were backed up

@@ -27,7 +27,6 @@
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "tink/config/global_registry.h"
@@ -334,12 +333,11 @@ TEST(StreamingAeadSetWrapperTest, EncryptWithTink) {
     keyset_key.set_status(google::crypto::tink::KeyStatusType::ENABLED);
   }
 
-  crypto::tink::util::StatusOr<KeysetHandle> handle =
-      ParseKeysetFromProtoKeysetFormat(keyset.SerializeAsString(),
-                                       InsecureSecretKeyAccess::Get());
+  absl::StatusOr<KeysetHandle> handle = ParseKeysetFromProtoKeysetFormat(
+      keyset.SerializeAsString(), InsecureSecretKeyAccess::Get());
   ASSERT_THAT(handle.status(), IsOk());
 
-  crypto::tink::util::StatusOr<std::unique_ptr<StreamingAead>> streaming_aead =
+  absl::StatusOr<std::unique_ptr<StreamingAead>> streaming_aead =
       handle->GetPrimitive<crypto::tink::StreamingAead>(ConfigGlobalRegistry());
 
   ASSERT_THAT(streaming_aead.status(), IsOk());
@@ -359,7 +357,7 @@ TEST(StreamingAeadSetWrapperTest, DecryptOldKeyWorks) {
   // aes_gcm_hkdf_streaming_key_test.py
   // on https://github.com/tink-crypto/tink-cross-lang-tests
   google::crypto::tink::AesGcmHkdfStreamingKey key;
-  key.set_key_value(absl::HexStringToBytes("6eb56cdc726dfbe5d57f2fcdc6e9345b"));
+  key.set_key_value(test::HexDecodeOrDie("6eb56cdc726dfbe5d57f2fcdc6e9345b"));
   google::crypto::tink::AesGcmHkdfStreamingParams& params =
       *key.mutable_params();
   params.set_hkdf_hash_type(google::crypto::tink::HashType::SHA1);
@@ -368,7 +366,7 @@ TEST(StreamingAeadSetWrapperTest, DecryptOldKeyWorks) {
   std::string key_used_for_ciphertext = key.SerializeAsString();
   // New lines are as in the above test: they split the header and ciphertext
   // blocks
-  std::string ciphertext = absl::HexStringToBytes(
+  std::string ciphertext = test::HexDecodeOrDie(
       "1893b3af5e14ab378d065addfc8484da642c0862877baea8"
       "db92d9c77406a406168478821c4298eab3e6d531277f4c1a051714f"
       "aebcaefcbca7b7be05e9445ea"
@@ -421,21 +419,20 @@ TEST(StreamingAeadSetWrapperTest, DecryptOldKeyWorks) {
     keyset_key.set_status(google::crypto::tink::KeyStatusType::ENABLED);
   }
 
-  util::StatusOr<KeysetHandle> handle = ParseKeysetFromProtoKeysetFormat(
+  absl::StatusOr<KeysetHandle> handle = ParseKeysetFromProtoKeysetFormat(
       keyset.SerializeAsString(), InsecureSecretKeyAccess::Get());
   ASSERT_THAT(handle.status(), IsOk());
 
-  crypto::tink::util::StatusOr<std::unique_ptr<StreamingAead>> streaming_aead =
+  absl::StatusOr<std::unique_ptr<StreamingAead>> streaming_aead =
       handle->GetPrimitive<crypto::tink::StreamingAead>(ConfigGlobalRegistry());
   ASSERT_THAT(streaming_aead.status(), IsOk());
 
   auto ciphertext_input_stream = std::make_unique<IstreamInputStream>(
       absl::make_unique<std::istringstream>(ciphertext));
-  crypto::tink::util::StatusOr<std::unique_ptr<crypto::tink::InputStream>>
-      plaintext_stream =
-          (*streaming_aead)
-              ->NewDecryptingStream(std::move(ciphertext_input_stream),
-                                    associated_data);
+  absl::StatusOr<std::unique_ptr<crypto::tink::InputStream>> plaintext_stream =
+      (*streaming_aead)
+          ->NewDecryptingStream(std::move(ciphertext_input_stream),
+                                associated_data);
   ASSERT_THAT(plaintext_stream.status(), IsOk());
   std::string decrypted;
   ASSERT_THAT(ReadFromStream(plaintext_stream->get(), &decrypted), IsOk());
@@ -452,7 +449,7 @@ TEST(StreamingAeadSetWrapperTest, DecryptOldKeyWorksWithRandomAccess) {
   // aes_gcm_hkdf_streaming_key_test.py
   // on https://github.com/tink-crypto/tink-cross-lang-tests
   google::crypto::tink::AesGcmHkdfStreamingKey key;
-  key.set_key_value(absl::HexStringToBytes("6eb56cdc726dfbe5d57f2fcdc6e9345b"));
+  key.set_key_value(test::HexDecodeOrDie("6eb56cdc726dfbe5d57f2fcdc6e9345b"));
   google::crypto::tink::AesGcmHkdfStreamingParams& params =
       *key.mutable_params();
   params.set_hkdf_hash_type(google::crypto::tink::HashType::SHA1);
@@ -461,7 +458,7 @@ TEST(StreamingAeadSetWrapperTest, DecryptOldKeyWorksWithRandomAccess) {
   std::string key_used_for_ciphertext = key.SerializeAsString();
   // New lines are as in the above test: they split the header and ciphertext
   // blocks
-  std::string ciphertext = absl::HexStringToBytes(
+  std::string ciphertext = test::HexDecodeOrDie(
       "1893b3af5e14ab378d065addfc8484da642c0862877baea8"
       "db92d9c77406a406168478821c4298eab3e6d531277f4c1a051714f"
       "aebcaefcbca7b7be05e9445ea"
@@ -514,19 +511,17 @@ TEST(StreamingAeadSetWrapperTest, DecryptOldKeyWorksWithRandomAccess) {
     keyset_key.set_status(google::crypto::tink::KeyStatusType::ENABLED);
   }
 
-  crypto::tink::util::StatusOr<KeysetHandle> handle =
-      ParseKeysetFromProtoKeysetFormat(keyset.SerializeAsString(),
-                                       InsecureSecretKeyAccess::Get());
+  absl::StatusOr<KeysetHandle> handle = ParseKeysetFromProtoKeysetFormat(
+      keyset.SerializeAsString(), InsecureSecretKeyAccess::Get());
   ASSERT_THAT(handle.status(), IsOk());
 
-  crypto::tink::util::StatusOr<std::unique_ptr<StreamingAead>> streaming_aead =
+  absl::StatusOr<std::unique_ptr<StreamingAead>> streaming_aead =
       handle->GetPrimitive<crypto::tink::StreamingAead>(ConfigGlobalRegistry());
   ASSERT_THAT(streaming_aead.status(), IsOk());
 
   auto ciphertext_random_access_stream =
       std::make_unique<internal::TestRandomAccessStream>(ciphertext);
-  crypto::tink::util::StatusOr<
-      std::unique_ptr<crypto::tink::RandomAccessStream>>
+  absl::StatusOr<std::unique_ptr<crypto::tink::RandomAccessStream>>
       plaintext_stream =
           (*streaming_aead)
               ->NewDecryptingRandomAccessStream(

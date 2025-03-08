@@ -17,15 +17,17 @@
 #ifndef TINK_SIGNATURE_ECDSA_PUBLIC_KEY_H_
 #define TINK_SIGNATURE_ECDSA_PUBLIC_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "tink/ec_point.h"
-#include "tink/signature/ecdsa_parameters.h"
-#include "tink/signature/signature_public_key.h"
 #include "tink/key.h"
 #include "tink/partial_key_access_token.h"
+#include "tink/signature/ecdsa_parameters.h"
+#include "tink/signature/signature_public_key.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {
@@ -41,7 +43,7 @@ class EcdsaPublicKey : public SignaturePublicKey {
   EcdsaPublicKey(EcdsaPublicKey&& other) = default;
   EcdsaPublicKey& operator=(EcdsaPublicKey&& other) = default;
 
-  static util::StatusOr<EcdsaPublicKey> Create(
+  static absl::StatusOr<EcdsaPublicKey> Create(
       const EcdsaParameters& parameters, const EcPoint& public_point,
       absl::optional<int> id_requirement, PartialKeyAccessToken token);
 
@@ -53,11 +55,15 @@ class EcdsaPublicKey : public SignaturePublicKey {
 
   const EcdsaParameters& GetParameters() const override { return parameters_; }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<EcdsaPublicKey>(*this);
+  };
 
  private:
   explicit EcdsaPublicKey(const EcdsaParameters& parameters,

@@ -17,9 +17,11 @@
 #ifndef TINK_INTERNAL_LEGACY_PROTO_PARAMETERS_H_
 #define TINK_INTERNAL_LEGACY_PROTO_PARAMETERS_H_
 
+#include <memory>
 #include <utility>
 
 #include "tink/internal/proto_parameters_serialization.h"
+#include "tink/internal/tink_proto_structs.h"
 #include "tink/parameters.h"
 #include "proto/tink.pb.h"
 
@@ -40,11 +42,15 @@ class LegacyProtoParameters : public Parameters {
       : serialization_(std::move(serialization)) {}
 
   bool HasIdRequirement() const override {
-    return serialization_.GetKeyTemplate().output_prefix_type() !=
-           google::crypto::tink::OutputPrefixType::RAW;
+    return serialization_.GetKeyTemplateStruct().output_prefix_type !=
+           OutputPrefixTypeEnum::kRaw;
   }
 
   bool operator==(const Parameters& other) const override;
+
+  std::unique_ptr<Parameters> Clone() const override {
+    return std::make_unique<LegacyProtoParameters>(*this);
+  }
 
   const ProtoParametersSerialization& Serialization() const {
     return serialization_;

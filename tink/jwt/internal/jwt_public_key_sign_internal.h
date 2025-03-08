@@ -22,7 +22,6 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "tink/jwt/raw_jwt.h"
-#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {
@@ -39,7 +38,7 @@ class JwtPublicKeySignInternal {
   //
   // When `kid` has a value, the token will have a kid header. `kid` is set by
   // the primitive wrapper based on the output prefix type and the key id.
-  virtual crypto::tink::util::StatusOr<std::string> SignAndEncodeWithKid(
+  virtual absl::StatusOr<std::string> SignAndEncodeWithKid(
       const RawJwt& token, absl::optional<absl::string_view> kid) const = 0;
 
   virtual ~JwtPublicKeySignInternal() = default;

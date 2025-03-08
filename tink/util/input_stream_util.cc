@@ -18,18 +18,23 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 #include "absl/algorithm/container.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "tink/input_stream.h"
+#include "tink/internal/secret_buffer.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {
 namespace tink {
 
+using ::crypto::tink::internal::SecretBuffer;
+
 namespace {
+
 template <typename Result>
 util::StatusOr<Result> ReadBytesFromStreamImpl(int num_bytes,
                                                InputStream* input_stream) {
@@ -49,7 +54,7 @@ util::StatusOr<Result> ReadBytesFromStreamImpl(int num_bytes,
         std::min(num_bytes - num_bytes_read, num_bytes_in_chunk);
     absl::c_copy(absl::MakeSpan(reinterpret_cast<const char*>(buffer),
                                 num_bytes_to_copy),
-                 result.begin() + num_bytes_read);
+                 result.data() + num_bytes_read);
     input_stream->BackUp(num_bytes_in_chunk - num_bytes_to_copy);
     num_bytes_read += num_bytes_to_copy;
   }
@@ -57,14 +62,17 @@ util::StatusOr<Result> ReadBytesFromStreamImpl(int num_bytes,
 }
 }  // namespace
 
-util::StatusOr<std::string> ReadBytesFromStream(int num_bytes,
+absl::StatusOr<std::string> ReadBytesFromStream(int num_bytes,
                                                 InputStream* input_stream) {
   return ReadBytesFromStreamImpl<std::string>(num_bytes, input_stream);
 }
 
-util::StatusOr<util::SecretData> ReadSecretBytesFromStream(
+absl::StatusOr<util::SecretData> ReadSecretBytesFromStream(
     int num_bytes, InputStream* input_stream) {
-  return ReadBytesFromStreamImpl<util::SecretData>(num_bytes, input_stream);
+  absl::StatusOr<SecretBuffer> result =
+      ReadBytesFromStreamImpl<SecretBuffer>(num_bytes, input_stream);
+  if (!result.ok()) { return result.status(); }
+  return util::internal::AsSecretData(*std::move(result));
 }
 
 }  // namespace tink

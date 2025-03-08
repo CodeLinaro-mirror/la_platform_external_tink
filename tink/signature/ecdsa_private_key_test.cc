@@ -16,6 +16,7 @@
 
 #include "tink/signature/ecdsa_private_key.h"
 
+#include <memory>
 #include <string>
 
 #include "gmock/gmock.h"
@@ -30,6 +31,7 @@
 #include "tink/ec_point.h"
 #include "tink/insecure_secret_key_access.h"
 #include "tink/internal/ec_util.h"
+#include "tink/key.h"
 #include "tink/partial_key_access.h"
 #include "tink/restricted_big_integer.h"
 #include "tink/signature/ecdsa_parameters.h"
@@ -96,7 +98,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(EcdsaPrivateKeyTest, CreatePrivateKeyWorks) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<EcdsaParameters> parameters =
+  absl::StatusOr<EcdsaParameters> parameters =
       EcdsaParameters::Builder()
           .SetCurveType(test_case.curve_type)
           .SetHashType(test_case.hash_type)
@@ -105,12 +107,12 @@ TEST_P(EcdsaPrivateKeyTest, CreatePrivateKeyWorks) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key = internal::NewEcKey(test_case.curve);
+  absl::StatusOr<internal::EcKey> ec_key = internal::NewEcKey(test_case.curve);
   ASSERT_THAT(ec_key, IsOk());
 
   EcPoint public_point(BigInteger(ec_key->pub_x), BigInteger(ec_key->pub_y));
 
-  util::StatusOr<EcdsaPublicKey> public_key =
+  absl::StatusOr<EcdsaPublicKey> public_key =
       EcdsaPublicKey::Create(*parameters, public_point,
                              test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
@@ -119,7 +121,7 @@ TEST_P(EcdsaPrivateKeyTest, CreatePrivateKeyWorks) {
       RestrictedBigInteger(util::SecretDataAsStringView(ec_key->priv),
                            InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<EcdsaPrivateKey> private_key = EcdsaPrivateKey::Create(
+  absl::StatusOr<EcdsaPrivateKey> private_key = EcdsaPrivateKey::Create(
       *public_key, private_key_value, GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
 
@@ -134,7 +136,7 @@ TEST_P(EcdsaPrivateKeyTest, CreatePrivateKeyWorks) {
 TEST_P(EcdsaPrivateKeyTest, CreateMismatchedKeyPairFails) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<EcdsaParameters> parameters =
+  absl::StatusOr<EcdsaParameters> parameters =
       EcdsaParameters::Builder()
           .SetCurveType(test_case.curve_type)
           .SetHashType(test_case.hash_type)
@@ -143,17 +145,17 @@ TEST_P(EcdsaPrivateKeyTest, CreateMismatchedKeyPairFails) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key1 = internal::NewEcKey(test_case.curve);
+  absl::StatusOr<internal::EcKey> ec_key1 = internal::NewEcKey(test_case.curve);
   ASSERT_THAT(ec_key1, IsOk());
 
   EcPoint public_point(BigInteger(ec_key1->pub_x), BigInteger(ec_key1->pub_y));
 
-  util::StatusOr<EcdsaPublicKey> public_key1 =
+  absl::StatusOr<EcdsaPublicKey> public_key1 =
       EcdsaPublicKey::Create(*parameters, public_point,
                              test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(public_key1, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key2 = internal::NewEcKey(test_case.curve);
+  absl::StatusOr<internal::EcKey> ec_key2 = internal::NewEcKey(test_case.curve);
   ASSERT_THAT(ec_key2, IsOk());
 
   RestrictedBigInteger private_key_bytes2 =
@@ -170,7 +172,7 @@ TEST_P(EcdsaPrivateKeyTest, CreateMismatchedKeyPairFails) {
 TEST_P(EcdsaPrivateKeyTest, PrivateKeyEquals) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<EcdsaParameters> parameters =
+  absl::StatusOr<EcdsaParameters> parameters =
       EcdsaParameters::Builder()
           .SetCurveType(test_case.curve_type)
           .SetHashType(test_case.hash_type)
@@ -179,12 +181,12 @@ TEST_P(EcdsaPrivateKeyTest, PrivateKeyEquals) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key = internal::NewEcKey(test_case.curve);
+  absl::StatusOr<internal::EcKey> ec_key = internal::NewEcKey(test_case.curve);
   ASSERT_THAT(ec_key, IsOk());
 
   EcPoint public_point(BigInteger(ec_key->pub_x), BigInteger(ec_key->pub_y));
 
-  util::StatusOr<EcdsaPublicKey> public_key =
+  absl::StatusOr<EcdsaPublicKey> public_key =
       EcdsaPublicKey::Create(*parameters, public_point,
                              test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
@@ -193,11 +195,11 @@ TEST_P(EcdsaPrivateKeyTest, PrivateKeyEquals) {
       RestrictedBigInteger(util::SecretDataAsStringView(ec_key->priv),
                            InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<EcdsaPrivateKey> private_key = EcdsaPrivateKey::Create(
+  absl::StatusOr<EcdsaPrivateKey> private_key = EcdsaPrivateKey::Create(
       *public_key, private_key_value, GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
 
-  util::StatusOr<EcdsaPrivateKey> other_private_key = EcdsaPrivateKey::Create(
+  absl::StatusOr<EcdsaPrivateKey> other_private_key = EcdsaPrivateKey::Create(
       *public_key, private_key_value, GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
 
@@ -208,7 +210,7 @@ TEST_P(EcdsaPrivateKeyTest, PrivateKeyEquals) {
 }
 
 TEST(EcdsaPrivateKeyTest, DifferentPublicKeyNotEqual) {
-  util::StatusOr<EcdsaParameters> parameters =
+  absl::StatusOr<EcdsaParameters> parameters =
       EcdsaParameters::Builder()
           .SetCurveType(EcdsaParameters::CurveType::kNistP256)
           .SetHashType(EcdsaParameters::HashType::kSha256)
@@ -217,18 +219,18 @@ TEST(EcdsaPrivateKeyTest, DifferentPublicKeyNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key =
+  absl::StatusOr<internal::EcKey> ec_key =
       internal::NewEcKey(subtle::EllipticCurveType::NIST_P256);
   ASSERT_THAT(ec_key, IsOk());
 
   EcPoint public_point(BigInteger(ec_key->pub_x), BigInteger(ec_key->pub_y));
 
-  util::StatusOr<EcdsaPublicKey> public_key1 =
+  absl::StatusOr<EcdsaPublicKey> public_key1 =
       EcdsaPublicKey::Create(*parameters, public_point,
                              /*id_requirement=*/123, GetPartialKeyAccess());
   ASSERT_THAT(public_key1, IsOk());
 
-  util::StatusOr<EcdsaPublicKey> public_key2 =
+  absl::StatusOr<EcdsaPublicKey> public_key2 =
       EcdsaPublicKey::Create(*parameters, public_point,
                              /*id_requirement=*/456, GetPartialKeyAccess());
   ASSERT_THAT(public_key2, IsOk());
@@ -237,11 +239,11 @@ TEST(EcdsaPrivateKeyTest, DifferentPublicKeyNotEqual) {
       RestrictedBigInteger(util::SecretDataAsStringView(ec_key->priv),
                            InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<EcdsaPrivateKey> private_key = EcdsaPrivateKey::Create(
+  absl::StatusOr<EcdsaPrivateKey> private_key = EcdsaPrivateKey::Create(
       *public_key1, private_key_value, GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
 
-  util::StatusOr<EcdsaPrivateKey> other_private_key = EcdsaPrivateKey::Create(
+  absl::StatusOr<EcdsaPrivateKey> other_private_key = EcdsaPrivateKey::Create(
       *public_key2, private_key_value, GetPartialKeyAccess());
   ASSERT_THAT(other_private_key, IsOk());
 
@@ -252,7 +254,7 @@ TEST(EcdsaPrivateKeyTest, DifferentPublicKeyNotEqual) {
 }
 
 TEST(EcdsaPrivateKeyTest, DifferentKeyTypesNotEqual) {
-  util::StatusOr<EcdsaParameters> parameters =
+  absl::StatusOr<EcdsaParameters> parameters =
       EcdsaParameters::Builder()
           .SetCurveType(EcdsaParameters::CurveType::kNistP256)
           .SetHashType(EcdsaParameters::HashType::kSha256)
@@ -261,13 +263,13 @@ TEST(EcdsaPrivateKeyTest, DifferentKeyTypesNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key =
+  absl::StatusOr<internal::EcKey> ec_key =
       internal::NewEcKey(subtle::EllipticCurveType::NIST_P256);
   ASSERT_THAT(ec_key, IsOk());
 
   EcPoint public_point(BigInteger(ec_key->pub_x), BigInteger(ec_key->pub_y));
 
-  util::StatusOr<EcdsaPublicKey> public_key =
+  absl::StatusOr<EcdsaPublicKey> public_key =
       EcdsaPublicKey::Create(*parameters, public_point,
                              /*id_requirement=*/123, GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
@@ -276,7 +278,7 @@ TEST(EcdsaPrivateKeyTest, DifferentKeyTypesNotEqual) {
       RestrictedBigInteger(util::SecretDataAsStringView(ec_key->priv),
                            InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<EcdsaPrivateKey> private_key = EcdsaPrivateKey::Create(
+  absl::StatusOr<EcdsaPrivateKey> private_key = EcdsaPrivateKey::Create(
       *public_key, private_key_value, GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
 
@@ -284,6 +286,41 @@ TEST(EcdsaPrivateKeyTest, DifferentKeyTypesNotEqual) {
   EXPECT_TRUE(*public_key != *private_key);
   EXPECT_FALSE(*private_key == *public_key);
   EXPECT_FALSE(*public_key == *private_key);
+}
+
+TEST(EcdsaPrivateKeyTest, Clone) {
+  absl::StatusOr<EcdsaParameters> parameters =
+      EcdsaParameters::Builder()
+          .SetCurveType(EcdsaParameters::CurveType::kNistP256)
+          .SetHashType(EcdsaParameters::HashType::kSha256)
+          .SetSignatureEncoding(EcdsaParameters::SignatureEncoding::kDer)
+          .SetVariant(EcdsaParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  absl::StatusOr<internal::EcKey> ec_key =
+      internal::NewEcKey(subtle::EllipticCurveType::NIST_P256);
+  ASSERT_THAT(ec_key, IsOk());
+
+  EcPoint public_point(BigInteger(ec_key->pub_x), BigInteger(ec_key->pub_y));
+
+  absl::StatusOr<EcdsaPublicKey> public_key =
+      EcdsaPublicKey::Create(*parameters, public_point,
+                             /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(public_key, IsOk());
+
+  RestrictedBigInteger private_key_value =
+      RestrictedBigInteger(util::SecretDataAsStringView(ec_key->priv),
+                           InsecureSecretKeyAccess::Get());
+
+  absl::StatusOr<EcdsaPrivateKey> private_key = EcdsaPrivateKey::Create(
+      *public_key, private_key_value, GetPartialKeyAccess());
+  ASSERT_THAT(private_key, IsOk());
+
+  // Clone the key.
+  std::unique_ptr<Key> cloned_key = private_key->Clone();
+
+  ASSERT_THAT(*cloned_key, Eq(*private_key));
 }
 
 }  // namespace

@@ -50,10 +50,8 @@ class RandomAccessStream {
   //      'position' is larger than the current size of the stream.
   //  INVALID_ARGUMENT: if some of the arguments are not valid.
   //  other: if some other error occurred.
-  virtual crypto::tink::util::Status PRead(
-      int64_t position,
-      int count,
-      crypto::tink::util::Buffer* dest_buffer) = 0;
+  virtual absl::Status PRead(int64_t position, int count,
+                             crypto::tink::util::Buffer* dest_buffer) = 0;
 
   // Returns the size of this stream in bytes, if available.
   // If the size is not available, returns a non-Ok status.
@@ -61,7 +59,7 @@ class RandomAccessStream {
   // a sequence of bytes), stating how many bytes are there in the sequence.
   // For a successful PRead-operation the starting position should be
   // in the range 0..size()-1 (otherwise PRead may return a non-Ok status).
-  virtual crypto::tink::util::StatusOr<int64_t> size() = 0;
+  virtual absl::StatusOr<int64_t> size() = 0;
 };
 
 }  // namespace tink

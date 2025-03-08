@@ -194,13 +194,12 @@ tink_cc_library(
     absl::core_headers
     absl::status
     absl::strings
-    absl::str_format
     absl::optional
     crypto
     tink::core::key
     tink::core::partial_key_access_token
     tink::core::restricted_data
-    tink::subtle::subtle_util
+    tink::internal::output_prefix_util
     tink::util::status
     tink::util::statusor
 )
@@ -208,30 +207,11 @@ tink_cc_library(
 tink_cc_library(
   NAME aes_cmac_proto_serialization
   SRCS
-    aes_cmac_proto_serialization.cc
     aes_cmac_proto_serialization.h
   DEPS
-    tink::mac::aes_cmac_key
-    tink::mac::aes_cmac_parameters
-    absl::status
-    absl::string_view
-    absl::optional
-    tink::core::partial_key_access
-    tink::core::restricted_data
-    tink::core::secret_key_access_token
-    tink::internal::key_parser
-    tink::internal::key_serializer
     tink::internal::mutable_serialization_registry
-    tink::internal::parameters_parser
-    tink::internal::parameters_serializer
-    tink::internal::proto_key_serialization
-    tink::internal::proto_parameters_serialization
-    tink::util::secret_data
-    tink::util::secret_proto
+    tink::mac::internal::aes_cmac_proto_serialization_impl
     tink::util::status
-    tink::util::statusor
-    tink::proto::aes_cmac_cc_proto
-    tink::proto::tink_cc_proto
 )
 
 tink_cc_library(
@@ -262,12 +242,11 @@ tink_cc_library(
     absl::core_headers
     absl::status
     absl::strings
-    absl::str_format
     absl::optional
     tink::core::key
     tink::core::partial_key_access_token
     tink::core::restricted_data
-    tink::subtle::subtle_util
+    tink::internal::output_prefix_util
     tink::util::status
     tink::util::statusor
 )
@@ -275,31 +254,11 @@ tink_cc_library(
 tink_cc_library(
   NAME hmac_proto_serialization
   SRCS
-    hmac_proto_serialization.cc
     hmac_proto_serialization.h
   DEPS
-    tink::mac::hmac_key
-    tink::mac::hmac_parameters
-    absl::status
-    absl::statusor
-    absl::string_view
-    absl::optional
-    tink::core::partial_key_access
-    tink::core::restricted_data
-    tink::core::secret_key_access_token
-    tink::internal::key_parser
-    tink::internal::key_serializer
     tink::internal::mutable_serialization_registry
-    tink::internal::parameters_parser
-    tink::internal::parameters_serializer
-    tink::internal::proto_key_serialization
-    tink::internal::proto_parameters_serialization
-    tink::util::secret_proto
+    tink::mac::internal::hmac_proto_serialization_impl
     tink::util::status
-    tink::util::statusor
-    tink::proto::common_cc_proto
-    tink::proto::hmac_cc_proto
-    tink::proto::tink_cc_proto
 )
 
 tink_cc_library(
@@ -496,6 +455,7 @@ tink_cc_test(
     tink::mac::aes_cmac_parameters
     gmock
     absl::status
+    tink::core::parameters
     tink::util::statusor
     tink::util::test_matchers
 )
@@ -510,6 +470,7 @@ tink_cc_test(
     gmock
     absl::status
     absl::optional
+    tink::core::key
     tink::core::partial_key_access
     tink::core::restricted_data
     tink::util::statusor
@@ -525,7 +486,10 @@ tink_cc_test(
     tink::mac::aes_cmac_parameters
     tink::mac::aes_cmac_proto_serialization
     gmock
+    absl::check
+    absl::memory
     absl::status
+    absl::string_view
     absl::optional
     tink::core::insecure_secret_key_access
     tink::core::key
@@ -536,6 +500,9 @@ tink_cc_test(
     tink::internal::proto_key_serialization
     tink::internal::proto_parameters_serialization
     tink::internal::serialization
+    tink::internal::tink_proto_structs
+    tink::internal::testing::equals_proto_key_serialization
+    tink::internal::testing::field_with_number
     tink::subtle::random
     tink::util::statusor
     tink::util::test_matchers
@@ -551,6 +518,7 @@ tink_cc_test(
     tink::mac::hmac_parameters
     gmock
     absl::status
+    tink::core::parameters
     tink::util::statusor
     tink::util::test_matchers
 )
@@ -565,6 +533,7 @@ tink_cc_test(
     gmock
     absl::status
     absl::optional
+    tink::core::key
     tink::core::partial_key_access
     tink::core::restricted_data
     tink::util::statusor
@@ -591,6 +560,7 @@ tink_cc_test(
     tink::internal::proto_key_serialization
     tink::internal::proto_parameters_serialization
     tink::internal::serialization
+    tink::internal::tink_proto_structs
     tink::subtle::random
     tink::util::statusor
     tink::util::test_matchers

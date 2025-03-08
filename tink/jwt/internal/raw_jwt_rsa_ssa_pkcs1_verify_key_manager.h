@@ -17,11 +17,9 @@
 #ifndef TINK_JWT_INTERNAL_RAW_JWT_RSA_SSA_PKCS1_VERIFY_KEY_MANAGER_H_
 #define TINK_JWT_INTERNAL_RAW_JWT_RSA_SSA_PKCS1_VERIFY_KEY_MANAGER_H_
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
@@ -30,8 +28,6 @@
 #include "tink/internal/fips_utils.h"
 #include "tink/public_key_verify.h"
 #include "tink/util/constants.h"
-#include "tink/util/errors.h"
-#include "tink/util/protobuf_helper.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "proto/common.pb.h"
@@ -46,7 +42,7 @@ class RawJwtRsaSsaPkcs1VerifyKeyManager
                             List<PublicKeyVerify>> {
  public:
   class PublicKeyVerifyFactory : public PrimitiveFactory<PublicKeyVerify> {
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
+    absl::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
         const google::crypto::tink::JwtRsaSsaPkcs1PublicKey&
             jwt_rsa_ssa_pkcs1_public_key) const override;
   };
@@ -63,7 +59,7 @@ class RawJwtRsaSsaPkcs1VerifyKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::JwtRsaSsaPkcs1PublicKey& key) const override;
 
   internal::FipsCompatibility FipsStatus() const override {
@@ -71,11 +67,10 @@ class RawJwtRsaSsaPkcs1VerifyKeyManager
   }
 
  private:
-  static crypto::tink::util::Status ValidateAlgorithm(
+  static absl::Status ValidateAlgorithm(
       const google::crypto::tink::JwtRsaSsaPkcs1Algorithm& algorithm);
 
-  static crypto::tink::util::StatusOr<google::crypto::tink::HashType>
-  HashForPkcs1Algorithm(
+  static absl::StatusOr<google::crypto::tink::HashType> HashForPkcs1Algorithm(
       const google::crypto::tink::JwtRsaSsaPkcs1Algorithm& algorithm);
 
   const std::string key_type_ = absl::StrCat(

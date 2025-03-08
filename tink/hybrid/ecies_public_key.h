@@ -17,6 +17,8 @@
 #ifndef TINK_HYBRID_ECIES_PUBLIC_KEY_H_
 #define TINK_HYBRID_ECIES_PUBLIC_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 
 #include "absl/strings/string_view.h"
@@ -41,11 +43,11 @@ class EciesPublicKey : public HybridPublicKey {
   EciesPublicKey(EciesPublicKey&& other) = default;
   EciesPublicKey& operator=(EciesPublicKey&& other) = default;
 
-  static util::StatusOr<EciesPublicKey> CreateForNistCurve(
+  static absl::StatusOr<EciesPublicKey> CreateForNistCurve(
       const EciesParameters& parameters, const EcPoint& point,
       absl::optional<int> id_requirement, PartialKeyAccessToken token);
 
-  static util::StatusOr<EciesPublicKey> CreateForCurveX25519(
+  static absl::StatusOr<EciesPublicKey> CreateForCurveX25519(
       const EciesParameters& parameters, absl::string_view public_key_bytes,
       absl::optional<int> id_requirement, PartialKeyAccessToken token);
 
@@ -62,11 +64,15 @@ class EciesPublicKey : public HybridPublicKey {
 
   const EciesParameters& GetParameters() const override { return parameters_; }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<EciesPublicKey>(*this);
+  }
 
  private:
   // Creates a NIST curve-based ECIES public key.

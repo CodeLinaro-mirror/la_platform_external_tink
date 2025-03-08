@@ -17,13 +17,19 @@
 #ifndef TINK_SIGNATURE_ED25519_PROTO_SERIALIZATION_H_
 #define TINK_SIGNATURE_ED25519_PROTO_SERIALIZATION_H_
 
+#include "tink/internal/mutable_serialization_registry.h"
+#include "tink/signature/internal/ed25519_proto_serialization_impl.h"
 #include "tink/util/status.h"
 
 namespace crypto {
 namespace tink {
 
-// Registers proto parsers and serializers for Ed25519 parameters and keys.
-crypto::tink::util::Status RegisterEd25519ProtoSerialization();
+// Registers proto parsers and serializers for Ed25519 parameters and keys into
+// global serialization registry.
+inline absl::Status RegisterEd25519ProtoSerialization() {
+  return internal::RegisterEd25519ProtoSerializationWithMutableRegistry(
+      internal::MutableSerializationRegistry::GlobalInstance());
+}
 
 }  // namespace tink
 }  // namespace crypto

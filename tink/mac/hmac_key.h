@@ -17,6 +17,7 @@
 #ifndef TINK_MAC_HMAC_KEY_H_
 #define TINK_MAC_HMAC_KEY_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -43,7 +44,7 @@ class HmacKey : public MacKey {
 
   // Creates a new HMAC key.  If the parameters specify a variant that uses
   // a prefix, then the id is used to compute this prefix.
-  static util::StatusOr<HmacKey> Create(const HmacParameters& parameters,
+  static absl::StatusOr<HmacKey> Create(const HmacParameters& parameters,
                                         const RestrictedData& key_bytes,
                                         absl::optional<int> id_requirement,
                                         PartialKeyAccessToken token);
@@ -57,11 +58,15 @@ class HmacKey : public MacKey {
 
   const HmacParameters& GetParameters() const override { return parameters_; }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<HmacKey>(*this);
+  }
 
  private:
   HmacKey(const HmacParameters& parameters, const RestrictedData& key_bytes,
@@ -71,7 +76,7 @@ class HmacKey : public MacKey {
         id_requirement_(id_requirement),
         output_prefix_(std::move(output_prefix)) {}
 
-  static util::StatusOr<std::string> ComputeOutputPrefix(
+  static absl::StatusOr<std::string> ComputeOutputPrefix(
       const HmacParameters& parameters, absl::optional<int> id_requirement);
 
   HmacParameters parameters_;

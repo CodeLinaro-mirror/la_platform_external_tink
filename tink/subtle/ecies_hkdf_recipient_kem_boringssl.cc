@@ -26,6 +26,7 @@
 #include "openssl/bn.h"
 #include "openssl/ec.h"
 #include "openssl/evp.h"
+#include "tink/internal/call_with_core_dump_protection.h"
 #include "tink/internal/ec_util.h"
 #include "tink/internal/fips_utils.h"
 #include "tink/internal/ssl_unique_ptr.h"
@@ -41,7 +42,7 @@ namespace tink {
 namespace subtle {
 
 // static
-util::StatusOr<std::unique_ptr<EciesHkdfRecipientKemBoringSsl>>
+absl::StatusOr<std::unique_ptr<EciesHkdfRecipientKemBoringSsl>>
 EciesHkdfRecipientKemBoringSsl::New(EllipticCurveType curve,
                                     util::SecretData priv_key) {
   switch (curve) {
@@ -54,13 +55,13 @@ EciesHkdfRecipientKemBoringSsl::New(EllipticCurveType curve,
       return EciesHkdfX25519RecipientKemBoringSsl::New(curve,
                                                        std::move(priv_key));
     default:
-      return util::Status(absl::StatusCode::kUnimplemented,
+      return absl::Status(absl::StatusCode::kUnimplemented,
                           "Unsupported elliptic curve");
   }
 }
 
 // static
-util::StatusOr<std::unique_ptr<EciesHkdfRecipientKemBoringSsl>>
+absl::StatusOr<std::unique_ptr<EciesHkdfRecipientKemBoringSsl>>
 EciesHkdfNistPCurveRecipientKemBoringSsl::New(EllipticCurveType curve,
                                               util::SecretData priv_key) {
   auto status = internal::CheckFipsCompatibility<
@@ -68,7 +69,7 @@ EciesHkdfNistPCurveRecipientKemBoringSsl::New(EllipticCurveType curve,
   if (!status.ok()) return status;
 
   if (priv_key.empty()) {
-    return util::Status(absl::StatusCode::kInvalidArgument, "empty priv_key");
+    return absl::Status(absl::StatusCode::kInvalidArgument, "empty priv_key");
   }
   auto status_or_ec_group = internal::EcGroupFromCurveType(curve);
   if (!status_or_ec_group.ok()) return status_or_ec_group.status();
@@ -86,7 +87,7 @@ EciesHkdfNistPCurveRecipientKemBoringSsl::
       priv_key_value_(std::move(priv_key_value)),
       ec_group_(std::move(ec_group)) {}
 
-util::StatusOr<util::SecretData>
+absl::StatusOr<util::SecretData>
 EciesHkdfNistPCurveRecipientKemBoringSsl::GenerateKey(
     absl::string_view kem_bytes, HashType hash, absl::string_view hkdf_salt,
     absl::string_view hkdf_info, uint32_t key_size_in_bytes,
@@ -100,8 +101,11 @@ EciesHkdfNistPCurveRecipientKemBoringSsl::GenerateKey(
   }
   internal::SslUniquePtr<EC_POINT> pub_key =
       std::move(status_or_ec_point.value());
-  internal::SslUniquePtr<BIGNUM> priv_key(
-      BN_bin2bn(priv_key_value_.data(), priv_key_value_.size(), nullptr));
+  internal::SslUniquePtr<BIGNUM> priv_key =
+      internal::CallWithCoreDumpProtection([&]() {
+        return internal::SslUniquePtr<BIGNUM>(
+            BN_bin2bn(priv_key_value_.data(), priv_key_value_.size(), nullptr));
+      });
   auto shared_secret_or =
       internal::ComputeEcdhSharedSecret(curve_, priv_key.get(), pub_key.get());
   if (!shared_secret_or.ok()) {
@@ -117,7 +121,7 @@ EciesHkdfX25519RecipientKemBoringSsl::EciesHkdfX25519RecipientKemBoringSsl(
     : private_key_(std::move(private_key)) {}
 
 // static
-util::StatusOr<std::unique_ptr<EciesHkdfRecipientKemBoringSsl>>
+absl::StatusOr<std::unique_ptr<EciesHkdfRecipientKemBoringSsl>>
 EciesHkdfX25519RecipientKemBoringSsl::New(EllipticCurveType curve,
                                           util::SecretData priv_key) {
   auto status =
@@ -125,19 +129,23 @@ EciesHkdfX25519RecipientKemBoringSsl::New(EllipticCurveType curve,
   if (!status.ok()) return status;
 
   if (curve != CURVE25519) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "curve is not CURVE25519");
   }
   if (priv_key.size() != internal::X25519KeyPubKeySize()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "pubx has unexpected length");
   }
 
-  internal::SslUniquePtr<EVP_PKEY> ssl_priv_key(EVP_PKEY_new_raw_private_key(
-      /*type=*/EVP_PKEY_X25519, /*unused=*/nullptr, /*in=*/priv_key.data(),
-      /*len=*/internal::Ed25519KeyPrivKeySize()));
+  internal::SslUniquePtr<EVP_PKEY> ssl_priv_key(
+      internal::CallWithCoreDumpProtection([&] {
+        return EVP_PKEY_new_raw_private_key(
+            /*type=*/EVP_PKEY_X25519, /*unused=*/nullptr,
+            /*in=*/priv_key.data(),
+            /*len=*/internal::Ed25519KeyPrivKeySize());
+      }));
   if (ssl_priv_key == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "EVP_PKEY_new_raw_private_key failed");
   }
 
@@ -145,19 +153,19 @@ EciesHkdfX25519RecipientKemBoringSsl::New(EllipticCurveType curve,
       new EciesHkdfX25519RecipientKemBoringSsl(std::move(ssl_priv_key)))};
 }
 
-crypto::tink::util::StatusOr<util::SecretData>
+absl::StatusOr<util::SecretData>
 EciesHkdfX25519RecipientKemBoringSsl::GenerateKey(
     absl::string_view kem_bytes, HashType hash, absl::string_view hkdf_salt,
     absl::string_view hkdf_info, uint32_t key_size_in_bytes,
     EcPointFormat point_format) const {
   if (point_format != EcPointFormat::COMPRESSED) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "X25519 only supports compressed elliptic curve points");
   }
 
   if (kem_bytes.size() != internal::X25519KeyPubKeySize()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "kem_bytes has unexpected size");
   }
 
@@ -166,11 +174,11 @@ EciesHkdfX25519RecipientKemBoringSsl::GenerateKey(
       /*in=*/reinterpret_cast<const uint8_t*>(kem_bytes.data()),
       /*len=*/internal::Ed25519KeyPubKeySize()));
   if (peer_key == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "EVP_PKEY_new_raw_public_key failed");
   }
 
-  util::StatusOr<util::SecretData> shared_secret =
+  absl::StatusOr<util::SecretData> shared_secret =
       internal::ComputeX25519SharedSecret(private_key_.get(), peer_key.get());
   if (!shared_secret.ok()) {
     return shared_secret.status();

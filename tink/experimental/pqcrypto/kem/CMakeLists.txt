@@ -243,6 +243,7 @@ tink_cc_test(
     tink::experimental::pqcrypto::kem::ml_kem_parameters
     gmock
     absl::status
+    tink::core::parameters
     tink::util::statusor
     tink::util::test_matchers
 )
@@ -286,7 +287,7 @@ tink_cc_library(
     tink::core::key
     tink::core::partial_key_access_token
     tink::experimental::kem::kem_public_key
-    tink::subtle::subtle_util
+    tink::internal::output_prefix_util
     tink::util::status
     tink::util::statusor
 )
@@ -305,10 +306,11 @@ tink_cc_test(
     absl::optional
     crypto
     tink::core::insecure_secret_key_access
+    tink::core::key
     tink::core::partial_key_access
     tink::core::restricted_data
+    tink::internal::secret_buffer
     tink::util::secret_data
-    tink::util::status
     tink::util::statusor
     tink::util::test_matchers
 )
@@ -325,8 +327,73 @@ tink_cc_test(
     absl::strings
     absl::optional
     crypto
+    tink::core::key
     tink::core::partial_key_access
     tink::util::secret_data
     tink::util::statusor
     tink::util::test_matchers
+)
+
+tink_cc_library(
+  NAME ml_kem_proto_serialization
+  SRCS
+    ml_kem_proto_serialization.cc
+    ml_kem_proto_serialization.h
+  DEPS
+    tink::experimental::pqcrypto::kem::ml_kem_parameters
+    tink::experimental::pqcrypto::kem::ml_kem_private_key
+    tink::experimental::pqcrypto::kem::ml_kem_public_key
+    absl::no_destructor
+    absl::status
+    absl::statusor
+    absl::string_view
+    absl::optional
+    tink::core::insecure_secret_key_access
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::internal::key_parser
+    tink::internal::key_serializer
+    tink::internal::mutable_serialization_registry
+    tink::internal::parameters_parser
+    tink::internal::parameters_serializer
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::proto_parser
+    tink::internal::tink_proto_structs
+    tink::util::secret_data
+    tink::util::status
+)
+
+tink_cc_test(
+  NAME ml_kem_proto_serialization_test
+  SRCS
+    ml_kem_proto_serialization_test.cc
+  DEPS
+    tink::experimental::pqcrypto::kem::ml_kem_parameters
+    tink::experimental::pqcrypto::kem::ml_kem_private_key
+    tink::experimental::pqcrypto::kem::ml_kem_proto_serialization
+    tink::experimental::pqcrypto::kem::ml_kem_public_key
+    gmock
+    absl::check
+    absl::status
+    absl::string_view
+    absl::optional
+    tink::core::insecure_secret_key_access_testonly
+    tink::core::key
+    tink::core::parameters
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::experimental::pqcrypto::kem::internal::ml_kem_test_util
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::serialization
+    tink::internal::tink_proto_structs
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+    tink::proto::tink_cc_proto
+    tink::proto::ml_kem_cc_proto
 )

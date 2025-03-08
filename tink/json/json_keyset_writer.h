@@ -35,14 +35,14 @@ namespace tink {
 // https://developers.google.com/protocol-buffers/docs/encoding
 class JsonKeysetWriter : public KeysetWriter {
  public:
-  static crypto::tink::util::StatusOr<std::unique_ptr<JsonKeysetWriter>> New(
+  static absl::StatusOr<std::unique_ptr<JsonKeysetWriter>> New(
       std::unique_ptr<std::ostream> destination_stream);
 
-  crypto::tink::util::Status
-  Write(const google::crypto::tink::Keyset& keyset) override;;
+  absl::Status Write(const google::crypto::tink::Keyset& keyset) override;
+  ;
 
-  crypto::tink::util::Status
-  Write(const google::crypto::tink::EncryptedKeyset& encrypted_keyset) override;
+  absl::Status Write(
+      const google::crypto::tink::EncryptedKeyset& encrypted_keyset) override;
 
  private:
   explicit JsonKeysetWriter(std::unique_ptr<std::ostream> destination_stream)

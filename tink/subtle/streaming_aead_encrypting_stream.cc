@@ -44,7 +44,7 @@ namespace {
 // In case of errors returns the first non-OK status of
 // output_stream->Next()-operation.
 
-util::Status WriteToStream(const std::vector<uint8_t>& contents,
+absl::Status WriteToStream(const std::vector<uint8_t>& contents,
                            OutputStream* output_stream) {
   void* buffer;
   int pos = 0;
@@ -63,13 +63,14 @@ util::Status WriteToStream(const std::vector<uint8_t>& contents,
   if (available_space > available_bytes) {
     output_stream->BackUp(available_space - available_bytes);
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // anonymous namespace
 
 // static
-StatusOr<std::unique_ptr<OutputStream>> StreamingAeadEncryptingStream::New(
+absl::StatusOr<std::unique_ptr<OutputStream>>
+StreamingAeadEncryptingStream::New(
     std::unique_ptr<StreamSegmentEncrypter> segment_encrypter,
     std::unique_ptr<OutputStream> ciphertext_destination) {
   if (segment_encrypter == nullptr) {
@@ -99,11 +100,11 @@ StatusOr<std::unique_ptr<OutputStream>> StreamingAeadEncryptingStream::New(
   enc_stream->is_first_segment_ = true;
   enc_stream->count_backedup_ = first_segment_size;
   enc_stream->pt_buffer_offset_ = 0;
-  enc_stream->status_ = util::OkStatus();
+  enc_stream->status_ = absl::OkStatus();
   return {std::move(enc_stream)};
 }
 
-StatusOr<int> StreamingAeadEncryptingStream::Next(void** data) {
+absl::StatusOr<int> StreamingAeadEncryptingStream::Next(void** data) {
   if (!status_.ok()) return status_;
 
   // The first call to Next().

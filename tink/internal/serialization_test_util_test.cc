@@ -16,12 +16,14 @@
 
 #include "tink/internal/serialization_test_util.h"
 
+#include <memory>
 #include <string_view>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/types/optional.h"
 #include "tink/insecure_secret_key_access.h"
+#include "tink/key.h"
 #include "tink/parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
@@ -62,6 +64,13 @@ TEST(NoIdParamsTest, ParseAndSerialize) {
               IsOkAndHolds(NoIdSerialization()));
 }
 
+TEST(NoIdParamsTest, Clone) {
+  NoIdParams params;
+  std::unique_ptr<Parameters> cloned_params = params.Clone();
+
+  EXPECT_THAT(*cloned_params, Eq(params));
+}
+
 TEST(IdParamsTest, Create) {
   IdParams params;
 
@@ -74,6 +83,13 @@ TEST(IdParamsTest, ParseAndSerialize) {
   EXPECT_THAT(ParseIdParams(IdParamsSerialization()), IsOkAndHolds(IdParams()));
   EXPECT_THAT(SerializeIdParams(IdParams()),
               IsOkAndHolds(IdParamsSerialization()));
+}
+
+TEST(IdParamsTest, Clone) {
+  NoIdParams params;
+  std::unique_ptr<Parameters> cloned_params = params.Clone();
+
+  EXPECT_THAT(*cloned_params, Eq(params));
 }
 
 TEST(NoIdKeyTest, Create) {
@@ -92,6 +108,13 @@ TEST(NoIdKeyTest, ParseAndSerialize) {
               IsOkAndHolds(NoIdSerialization()));
 }
 
+TEST(NoIdKeyTest, Clone) {
+  NoIdKey key;
+  std::unique_ptr<Key> cloned_key = key.Clone();
+
+  EXPECT_THAT(*cloned_key, Eq(key));
+}
+
 TEST(IdKeyTest, Create) {
   IdKey key(123);
 
@@ -103,11 +126,18 @@ TEST(IdKeyTest, Create) {
 }
 
 TEST(IdKeyTest, ParseAndSerialize) {
-  EXPECT_THAT(ParseIdKey(IdKeySerialization(123),
-                         InsecureSecretKeyAccess::Get()),
-              IsOkAndHolds(IdKey(123)));
+  EXPECT_THAT(
+      ParseIdKey(IdKeySerialization(123), InsecureSecretKeyAccess::Get()),
+      IsOkAndHolds(IdKey(123)));
   EXPECT_THAT(SerializeIdKey(IdKey(123), InsecureSecretKeyAccess::Get()),
               IsOkAndHolds(IdKeySerialization(123)));
+}
+
+TEST(IdKeyTest, Clone) {
+  IdKey key(123);
+  std::unique_ptr<Key> cloned_key = key.Clone();
+
+  EXPECT_THAT(*cloned_key, Eq(key));
 }
 
 }  // namespace

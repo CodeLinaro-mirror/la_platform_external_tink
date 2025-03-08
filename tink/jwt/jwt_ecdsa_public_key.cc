@@ -45,7 +45,7 @@ namespace crypto {
 namespace tink {
 namespace {
 
-util::Status ValidatePublicPoint(JwtEcdsaParameters::Algorithm algorithm,
+absl::Status ValidatePublicPoint(JwtEcdsaParameters::Algorithm algorithm,
                                  const EcPoint& point) {
   subtle::EllipticCurveType curve;
   switch (algorithm) {
@@ -59,30 +59,30 @@ util::Status ValidatePublicPoint(JwtEcdsaParameters::Algorithm algorithm,
       curve = subtle::EllipticCurveType::NIST_P521;
       break;
     default:
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           absl::StrCat("Unknown algorithm: ", algorithm));
   }
   // Internally calls EC_POINT_set_affine_coordinates_GFp, which, in BoringSSL
   // and OpenSSL versions > 1.1.0, already checks if the point is on the curve.
-  util::StatusOr<internal::SslUniquePtr<EC_POINT>> ec_point =
+  absl::StatusOr<internal::SslUniquePtr<EC_POINT>> ec_point =
       internal::GetEcPoint(curve, point.GetX().GetValue(),
                            point.GetY().GetValue());
   if (!ec_point.ok()) {
     return ec_point.status();
   }
 
-  util::StatusOr<internal::SslUniquePtr<EC_GROUP>> group =
+  absl::StatusOr<internal::SslUniquePtr<EC_GROUP>> group =
       internal::EcGroupFromCurveType(curve);
   if (!group.ok()) {
     return group.status();
   }
   if (EC_POINT_is_on_curve(group->get(), ec_point->get(), /*ctx=*/nullptr) !=
       1) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         absl::StrCat("EC public point is not on curve ",
                                      subtle::EnumToString(curve)));
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -111,12 +111,12 @@ JwtEcdsaPublicKey::Builder& JwtEcdsaPublicKey::Builder::SetCustomKid(
   return *this;
 }
 
-util::StatusOr<absl::optional<std::string>>
+absl::StatusOr<absl::optional<std::string>>
 JwtEcdsaPublicKey::Builder::ComputeKid() {
   if (parameters_->GetKidStrategy() ==
       JwtEcdsaParameters::KidStrategy::kBase64EncodedKeyId) {
     if (custom_kid_.has_value()) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "Custom kid must not be set for KidStrategy::kBase64EncodedKeyId.");
     }
@@ -129,7 +129,7 @@ JwtEcdsaPublicKey::Builder::ComputeKid() {
   if (parameters_->GetKidStrategy() ==
       JwtEcdsaParameters::KidStrategy::kCustom) {
     if (!custom_kid_.has_value()) {
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "Custom kid must be set for KidStrategy::kCustom.");
     }
     return custom_kid_;
@@ -137,44 +137,44 @@ JwtEcdsaPublicKey::Builder::ComputeKid() {
   if (parameters_->GetKidStrategy() ==
       JwtEcdsaParameters::KidStrategy::kIgnored) {
     if (custom_kid_.has_value()) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "Custom kid must not be set for KidStrategy::kIgnored.");
     }
     return absl::nullopt;
   }
-  return util::Status(absl::StatusCode::kInvalidArgument,
+  return absl::Status(absl::StatusCode::kInvalidArgument,
                       "Unknown kid strategy.");
 }
 
-util::StatusOr<JwtEcdsaPublicKey> JwtEcdsaPublicKey::Builder::Build(
+absl::StatusOr<JwtEcdsaPublicKey> JwtEcdsaPublicKey::Builder::Build(
     PartialKeyAccessToken token) {
   if (!parameters_.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "JWT ECDSA parameters must be specified.");
   }
   if (!public_point_.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "JWT ECDSA public point must be specified.");
   }
-  util::Status point_validation =
+  absl::Status point_validation =
       ValidatePublicPoint(parameters_->GetAlgorithm(), *public_point_);
   if (!point_validation.ok()) {
     return point_validation;
   }
   if (parameters_->HasIdRequirement() && !id_requirement_.has_value()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create key without ID requirement with parameters with ID "
         "requirement");
   }
   if (!parameters_->HasIdRequirement() && id_requirement_.has_value()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create key with ID requirement with parameters without ID "
         "requirement");
   }
-  util::StatusOr<absl::optional<std::string>> kid = ComputeKid();
+  absl::StatusOr<absl::optional<std::string>> kid = ComputeKid();
   if (!kid.ok()) {
     return kid.status();
   }

@@ -16,6 +16,7 @@
 
 #include "tink/jwt/jwt_ecdsa_private_key.h"
 
+#include <memory>
 #include <string>
 
 #include "gmock/gmock.h"
@@ -28,6 +29,7 @@
 #include "tink/internal/ec_util.h"
 #include "tink/jwt/jwt_ecdsa_parameters.h"
 #include "tink/jwt/jwt_ecdsa_public_key.h"
+#include "tink/key.h"
 #include "tink/partial_key_access.h"
 #include "tink/restricted_big_integer.h"
 #include "tink/subtle/common_enums.h"
@@ -80,11 +82,11 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(JwtEcdsaPrivateKeyTest, CreateSucceeds) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<JwtEcdsaParameters> parameters =
+  absl::StatusOr<JwtEcdsaParameters> parameters =
       JwtEcdsaParameters::Create(test_case.kid_strategy, test_case.algorithm);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key = internal::NewEcKey(test_case.curve);
+  absl::StatusOr<internal::EcKey> ec_key = internal::NewEcKey(test_case.curve);
   ASSERT_THAT(ec_key, IsOk());
 
   EcPoint public_point(BigInteger(ec_key->pub_x), BigInteger(ec_key->pub_y));
@@ -98,7 +100,7 @@ TEST_P(JwtEcdsaPrivateKeyTest, CreateSucceeds) {
   if (test_case.custom_kid.has_value()) {
     builder.SetCustomKid(*test_case.custom_kid);
   }
-  util::StatusOr<JwtEcdsaPublicKey> public_key =
+  absl::StatusOr<JwtEcdsaPublicKey> public_key =
       builder.Build(GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
 
@@ -106,7 +108,7 @@ TEST_P(JwtEcdsaPrivateKeyTest, CreateSucceeds) {
       RestrictedBigInteger(util::SecretDataAsStringView(ec_key->priv),
                            InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<JwtEcdsaPrivateKey> private_key = JwtEcdsaPrivateKey::Create(
+  absl::StatusOr<JwtEcdsaPrivateKey> private_key = JwtEcdsaPrivateKey::Create(
       *public_key, private_key_value, GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
 
@@ -119,25 +121,25 @@ TEST_P(JwtEcdsaPrivateKeyTest, CreateSucceeds) {
 }
 
 TEST(JwtEcdsaPrivateKeyTest, CreateMismatchedKeyPairFails) {
-  util::StatusOr<JwtEcdsaParameters> parameters =
+  absl::StatusOr<JwtEcdsaParameters> parameters =
       JwtEcdsaParameters::Create(JwtEcdsaParameters::KidStrategy::kIgnored,
                                  JwtEcdsaParameters::Algorithm::kEs256);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key1 =
+  absl::StatusOr<internal::EcKey> ec_key1 =
       internal::NewEcKey(subtle::EllipticCurveType::NIST_P256);
   ASSERT_THAT(ec_key1, IsOk());
 
   EcPoint public_point(BigInteger(ec_key1->pub_x), BigInteger(ec_key1->pub_y));
 
-  util::StatusOr<JwtEcdsaPublicKey> public_key1 =
+  absl::StatusOr<JwtEcdsaPublicKey> public_key1 =
       JwtEcdsaPublicKey::Builder()
           .SetParameters(*parameters)
           .SetPublicPoint(public_point)
           .Build(GetPartialKeyAccess());
   ASSERT_THAT(public_key1, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key2 =
+  absl::StatusOr<internal::EcKey> ec_key2 =
       internal::NewEcKey(subtle::EllipticCurveType::NIST_P256);
   ASSERT_THAT(ec_key2, IsOk());
 
@@ -155,11 +157,11 @@ TEST(JwtEcdsaPrivateKeyTest, CreateMismatchedKeyPairFails) {
 TEST_P(JwtEcdsaPrivateKeyTest, PrivateKeyEquals) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<JwtEcdsaParameters> parameters =
+  absl::StatusOr<JwtEcdsaParameters> parameters =
       JwtEcdsaParameters::Create(test_case.kid_strategy, test_case.algorithm);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key = internal::NewEcKey(test_case.curve);
+  absl::StatusOr<internal::EcKey> ec_key = internal::NewEcKey(test_case.curve);
   ASSERT_THAT(ec_key, IsOk());
 
   EcPoint public_point(BigInteger(ec_key->pub_x), BigInteger(ec_key->pub_y));
@@ -173,7 +175,7 @@ TEST_P(JwtEcdsaPrivateKeyTest, PrivateKeyEquals) {
   if (test_case.custom_kid.has_value()) {
     builder.SetCustomKid(*test_case.custom_kid);
   }
-  util::StatusOr<JwtEcdsaPublicKey> public_key =
+  absl::StatusOr<JwtEcdsaPublicKey> public_key =
       builder.Build(GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
 
@@ -181,11 +183,11 @@ TEST_P(JwtEcdsaPrivateKeyTest, PrivateKeyEquals) {
       RestrictedBigInteger(util::SecretDataAsStringView(ec_key->priv),
                            InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<JwtEcdsaPrivateKey> private_key = JwtEcdsaPrivateKey::Create(
+  absl::StatusOr<JwtEcdsaPrivateKey> private_key = JwtEcdsaPrivateKey::Create(
       *public_key, private_key_value, GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
 
-  util::StatusOr<JwtEcdsaPrivateKey> other_private_key =
+  absl::StatusOr<JwtEcdsaPrivateKey> other_private_key =
       JwtEcdsaPrivateKey::Create(*public_key, private_key_value,
                                  GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
@@ -197,18 +199,18 @@ TEST_P(JwtEcdsaPrivateKeyTest, PrivateKeyEquals) {
 }
 
 TEST(JwtEcdsaPrivateKeyTest, DifferentPublicKeyNotEqual) {
-  util::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
+  absl::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
       JwtEcdsaParameters::KidStrategy::kBase64EncodedKeyId,
       JwtEcdsaParameters::Algorithm::kEs256);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key =
+  absl::StatusOr<internal::EcKey> ec_key =
       internal::NewEcKey(subtle::EllipticCurveType::NIST_P256);
   ASSERT_THAT(ec_key, IsOk());
 
   EcPoint public_point(BigInteger(ec_key->pub_x), BigInteger(ec_key->pub_y));
 
-  util::StatusOr<JwtEcdsaPublicKey> public_key1 =
+  absl::StatusOr<JwtEcdsaPublicKey> public_key1 =
       JwtEcdsaPublicKey::Builder()
           .SetParameters(*parameters)
           .SetPublicPoint(public_point)
@@ -216,7 +218,7 @@ TEST(JwtEcdsaPrivateKeyTest, DifferentPublicKeyNotEqual) {
           .Build(GetPartialKeyAccess());
   ASSERT_THAT(public_key1, IsOk());
 
-  util::StatusOr<JwtEcdsaPublicKey> public_key2 =
+  absl::StatusOr<JwtEcdsaPublicKey> public_key2 =
       JwtEcdsaPublicKey::Builder()
           .SetParameters(*parameters)
           .SetPublicPoint(public_point)
@@ -228,11 +230,11 @@ TEST(JwtEcdsaPrivateKeyTest, DifferentPublicKeyNotEqual) {
       RestrictedBigInteger(util::SecretDataAsStringView(ec_key->priv),
                            InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<JwtEcdsaPrivateKey> private_key = JwtEcdsaPrivateKey::Create(
+  absl::StatusOr<JwtEcdsaPrivateKey> private_key = JwtEcdsaPrivateKey::Create(
       *public_key1, private_key_value, GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
 
-  util::StatusOr<JwtEcdsaPrivateKey> other_private_key =
+  absl::StatusOr<JwtEcdsaPrivateKey> other_private_key =
       JwtEcdsaPrivateKey::Create(*public_key2, private_key_value,
                                  GetPartialKeyAccess());
   ASSERT_THAT(other_private_key, IsOk());
@@ -244,18 +246,18 @@ TEST(JwtEcdsaPrivateKeyTest, DifferentPublicKeyNotEqual) {
 }
 
 TEST(JwtEcdsaPrivateKeyTest, DifferentKeyTypesNotEqual) {
-  util::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
+  absl::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
       JwtEcdsaParameters::KidStrategy::kBase64EncodedKeyId,
       JwtEcdsaParameters::Algorithm::kEs256);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<internal::EcKey> ec_key =
+  absl::StatusOr<internal::EcKey> ec_key =
       internal::NewEcKey(subtle::EllipticCurveType::NIST_P256);
   ASSERT_THAT(ec_key, IsOk());
 
   EcPoint public_point(BigInteger(ec_key->pub_x), BigInteger(ec_key->pub_y));
 
-  util::StatusOr<JwtEcdsaPublicKey> public_key =
+  absl::StatusOr<JwtEcdsaPublicKey> public_key =
       JwtEcdsaPublicKey::Builder()
           .SetParameters(*parameters)
           .SetPublicPoint(public_point)
@@ -267,7 +269,7 @@ TEST(JwtEcdsaPrivateKeyTest, DifferentKeyTypesNotEqual) {
       RestrictedBigInteger(util::SecretDataAsStringView(ec_key->priv),
                            InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<JwtEcdsaPrivateKey> private_key = JwtEcdsaPrivateKey::Create(
+  absl::StatusOr<JwtEcdsaPrivateKey> private_key = JwtEcdsaPrivateKey::Create(
       *public_key, private_key_value, GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
 
@@ -275,6 +277,40 @@ TEST(JwtEcdsaPrivateKeyTest, DifferentKeyTypesNotEqual) {
   EXPECT_TRUE(*public_key != *private_key);
   EXPECT_FALSE(*private_key == *public_key);
   EXPECT_FALSE(*public_key == *private_key);
+}
+
+TEST(JwtEcdsaPrivateKeyTest, Clone) {
+  absl::StatusOr<JwtEcdsaParameters> parameters = JwtEcdsaParameters::Create(
+      JwtEcdsaParameters::KidStrategy::kBase64EncodedKeyId,
+      JwtEcdsaParameters::Algorithm::kEs256);
+  ASSERT_THAT(parameters, IsOk());
+
+  absl::StatusOr<internal::EcKey> ec_key =
+      internal::NewEcKey(subtle::EllipticCurveType::NIST_P256);
+  ASSERT_THAT(ec_key, IsOk());
+
+  EcPoint public_point(BigInteger(ec_key->pub_x), BigInteger(ec_key->pub_y));
+
+  absl::StatusOr<JwtEcdsaPublicKey> public_key =
+      JwtEcdsaPublicKey::Builder()
+          .SetParameters(*parameters)
+          .SetPublicPoint(public_point)
+          .SetIdRequirement(123)
+          .Build(GetPartialKeyAccess());
+  ASSERT_THAT(public_key, IsOk());
+
+  RestrictedBigInteger private_key_value =
+      RestrictedBigInteger(util::SecretDataAsStringView(ec_key->priv),
+                           InsecureSecretKeyAccess::Get());
+
+  absl::StatusOr<JwtEcdsaPrivateKey> private_key = JwtEcdsaPrivateKey::Create(
+      *public_key, private_key_value, GetPartialKeyAccess());
+  ASSERT_THAT(private_key, IsOk());
+
+  // Clone the key.
+  std::unique_ptr<Key> cloned_key = private_key->Clone();
+
+  ASSERT_THAT(*cloned_key, Eq(*private_key));
 }
 
 }  // namespace

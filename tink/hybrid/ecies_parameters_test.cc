@@ -23,7 +23,6 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "tink/aead/aes_ctr_hmac_aead_parameters.h"
@@ -33,6 +32,7 @@
 #include "tink/parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
+#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
@@ -92,9 +92,9 @@ TEST_P(EciesParametersTest, Build) {
   EciesParameters::DemId dem_id;
   VariantWithIdRequirement variant;
   std::tie(curve_type, hash_type, point_format, dem_id, variant) = GetParam();
-  const std::string salt = absl::HexStringToBytes(kSalt);
+  const std::string salt = test::HexDecodeOrDie(kSalt);
 
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(curve_type)
           .SetHashType(hash_type)
@@ -115,12 +115,12 @@ TEST_P(EciesParametersTest, Build) {
 }
 
 TEST(EciesParametersTest, BuildWithX25519Curve) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kX25519)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kTink)
           .Build();
   ASSERT_THAT(parameters, IsOk());
@@ -132,13 +132,13 @@ TEST(EciesParametersTest, BuildWithX25519Curve) {
   EXPECT_THAT(parameters->GetNistCurvePointFormat(), Eq(absl::nullopt));
   EXPECT_THAT(parameters->GetDemId(),
               Eq(EciesParameters::DemId::kAes256SivRaw));
-  EXPECT_THAT(parameters->GetSalt(), Eq(absl::HexStringToBytes(kSalt)));
+  EXPECT_THAT(parameters->GetSalt(), Eq(test::HexDecodeOrDie(kSalt)));
   EXPECT_THAT(parameters->GetVariant(), Eq(EciesParameters::Variant::kTink));
   EXPECT_THAT(parameters->HasIdRequirement(), IsTrue());
 }
 
 TEST(EciesParametersTest, BuildWithInvalidCurveTypeFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(
               EciesParameters::CurveType::
@@ -146,7 +146,7 @@ TEST(EciesParametersTest, BuildWithInvalidCurveTypeFails) {
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
 
@@ -155,12 +155,12 @@ TEST(EciesParametersTest, BuildWithInvalidCurveTypeFails) {
 }
 
 TEST(EciesParametersTest, BuildWithoutCurveTypeFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
 
@@ -169,7 +169,7 @@ TEST(EciesParametersTest, BuildWithoutCurveTypeFails) {
 }
 
 TEST(EciesParametersTest, BuildWithInvalidHashTypeFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(
@@ -177,7 +177,7 @@ TEST(EciesParametersTest, BuildWithInvalidHashTypeFails) {
                   kDoNotUseInsteadUseDefaultWhenWritingSwitchStatements)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
 
@@ -186,12 +186,12 @@ TEST(EciesParametersTest, BuildWithInvalidHashTypeFails) {
 }
 
 TEST(EciesParametersTest, BuildWithoutHashTypeFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
 
@@ -200,7 +200,7 @@ TEST(EciesParametersTest, BuildWithoutHashTypeFails) {
 }
 
 TEST(EciesParametersTest, BuildWithInvalidPointFormatFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
@@ -208,7 +208,7 @@ TEST(EciesParametersTest, BuildWithInvalidPointFormatFails) {
               EciesParameters::PointFormat::
                   kDoNotUseInsteadUseDefaultWhenWritingSwitchStatements)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
 
@@ -217,12 +217,12 @@ TEST(EciesParametersTest, BuildWithInvalidPointFormatFails) {
 }
 
 TEST(EciesParametersTest, BuildWithNistCurveWithoutPointFormatFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
 
@@ -231,13 +231,13 @@ TEST(EciesParametersTest, BuildWithNistCurveWithoutPointFormatFails) {
 }
 
 TEST(EciesParametersTest, BuildWithX25519WithPointFormatFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kX25519)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kCompressed)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
 
@@ -246,14 +246,14 @@ TEST(EciesParametersTest, BuildWithX25519WithPointFormatFails) {
 }
 
 TEST(EciesParametersTest, BuildWithInvalidDemIdFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::
                         kDoNotUseInsteadUseDefaultWhenWritingSwitchStatements)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
 
@@ -262,12 +262,12 @@ TEST(EciesParametersTest, BuildWithInvalidDemIdFails) {
 }
 
 TEST(EciesParametersTest, BuildWithoutDemIdFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
 
@@ -276,7 +276,7 @@ TEST(EciesParametersTest, BuildWithoutDemIdFails) {
 }
 
 TEST(EciesParametersTest, BuildWithEmptySaltSucceeds) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
@@ -291,7 +291,7 @@ TEST(EciesParametersTest, BuildWithEmptySaltSucceeds) {
 }
 
 TEST(EciesParametersTest, BuildWithoutSaltSucceeds) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
@@ -305,13 +305,13 @@ TEST(EciesParametersTest, BuildWithoutSaltSucceeds) {
 }
 
 TEST(EciesParametersTest, BuildWithInvalidVariantFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::
                           kDoNotUseInsteadUseDefaultWhenWritingSwitchStatements)
           .Build();
@@ -321,13 +321,13 @@ TEST(EciesParametersTest, BuildWithInvalidVariantFails) {
 }
 
 TEST(EciesParametersTest, BuildWithoutVariantFails) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .Build();
 
   EXPECT_THAT(parameters.status(),
@@ -335,13 +335,13 @@ TEST(EciesParametersTest, BuildWithoutVariantFails) {
 }
 
 TEST(Ed25519ParametersTest, CopyConstructor) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kTink)
           .Build();
   ASSERT_THAT(parameters, IsOk());
@@ -353,19 +353,19 @@ TEST(Ed25519ParametersTest, CopyConstructor) {
   EXPECT_THAT(copy.GetNistCurvePointFormat(),
               Eq(EciesParameters::PointFormat::kUncompressed));
   EXPECT_THAT(copy.GetDemId(), Eq(EciesParameters::DemId::kAes256SivRaw));
-  EXPECT_THAT(copy.GetSalt(), Eq(absl::HexStringToBytes(kSalt)));
+  EXPECT_THAT(copy.GetSalt(), Eq(test::HexDecodeOrDie(kSalt)));
   EXPECT_THAT(copy.GetVariant(), Eq(EciesParameters::Variant::kTink));
   EXPECT_THAT(copy.HasIdRequirement(), IsTrue());
 }
 
 TEST(Ed25519ParametersTest, CopyAssignment) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kTink)
           .Build();
   ASSERT_THAT(parameters, IsOk());
@@ -377,7 +377,7 @@ TEST(Ed25519ParametersTest, CopyAssignment) {
   EXPECT_THAT(copy.GetNistCurvePointFormat(),
               Eq(EciesParameters::PointFormat::kUncompressed));
   EXPECT_THAT(copy.GetDemId(), Eq(EciesParameters::DemId::kAes256SivRaw));
-  EXPECT_THAT(copy.GetSalt(), Eq(absl::HexStringToBytes(kSalt)));
+  EXPECT_THAT(copy.GetSalt(), Eq(test::HexDecodeOrDie(kSalt)));
   EXPECT_THAT(copy.GetVariant(), Eq(EciesParameters::Variant::kTink));
   EXPECT_THAT(copy.HasIdRequirement(), IsTrue());
 }
@@ -389,9 +389,9 @@ TEST_P(EciesParametersTest, ParametersEqual) {
   EciesParameters::DemId dem_id;
   VariantWithIdRequirement variant;
   std::tie(curve_type, hash_type, point_format, dem_id, variant) = GetParam();
-  const std::string salt = absl::HexStringToBytes(kSalt);
+  const std::string salt = test::HexDecodeOrDie(kSalt);
 
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(curve_type)
           .SetHashType(hash_type)
@@ -402,7 +402,7 @@ TEST_P(EciesParametersTest, ParametersEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<EciesParameters> other_parameters =
+  absl::StatusOr<EciesParameters> other_parameters =
       EciesParameters::Builder()
           .SetCurveType(curve_type)
           .SetHashType(hash_type)
@@ -420,24 +420,24 @@ TEST_P(EciesParametersTest, ParametersEqual) {
 }
 
 TEST(EciesParametersTest, CurveTypeNotEqual) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<EciesParameters> other_parameters =
+  absl::StatusOr<EciesParameters> other_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP384)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(other_parameters, IsOk());
@@ -447,24 +447,24 @@ TEST(EciesParametersTest, CurveTypeNotEqual) {
 }
 
 TEST(EciesParametersTest, HashTypeNotEqual) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<EciesParameters> other_parameters =
+  absl::StatusOr<EciesParameters> other_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha384)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(other_parameters, IsOk());
@@ -474,24 +474,24 @@ TEST(EciesParametersTest, HashTypeNotEqual) {
 }
 
 TEST(EciesParametersTest, PointFormatNotEqual) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<EciesParameters> other_parameters =
+  absl::StatusOr<EciesParameters> other_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kCompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(other_parameters, IsOk());
@@ -501,24 +501,24 @@ TEST(EciesParametersTest, PointFormatNotEqual) {
 }
 
 TEST(EciesParametersTest, DemIdNotEqual) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<EciesParameters> other_parameters =
+  absl::StatusOr<EciesParameters> other_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes128GcmRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(other_parameters, IsOk());
@@ -528,24 +528,24 @@ TEST(EciesParametersTest, DemIdNotEqual) {
 }
 
 TEST(EciesParametersTest, SaltNotEqual) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes("2024ab"))
+          .SetSalt(test::HexDecodeOrDie("2024ab"))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<EciesParameters> other_parameters =
+  absl::StatusOr<EciesParameters> other_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes("2024xy"))
+          .SetSalt(test::HexDecodeOrDie("2024cd"))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(other_parameters, IsOk());
@@ -555,7 +555,7 @@ TEST(EciesParametersTest, SaltNotEqual) {
 }
 
 TEST(EciesParametersTest, EmptySaltAndNoSaltEqual) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
@@ -565,13 +565,13 @@ TEST(EciesParametersTest, EmptySaltAndNoSaltEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<EciesParameters> other_parameters =
+  absl::StatusOr<EciesParameters> other_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(""))
+          .SetSalt(test::HexDecodeOrDie(""))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(other_parameters, IsOk());
@@ -581,24 +581,24 @@ TEST(EciesParametersTest, EmptySaltAndNoSaltEqual) {
 }
 
 TEST(EciesParametersTest, VariantNotEqual) {
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<EciesParameters> other_parameters =
+  absl::StatusOr<EciesParameters> other_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kTink)
           .Build();
   ASSERT_THAT(other_parameters, IsOk());
@@ -624,18 +624,18 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(AesGcmDemTest, CreateAesGcmRawDemParameters) {
   AesGcmDemTestCase test_case = GetParam();
 
-  util::StatusOr<EciesParameters> ecies_parameters =
+  absl::StatusOr<EciesParameters> ecies_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(test_case.dem_id)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(ecies_parameters, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> dem_parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> dem_parameters =
       ecies_parameters->CreateDemParameters();
   ASSERT_THAT(dem_parameters, IsOk());
 
@@ -651,18 +651,18 @@ TEST_P(AesGcmDemTest, CreateAesGcmRawDemParameters) {
 }
 
 TEST(EciesParametersTest, CreateAes256SivRawDemParameters) {
-  util::StatusOr<EciesParameters> ecies_parameters =
+  absl::StatusOr<EciesParameters> ecies_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kAes256SivRaw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(ecies_parameters, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> dem_parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> dem_parameters =
       ecies_parameters->CreateDemParameters();
   ASSERT_THAT(dem_parameters, IsOk());
 
@@ -675,18 +675,18 @@ TEST(EciesParametersTest, CreateAes256SivRawDemParameters) {
 }
 
 TEST(EciesParametersTest, CreateXChaCha20Poly1305RawDemParameters) {
-  util::StatusOr<EciesParameters> ecies_parameters =
+  absl::StatusOr<EciesParameters> ecies_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(EciesParameters::DemId::kXChaCha20Poly1305Raw)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(ecies_parameters, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> dem_parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> dem_parameters =
       ecies_parameters->CreateDemParameters();
   ASSERT_THAT(dem_parameters, IsOk());
 
@@ -719,18 +719,18 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(AesCtrHmacDemTest, CreateAesCtrHmacSha256RawDemParameters) {
   AesCtrHmacDemTestCase test_case = GetParam();
 
-  util::StatusOr<EciesParameters> ecies_parameters =
+  absl::StatusOr<EciesParameters> ecies_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kNistP256)
           .SetHashType(EciesParameters::HashType::kSha256)
           .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
           .SetDemId(test_case.dem_id)
-          .SetSalt(absl::HexStringToBytes(kSalt))
+          .SetSalt(test::HexDecodeOrDie(kSalt))
           .SetVariant(EciesParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(ecies_parameters, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> dem_parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> dem_parameters =
       ecies_parameters->CreateDemParameters();
   ASSERT_THAT(dem_parameters, IsOk());
 
@@ -748,6 +748,23 @@ TEST_P(AesCtrHmacDemTest, CreateAesCtrHmacSha256RawDemParameters) {
               Eq(AesCtrHmacAeadParameters::HashType::kSha256));
   EXPECT_THAT(aes_ctr_hmac_aead_parameters->GetVariant(),
               Eq(AesCtrHmacAeadParameters::Variant::kNoPrefix));
+}
+
+TEST(EciesParametersTest, Clone) {
+  absl::StatusOr<EciesParameters> ecies_parameters =
+      EciesParameters::Builder()
+          .SetCurveType(EciesParameters::CurveType::kNistP256)
+          .SetHashType(EciesParameters::HashType::kSha256)
+          .SetNistCurvePointFormat(EciesParameters::PointFormat::kUncompressed)
+          .SetDemId(EciesParameters::DemId::kXChaCha20Poly1305Raw)
+          .SetSalt(test::HexDecodeOrDie(kSalt))
+          .SetVariant(EciesParameters::Variant::kNoPrefix)
+          .Build();
+  ASSERT_THAT(ecies_parameters, IsOk());
+
+  std::unique_ptr<Parameters> cloned_ecies_parameters =
+      ecies_parameters->Clone();
+  ASSERT_THAT(*cloned_ecies_parameters, Eq(*ecies_parameters));
 }
 
 }  // namespace

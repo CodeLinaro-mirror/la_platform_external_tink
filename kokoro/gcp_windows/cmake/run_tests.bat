@@ -29,16 +29,16 @@ if %errorlevel% neq 0 EXIT /B 1
 MKDIR "build"
 CD "build"
 
-%CMAKE_BIN% -G"Visual Studio 16 2019" -A x64 -S .. -B . ^
+%CMAKE_BIN% -G"Visual Studio 17 2022" -A x64 -S .. -B . ^
   -DCMAKE_CXX_STANDARD_REQUIRED=ON ^
-  -DCMAKE_CXX_STANDARD=14 ^
+  -DCMAKE_CXX_STANDARD=17 ^
   -DTINK_BUILD_TESTS=ON
 IF %errorlevel% neq 0 EXIT /B 1
 
-%CMAKE_BIN% --build . --config Debug --parallel 4
+%CMAKE_BIN% --build . --config Release --parallel 8
 IF %errorlevel% neq 0 EXIT /B 1
 
-%CTEST_BIN% -C Debug
+%CTEST_BIN% -C Release
 IF %errorlevel% neq 0 EXIT /B 1
 
 EXIT /B 0

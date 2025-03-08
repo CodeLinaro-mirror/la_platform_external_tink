@@ -20,7 +20,6 @@
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "tink/jwt/internal/jwt_public_key_sign_impl.h"
@@ -28,6 +27,7 @@
 #include "tink/jwt/internal/jwt_rsa_ssa_pss_verify_key_manager.h"
 #include "tink/public_key_sign.h"
 #include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
 
 namespace crypto {
@@ -40,15 +40,16 @@ using google::crypto::tink::JwtRsaSsaPssKeyFormat;
 using google::crypto::tink::JwtRsaSsaPssPrivateKey;
 using google::crypto::tink::JwtRsaSsaPssPublicKey;
 
-StatusOr<std::unique_ptr<JwtPublicKeySignInternal>>
+absl::StatusOr<std::unique_ptr<JwtPublicKeySignInternal>>
 JwtRsaSsaPssSignKeyManager::PublicKeySignFactory::Create(
     const JwtRsaSsaPssPrivateKey& jwt_rsa_ssa_pss_private_key) const {
-  StatusOr<std::string> name = JwtRsaSsaPssVerifyKeyManager::AlgorithmName(
-      jwt_rsa_ssa_pss_private_key.public_key().algorithm());
+  absl::StatusOr<std::string> name =
+      JwtRsaSsaPssVerifyKeyManager::AlgorithmName(
+          jwt_rsa_ssa_pss_private_key.public_key().algorithm());
   if (!name.ok()) {
     return name.status();
   }
-  StatusOr<std::unique_ptr<PublicKeySign>> sign =
+  absl::StatusOr<std::unique_ptr<PublicKeySign>> sign =
       raw_key_manager_.GetPrimitive<PublicKeySign>(jwt_rsa_ssa_pss_private_key);
   if (!sign.ok()) {
     return sign.status();
@@ -57,10 +58,11 @@ JwtRsaSsaPssSignKeyManager::PublicKeySignFactory::Create(
   if (jwt_rsa_ssa_pss_private_key.public_key().has_custom_kid()) {
     custom_kid = jwt_rsa_ssa_pss_private_key.public_key().custom_kid().value();
   }
-  std::unique_ptr<JwtPublicKeySignInternal> jwt_public_key_sign =
-      absl::make_unique<jwt_internal::JwtPublicKeySignImpl>(*std::move(sign),
-                                                            *name, custom_kid);
-  return std::move(jwt_public_key_sign);
+  if (custom_kid.has_value()) {
+    return jwt_internal::JwtPublicKeySignImpl::RawWithCustomKid(
+        *std::move(sign), *name, *custom_kid);
+  }
+  return jwt_internal::JwtPublicKeySignImpl::Raw(*std::move(sign), *name);
 }
 
 uint32_t JwtRsaSsaPssSignKeyManager::get_version() const {
@@ -76,7 +78,7 @@ const std::string& JwtRsaSsaPssSignKeyManager::get_key_type() const {
   return raw_key_manager_.get_key_type();
 }
 
-StatusOr<JwtRsaSsaPssPrivateKey> JwtRsaSsaPssSignKeyManager::CreateKey(
+absl::StatusOr<JwtRsaSsaPssPrivateKey> JwtRsaSsaPssSignKeyManager::CreateKey(
     const JwtRsaSsaPssKeyFormat& key_format) const {
   return raw_key_manager_.CreateKey(key_format);
 }
@@ -91,7 +93,7 @@ Status JwtRsaSsaPssSignKeyManager::ValidateKeyFormat(
   return raw_key_manager_.ValidateKeyFormat(key_format);
 }
 
-StatusOr<JwtRsaSsaPssPublicKey> JwtRsaSsaPssSignKeyManager::GetPublicKey(
+absl::StatusOr<JwtRsaSsaPssPublicKey> JwtRsaSsaPssSignKeyManager::GetPublicKey(
     const JwtRsaSsaPssPrivateKey& private_key) const {
   return raw_key_manager_.GetPublicKey(private_key);
 }

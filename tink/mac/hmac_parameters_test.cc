@@ -18,10 +18,12 @@
 
 #include <memory>
 #include <tuple>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "tink/parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 
@@ -31,9 +33,7 @@ namespace {
 
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
-using ::testing::Combine;
 using ::testing::Eq;
-using ::testing::Range;
 using ::testing::TestWithParam;
 using ::testing::Values;
 
@@ -75,7 +75,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(HmacParametersCreateTest, Create) {
   CreateTestCase test_case = GetParam();
 
-  util::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
       test_case.key_size, test_case.cryptographic_tag_size, test_case.hash_type,
       test_case.variant);
   ASSERT_THAT(parameters, IsOk());
@@ -166,46 +166,78 @@ TEST(HmacParametersTest, CreateWithInvalidTagSizeFails) {
 }
 
 TEST(HmacParametersTest, CopyConstructor) {
-  util::StatusOr<HmacParameters> parameters = HmacParameters::Create(
-      /*key_size_in_bytes=*/32,
-      /*cryptographic_tag_size_in_bytes=*/12, HmacParameters::HashType::kSha256,
-      HmacParameters::Variant::kTink);
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+      /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
+      HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
   HmacParameters copy(*parameters);
-  EXPECT_THAT(copy.GetVariant(), Eq(parameters->GetVariant()));
-  EXPECT_THAT(copy.CryptographicTagSizeInBytes(),
-              Eq(parameters->CryptographicTagSizeInBytes()));
-  EXPECT_THAT(copy.TotalTagSizeInBytes(),
-              Eq(parameters->TotalTagSizeInBytes()));
-  EXPECT_THAT(copy.GetHashType(), Eq(parameters->GetHashType()));
-  EXPECT_THAT(copy.HasIdRequirement(), Eq(parameters->HasIdRequirement()));
+
+  EXPECT_THAT(copy.KeySizeInBytes(), 32);
+  EXPECT_THAT(copy.CryptographicTagSizeInBytes(), Eq(16));
+  EXPECT_THAT(copy.GetHashType(), Eq(HmacParameters::HashType::kSha256));
+  EXPECT_THAT(copy.GetVariant(), Eq(HmacParameters::Variant::kTink));
 }
 
 TEST(HmacParametersTest, CopyAssignment) {
-  util::StatusOr<HmacParameters> parameters = HmacParameters::Create(
-      /*key_size_in_bytes=*/32,
-      /*cryptographic_tag_size_in_bytes=*/12, HmacParameters::HashType::kSha512,
-      HmacParameters::Variant::kTink);
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+      /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
+      HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
   ASSERT_THAT(parameters, IsOk());
 
-  HmacParameters copy = *parameters;
-  EXPECT_THAT(copy.GetVariant(), Eq(parameters->GetVariant()));
-  EXPECT_THAT(copy.CryptographicTagSizeInBytes(),
-              Eq(parameters->CryptographicTagSizeInBytes()));
-  EXPECT_THAT(copy.TotalTagSizeInBytes(),
-              Eq(parameters->TotalTagSizeInBytes()));
-  EXPECT_THAT(copy.GetHashType(), Eq(parameters->GetHashType()));
-  EXPECT_THAT(copy.HasIdRequirement(), Eq(parameters->HasIdRequirement()));
+  absl::StatusOr<HmacParameters> copy = HmacParameters::Create(
+      /*key_size_in_bytes=*/16, /*cryptographic_tag_size_in_bytes=*/12,
+      HmacParameters::HashType::kSha224, HmacParameters::Variant::kNoPrefix);
+  ASSERT_THAT(copy, IsOk());
+
+  *copy = *parameters;
+
+  EXPECT_THAT(copy->KeySizeInBytes(), 32);
+  EXPECT_THAT(copy->CryptographicTagSizeInBytes(), Eq(16));
+  EXPECT_THAT(copy->GetHashType(), Eq(HmacParameters::HashType::kSha256));
+  EXPECT_THAT(copy->GetVariant(), Eq(HmacParameters::Variant::kTink));
+}
+
+TEST(HmacParametersTest, MoveConstructor) {
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+      /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
+      HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  HmacParameters move(std::move(*parameters));
+
+  EXPECT_THAT(move.KeySizeInBytes(), 32);
+  EXPECT_THAT(move.CryptographicTagSizeInBytes(), Eq(16));
+  EXPECT_THAT(move.GetHashType(), Eq(HmacParameters::HashType::kSha256));
+  EXPECT_THAT(move.GetVariant(), Eq(HmacParameters::Variant::kTink));
+}
+
+TEST(HmacParametersTest, MoveAssignment) {
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+      /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
+      HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  absl::StatusOr<HmacParameters> move = HmacParameters::Create(
+      /*key_size_in_bytes=*/16, /*cryptographic_tag_size_in_bytes=*/12,
+      HmacParameters::HashType::kSha224, HmacParameters::Variant::kNoPrefix);
+  ASSERT_THAT(move, IsOk());
+
+  *move = std::move(*parameters);
+
+  EXPECT_THAT(move->KeySizeInBytes(), 32);
+  EXPECT_THAT(move->CryptographicTagSizeInBytes(), Eq(16));
+  EXPECT_THAT(move->GetHashType(), Eq(HmacParameters::HashType::kSha256));
+  EXPECT_THAT(move->GetVariant(), Eq(HmacParameters::Variant::kTink));
 }
 
 TEST(HmacParametersTest, ParametersEquals) {
-  util::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
       /*key_size_in_bytes=*/16,
       /*cryptographic_tag_size_in_bytes=*/10, HmacParameters::HashType::kSha224,
       HmacParameters::Variant::kNoPrefix);
   ASSERT_THAT(parameters, IsOk());
-  util::StatusOr<HmacParameters> other_parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> other_parameters = HmacParameters::Create(
       /*key_size_in_bytes=*/16,
       /*cryptographic_tag_size_in_bytes=*/10, HmacParameters::HashType::kSha224,
       HmacParameters::Variant::kNoPrefix);
@@ -218,13 +250,13 @@ TEST(HmacParametersTest, ParametersEquals) {
 }
 
 TEST(HmacParametersTest, KeySizeNotEqual) {
-  util::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
       /*key_size_in_bytes=*/16,
       /*cryptographic_tag_size_in_bytes=*/10, HmacParameters::HashType::kSha224,
       HmacParameters::Variant::kNoPrefix);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<HmacParameters> other_parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> other_parameters = HmacParameters::Create(
       /*key_size_in_bytes=*/32,
       /*cryptographic_tag_size_in_bytes=*/10, HmacParameters::HashType::kSha224,
       HmacParameters::Variant::kNoPrefix);
@@ -235,13 +267,13 @@ TEST(HmacParametersTest, KeySizeNotEqual) {
 }
 
 TEST(HmacParametersTest, HashTypeNotEqual) {
-  util::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
       /*key_size_in_bytes=*/32,
       /*cryptographic_tag_size_in_bytes=*/10, HmacParameters::HashType::kSha256,
       HmacParameters::Variant::kNoPrefix);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<HmacParameters> other_parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> other_parameters = HmacParameters::Create(
       /*key_size_in_bytes=*/32,
       /*cryptographic_tag_size_in_bytes=*/10, HmacParameters::HashType::kSha512,
       HmacParameters::Variant::kNoPrefix);
@@ -252,13 +284,13 @@ TEST(HmacParametersTest, HashTypeNotEqual) {
 }
 
 TEST(HmacParametersTest, TagSizeNotEqual) {
-  util::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
       /*key_size_in_bytes=*/32,
       /*cryptographic_tag_size_in_bytes=*/10, HmacParameters::HashType::kSha256,
       HmacParameters::Variant::kNoPrefix);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<HmacParameters> other_parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> other_parameters = HmacParameters::Create(
       /*key_size_in_bytes=*/32,
       /*cryptographic_tag_size_in_bytes=*/11, HmacParameters::HashType::kSha256,
       HmacParameters::Variant::kNoPrefix);
@@ -269,13 +301,13 @@ TEST(HmacParametersTest, TagSizeNotEqual) {
 }
 
 TEST(HmacParametersTest, VariantNotEqual) {
-  util::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
       /*key_size_in_bytes=*/32,
       /*cryptographic_tag_size_in_bytes=*/10, HmacParameters::HashType::kSha256,
       HmacParameters::Variant::kNoPrefix);
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<HmacParameters> other_parameters = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> other_parameters = HmacParameters::Create(
       /*key_size_in_bytes=*/32,
       /*cryptographic_tag_size_in_bytes=*/10, HmacParameters::HashType::kSha256,
       HmacParameters::Variant::kTink);
@@ -283,6 +315,17 @@ TEST(HmacParametersTest, VariantNotEqual) {
 
   EXPECT_TRUE(*parameters != *other_parameters);
   EXPECT_FALSE(*parameters == *other_parameters);
+}
+
+TEST(HmacParametersTest, Clone) {
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+      /*key_size_in_bytes=*/32,
+      /*cryptographic_tag_size_in_bytes=*/10, HmacParameters::HashType::kSha256,
+      HmacParameters::Variant::kNoPrefix);
+  ASSERT_THAT(parameters, IsOk());
+
+  std::unique_ptr<Parameters> cloned_parameters = parameters->Clone();
+  ASSERT_THAT(*cloned_parameters, Eq(*parameters));
 }
 
 }  // namespace

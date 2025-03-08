@@ -51,11 +51,11 @@ namespace {
 using ::crypto::tink::test::IsOk;
 
 // Opens test file `filename` and returns a file descriptor to it.
-util::StatusOr<int> OpenTestFileToRead(absl::string_view filename) {
+absl::StatusOr<int> OpenTestFileToRead(absl::string_view filename) {
   std::string full_filename = absl::StrCat(test::TmpDir(), "/", filename);
   int fd = open(full_filename.c_str(), O_RDONLY);
   if (fd == -1) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         absl::StrCat("Cannot open file ", full_filename,
                                      " error: ", std::strerror(errno)));
   }
@@ -65,7 +65,7 @@ util::StatusOr<int> OpenTestFileToRead(absl::string_view filename) {
 // Reads the entire 'ra_stream' in chunks of size 'chunk_size',
 // until no more bytes can be read, and puts the read bytes into 'contents'.
 // Returns the status of the last ra_stream->Next()-operation.
-util::Status ReadAll(RandomAccessStream* ra_stream, int chunk_size,
+absl::Status ReadAll(RandomAccessStream* ra_stream, int chunk_size,
                      std::string* contents) {
   contents->clear();
   auto buffer = std::move(Buffer::New(chunk_size).value());
@@ -115,7 +115,7 @@ TEST(FileRandomAccessStreamTest, ReadingStreams) {
         "_file.bin");
     ASSERT_THAT(crypto::tink::internal::CreateTestFile(filename, file_contents),
                 IsOk());
-    util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+    absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
     ASSERT_THAT(input_fd.status(), IsOk());
     EXPECT_EQ(stream_size, file_contents.size());
     auto ra_stream = absl::make_unique<util::FileRandomAccessStream>(*input_fd);
@@ -138,7 +138,7 @@ TEST(FileRandomAccessStreamTest, ReadingStreamsTillLastByte) {
         "_file.bin");
     ASSERT_THAT(crypto::tink::internal::CreateTestFile(filename, file_contents),
                 IsOk());
-    util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+    absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
     ASSERT_THAT(input_fd.status(), IsOk());
     EXPECT_EQ(stream_size, file_contents.size());
     auto ra_stream = absl::make_unique<util::FileRandomAccessStream>(*input_fd);
@@ -162,7 +162,7 @@ TEST(FileRandomAccessStreamTest, ConcurrentReads) {
         "_file.bin");
     ASSERT_THAT(crypto::tink::internal::CreateTestFile(filename, file_contents),
                 IsOk());
-    util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+    absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
     ASSERT_THAT(input_fd.status(), IsOk());
     EXPECT_EQ(stream_size, file_contents.size());
     auto ra_stream = absl::make_unique<util::FileRandomAccessStream>(*input_fd);
@@ -189,7 +189,7 @@ TEST(FileRandomAccessStreamTest, NegativeReadPosition) {
         "_file.bin");
     ASSERT_THAT(crypto::tink::internal::CreateTestFile(filename, file_contents),
                 IsOk());
-    util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+    absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
     ASSERT_THAT(input_fd.status(), IsOk());
     auto ra_stream = absl::make_unique<util::FileRandomAccessStream>(*input_fd);
     int count = 42;
@@ -212,7 +212,7 @@ TEST(FileRandomAccessStreamTest, NotPositiveReadCount) {
         "_file.bin");
     ASSERT_THAT(crypto::tink::internal::CreateTestFile(filename, file_contents),
                 IsOk());
-    util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+    absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
     ASSERT_THAT(input_fd.status(), IsOk());
     auto ra_stream = absl::make_unique<util::FileRandomAccessStream>(*input_fd);
     auto buffer = std::move(Buffer::New(42).value());
@@ -234,7 +234,7 @@ TEST(FileRandomAccessStreamTest, ReadPositionAfterEof) {
         "_file.bin");
     ASSERT_THAT(crypto::tink::internal::CreateTestFile(filename, file_contents),
                 IsOk());
-    util::StatusOr<int> input_fd = OpenTestFileToRead(filename);
+    absl::StatusOr<int> input_fd = OpenTestFileToRead(filename);
     ASSERT_THAT(input_fd.status(), IsOk());
     auto ra_stream = absl::make_unique<util::FileRandomAccessStream>(*input_fd);
     int count = 42;

@@ -16,13 +16,16 @@
 
 #include "tink/aead/chacha20_poly1305_key.h"
 
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
 #include "absl/types/optional.h"
 #include "tink/aead/chacha20_poly1305_parameters.h"
+#include "tink/key.h"
 #include "tink/partial_key_access.h"
 #include "tink/restricted_data.h"
 #include "tink/util/statusor.h"
@@ -58,12 +61,12 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(ChaCha20Poly1305KeyTest, CreateSucceeds) {
   TestCase test_case = GetParam();
 
-  util::StatusOr<ChaCha20Poly1305Parameters> params =
+  absl::StatusOr<ChaCha20Poly1305Parameters> params =
       ChaCha20Poly1305Parameters::Create(test_case.variant);
   ASSERT_THAT(params, IsOk());
 
   RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
-  util::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
+  absl::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
       test_case.variant, secret, test_case.id_requirement,
       GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
@@ -115,12 +118,12 @@ TEST_P(ChaCha20Poly1305KeyTest, KeyEquals) {
 
   RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
 
-  util::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
+  absl::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
       test_case.variant, secret, test_case.id_requirement,
       GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<ChaCha20Poly1305Key> other_key = ChaCha20Poly1305Key::Create(
+  absl::StatusOr<ChaCha20Poly1305Key> other_key = ChaCha20Poly1305Key::Create(
       test_case.variant, secret, test_case.id_requirement,
       GetPartialKeyAccess());
   ASSERT_THAT(other_key, IsOk());
@@ -134,12 +137,12 @@ TEST_P(ChaCha20Poly1305KeyTest, KeyEquals) {
 TEST(ChaCha20Poly1305KeyTest, DifferentVariantNotEqual) {
   RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
 
-  util::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
+  absl::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
       ChaCha20Poly1305Parameters::Variant::kCrunchy, secret,
       /*id_requirement=*/0x01020304, GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<ChaCha20Poly1305Key> other_key = ChaCha20Poly1305Key::Create(
+  absl::StatusOr<ChaCha20Poly1305Key> other_key = ChaCha20Poly1305Key::Create(
       ChaCha20Poly1305Parameters::Variant::kTink, secret,
       /*id_requirement=*/0x01020304, GetPartialKeyAccess());
   ASSERT_THAT(other_key, IsOk());
@@ -154,12 +157,12 @@ TEST(ChaCha20Poly1305KeyTest, DifferentSecretDataNotEqual) {
   RestrictedData secret1 = RestrictedData(/*num_random_bytes=*/32);
   RestrictedData secret2 = RestrictedData(/*num_random_bytes=*/32);
 
-  util::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
+  absl::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
       ChaCha20Poly1305Parameters::Variant::kTink, secret1,
       /*id_requirement=*/0x01020304, GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<ChaCha20Poly1305Key> other_key = ChaCha20Poly1305Key::Create(
+  absl::StatusOr<ChaCha20Poly1305Key> other_key = ChaCha20Poly1305Key::Create(
       ChaCha20Poly1305Parameters::Variant::kTink, secret2,
       /*id_requirement=*/0x01020304, GetPartialKeyAccess());
   ASSERT_THAT(other_key, IsOk());
@@ -173,12 +176,12 @@ TEST(ChaCha20Poly1305KeyTest, DifferentSecretDataNotEqual) {
 TEST(ChaCha20Poly1305KeyTest, DifferentIdRequirementNotEqual) {
   RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
 
-  util::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
+  absl::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
       ChaCha20Poly1305Parameters::Variant::kTink, secret,
       /*id_requirement=*/0x01020304, GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<ChaCha20Poly1305Key> other_key = ChaCha20Poly1305Key::Create(
+  absl::StatusOr<ChaCha20Poly1305Key> other_key = ChaCha20Poly1305Key::Create(
       ChaCha20Poly1305Parameters::Variant::kTink, secret,
       /*id_requirement=*/0x02030405, GetPartialKeyAccess());
   ASSERT_THAT(other_key, IsOk());
@@ -187,6 +190,98 @@ TEST(ChaCha20Poly1305KeyTest, DifferentIdRequirementNotEqual) {
   EXPECT_TRUE(*other_key != *key);
   EXPECT_FALSE(*key == *other_key);
   EXPECT_FALSE(*other_key == *key);
+}
+
+TEST(ChaCha20Poly1305KeyTest, CopyConstructor) {
+  RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
+      ChaCha20Poly1305Parameters::Variant::kTink, secret,
+      /*id_requirement=*/0x123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  ChaCha20Poly1305Key copy(*key);
+
+  EXPECT_THAT(copy.GetParameters().GetVariant(),
+              Eq(ChaCha20Poly1305Parameters::Variant::kTink));
+  EXPECT_THAT(copy.GetKeyBytes(GetPartialKeyAccess()), Eq(secret));
+  EXPECT_THAT(copy.GetIdRequirement(), Eq(0x123));
+}
+
+TEST(ChaCha20Poly1305KeyTest, CopyAssignment) {
+  RestrictedData secret1 = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
+      ChaCha20Poly1305Parameters::Variant::kTink, secret1,
+      /*id_requirement=*/0x123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  RestrictedData secret2 = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<ChaCha20Poly1305Key> copy = ChaCha20Poly1305Key::Create(
+      ChaCha20Poly1305Parameters::Variant::kNoPrefix, secret2,
+      /*id_requirement=*/absl::nullopt, GetPartialKeyAccess());
+  ASSERT_THAT(copy, IsOk());
+
+  *copy = *key;
+
+  EXPECT_THAT(copy->GetParameters().GetVariant(),
+              Eq(ChaCha20Poly1305Parameters::Variant::kTink));
+  EXPECT_THAT(copy->GetKeyBytes(GetPartialKeyAccess()), Eq(secret1));
+  EXPECT_THAT(copy->GetIdRequirement(), Eq(0x123));
+}
+
+TEST(ChaCha20Poly1305KeyTest, MoveConstructor) {
+  RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
+      ChaCha20Poly1305Parameters::Variant::kTink, secret,
+      /*id_requirement=*/0x123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  ChaCha20Poly1305Key move = std::move(*key);
+
+  EXPECT_THAT(move.GetParameters().GetVariant(),
+              Eq(ChaCha20Poly1305Parameters::Variant::kTink));
+  EXPECT_THAT(move.GetKeyBytes(GetPartialKeyAccess()), Eq(secret));
+  EXPECT_THAT(move.GetIdRequirement(), Eq(0x123));
+}
+
+TEST(ChaCha20Poly1305KeyTest, MoveAssignment) {
+  RestrictedData secret1 = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
+      ChaCha20Poly1305Parameters::Variant::kTink, secret1,
+      /*id_requirement=*/0x123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  RestrictedData secret2 = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<ChaCha20Poly1305Key> move = ChaCha20Poly1305Key::Create(
+      ChaCha20Poly1305Parameters::Variant::kNoPrefix, secret2,
+      /*id_requirement=*/absl::nullopt, GetPartialKeyAccess());
+  ASSERT_THAT(move, IsOk());
+
+  *move = std::move(*key);
+
+  EXPECT_THAT(move->GetParameters().GetVariant(),
+              Eq(ChaCha20Poly1305Parameters::Variant::kTink));
+  EXPECT_THAT(move->GetKeyBytes(GetPartialKeyAccess()), Eq(secret1));
+  EXPECT_THAT(move->GetIdRequirement(), Eq(0x123));
+}
+
+TEST(ChaCha20Poly1305KeyTest, Clone) {
+  RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<ChaCha20Poly1305Key> key = ChaCha20Poly1305Key::Create(
+      ChaCha20Poly1305Parameters::Variant::kTink, secret,
+      /*id_requirement=*/0x123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  // Clone the key.
+  std::unique_ptr<Key> cloned_key = key->Clone();
+
+  ASSERT_THAT(*cloned_key, Eq(*key));
 }
 
 }  // namespace

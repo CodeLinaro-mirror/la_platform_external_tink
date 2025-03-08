@@ -17,6 +17,8 @@
 #ifndef TINK_EXPERIMENTAL_PQCRYPTO_KEM_ML_KEM_PARAMETERS_H_
 #define TINK_EXPERIMENTAL_PQCRYPTO_KEM_ML_KEM_PARAMETERS_H_
 
+#include <memory>
+
 #include "tink/experimental/kem/kem_parameters.h"
 #include "tink/parameters.h"
 #include "tink/util/statusor.h"
@@ -49,7 +51,7 @@ class MlKemParameters : public KemParameters {
 
   // Creates ML-KEM parameters instances. The possible key sizes are 512, 768
   // and 1024, but only 768 is supported at the moment.
-  static util::StatusOr<MlKemParameters> Create(int key_size, Variant variant);
+  static absl::StatusOr<MlKemParameters> Create(int key_size, Variant variant);
 
   // Returns the ML-KEM key size (512, 768 or 1024). Only 768 is supported at
   // the moment.
@@ -59,6 +61,10 @@ class MlKemParameters : public KemParameters {
   bool HasIdRequirement() const override { return variant_ == Variant::kTink; }
 
   bool operator==(const Parameters& other) const override;
+
+  std::unique_ptr<Parameters> Clone() const override {
+    return std::make_unique<MlKemParameters>(*this);
+  }
 
  private:
   explicit MlKemParameters(int key_size, Variant variant)

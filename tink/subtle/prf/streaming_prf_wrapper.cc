@@ -50,19 +50,17 @@ class StreamingPrfSetWrapper : public StreamingPrf {
   std::unique_ptr<PrimitiveSet<StreamingPrf>> streaming_prf_set_;
 };
 
-::crypto::tink::util::StatusOr<std::unique_ptr<StreamingPrf>>
-StreamingPrfWrapper::Wrap(std::unique_ptr<PrimitiveSet<StreamingPrf>>
-                              streaming_prf_set) const  {
+absl::StatusOr<std::unique_ptr<StreamingPrf>> StreamingPrfWrapper::Wrap(
+    std::unique_ptr<PrimitiveSet<StreamingPrf>> streaming_prf_set) const {
   if (!streaming_prf_set) {
-    return crypto::tink::util::Status(
-        absl::StatusCode::kInvalidArgument,
-        "Passed in streaming_prf_set must be non-NULL");
+    return absl::Status(absl::StatusCode::kInvalidArgument,
+                        "Passed in streaming_prf_set must be non-NULL");
   }
 
   auto entries = streaming_prf_set->get_all();
 
   if (entries.size() != 1) {
-    return crypto::tink::util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("StreamingPrfWrapper can only create StreamingPrf objects "
                      "from keysets "
@@ -71,7 +69,7 @@ StreamingPrfWrapper::Wrap(std::unique_ptr<PrimitiveSet<StreamingPrf>>
   }
   auto* entry = entries[0];
   if (entry->get_status() != google::crypto::tink::KeyStatusType::ENABLED) {
-    return crypto::tink::util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("StreamingPrfWrapper can only create StreamingPrf objects "
                      "from keysets "
@@ -80,7 +78,7 @@ StreamingPrfWrapper::Wrap(std::unique_ptr<PrimitiveSet<StreamingPrf>>
   }
   if (entry->get_output_prefix_type() !=
       google::crypto::tink::OutputPrefixType::RAW) {
-    return crypto::tink::util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("StreamingPrfWrapper can only create StreamingPrf objects "
                      "from keysets with a single enabled key with "

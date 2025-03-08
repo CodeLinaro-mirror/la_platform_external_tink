@@ -17,13 +17,19 @@
 #ifndef TINK_AEAD_AES_EAX_PROTO_SERIALIZATION_H_
 #define TINK_AEAD_AES_EAX_PROTO_SERIALIZATION_H_
 
+#include "tink/aead/internal/aes_eax_proto_serialization_impl.h"
+#include "tink/internal/mutable_serialization_registry.h"
 #include "tink/util/status.h"
 
 namespace crypto {
 namespace tink {
 
-// Registers proto parsers and serializers for AES-EAX parameters and keys.
-crypto::tink::util::Status RegisterAesEaxProtoSerialization();
+// Registers proto parsers and serializers for AES-EAX parameters and
+// keys into global serialization registry.
+inline absl::Status RegisterAesEaxProtoSerialization() {
+  return internal::RegisterAesEaxProtoSerializationWithMutableRegistry(
+      internal::MutableSerializationRegistry::GlobalInstance());
+}
 
 }  // namespace tink
 }  // namespace crypto

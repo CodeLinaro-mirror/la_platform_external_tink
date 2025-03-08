@@ -203,7 +203,7 @@ TEST(DecryptingRandomAccessStreamTest, SelectiveDecryption) {
                                       ", position = ", position,
                                       ", chunk_size = ", chunk_size));
             auto buffer = std::move(util::Buffer::New(chunk_size).value());
-            util::Status status =
+            absl::Status status =
                 dec_stream->PRead(position, chunk_size, buffer.get());
             EXPECT_THAT(status,
                         testing::AnyOf(
@@ -375,7 +375,7 @@ TEST(DecryptingRandomAccessStreamTest, CallSizeBeforePReadWorks) {
         GetCiphertextSource(&(saead_set->get_primary()->get_primitive()),
                             plaintext, associated_data);
 
-    util::StatusOr<std::unique_ptr<RandomAccessStream>> dec_stream =
+    absl::StatusOr<std::unique_ptr<RandomAccessStream>> dec_stream =
         DecryptingRandomAccessStream::New(saead_set, std::move(ciphertext),
                                           associated_data);
     ASSERT_THAT(dec_stream, IsOk());

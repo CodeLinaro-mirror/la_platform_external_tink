@@ -16,6 +16,7 @@
 
 #include "tink/keyset_handle_builder.h"
 
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <set>
@@ -30,8 +31,10 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
+#include "tink/internal/call_with_core_dump_protection.h"
 #include "tink/internal/keyset_handle_builder_entry.h"
 #include "tink/key.h"
+#include "tink/key_gen_configuration.h"
 #include "tink/key_status.h"
 #include "tink/keyset_handle.h"
 #include "tink/parameters.h"
@@ -48,7 +51,7 @@ namespace {
 using ::google::crypto::tink::Keyset;
 
 void SetBuilderEntryAttributes(KeyStatus status, bool is_primary,
-                               absl::optional<int> id,
+                               absl::optional<int32_t> id,
                                KeysetHandleBuilder::Entry* entry) {
   entry->SetStatus(status);
   if (is_primary) {
@@ -94,11 +97,11 @@ KeysetHandleBuilder::Entry KeysetHandleBuilder::Entry::CreateFromParams(
   return entry;
 }
 
-util::StatusOr<int> KeysetHandleBuilder::NextIdFromKeyIdStrategy(
-    internal::KeyIdStrategy strategy, const std::set<int>& ids_so_far) {
+absl::StatusOr<int32_t> KeysetHandleBuilder::NextIdFromKeyIdStrategy(
+    internal::KeyIdStrategy strategy, const std::set<int32_t>& ids_so_far) {
   if (strategy.strategy == internal::KeyIdStrategyEnum::kFixedId) {
     if (!strategy.id_requirement.has_value()) {
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "Missing fixed id with fixed id strategy.");
     }
     return *strategy.id_requirement;
@@ -110,7 +113,7 @@ util::StatusOr<int> KeysetHandleBuilder::NextIdFromKeyIdStrategy(
     }
     return id;
   }
-  return util::Status(absl::StatusCode::kInvalidArgument,
+  return absl::Status(absl::StatusCode::kInvalidArgument,
                       "Invalid key id strategy.");
 }
 
@@ -139,17 +142,21 @@ KeysetHandleBuilder& KeysetHandleBuilder::RemoveEntry(int index) {
   return *this;
 }
 
-util::Status KeysetHandleBuilder::CheckIdAssignments() {
+absl::Status KeysetHandleBuilder::CheckIdAssignments() {
   // We only want random id entries after fixed id entries. Otherwise, we might
   // randomly pick an id that is later specified as a fixed id.
+  if (entries_.empty()) {
+    return absl::Status(absl::StatusCode::kFailedPrecondition,
+                        "Cannot build empty keyset.");
+  }
   for (int i = 0; i < entries_.size() - 1; ++i) {
     if (entries_[i].HasRandomId() && !entries_[i + 1].HasRandomId()) {
-      return util::Status(absl::StatusCode::kFailedPrecondition,
+      return absl::Status(absl::StatusCode::kFailedPrecondition,
                           "Entries with random ids may only be followed "
                           "by other entries with random ids.");
     }
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 KeysetHandleBuilder& KeysetHandleBuilder::SetMonitoringAnnotations(
@@ -159,40 +166,40 @@ KeysetHandleBuilder& KeysetHandleBuilder::SetMonitoringAnnotations(
   return *this;
 }
 
-util::StatusOr<KeysetHandle> KeysetHandleBuilder::Build() {
+absl::StatusOr<KeysetHandle> KeysetHandleBuilder::Build(
+    const KeyGenConfiguration& config) {
   if (build_called_) {
-      return util::Status(
-          absl::StatusCode::kFailedPrecondition,
-          "KeysetHandleBuilder::Build may only be called once");
+    return absl::Status(absl::StatusCode::kFailedPrecondition,
+                        "KeysetHandleBuilder::Build may only be called once");
   }
   build_called_ = true;
   util::SecretProto<Keyset> keyset;
   absl::optional<int> primary_id = absl::nullopt;
 
-  util::Status assigned_ids_status = CheckIdAssignments();
+  absl::Status assigned_ids_status = CheckIdAssignments();
   if (!assigned_ids_status.ok()) return assigned_ids_status;
 
-  std::set<int> ids_so_far;
+  std::set<int32_t> ids_so_far;
   for (KeysetHandleBuilder::Entry& entry : entries_) {
-    util::StatusOr<int> id =
+    absl::StatusOr<int> id =
         NextIdFromKeyIdStrategy(entry.GetKeyIdStrategy(), ids_so_far);
     if (!id.ok()) return id.status();
 
     if (ids_so_far.find(*id) != ids_so_far.end()) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kAlreadyExists,
           absl::StrFormat("Next id %d is already used in the keyset.", *id));
     }
     ids_so_far.insert(*id);
 
-    util::StatusOr<util::SecretProto<Keyset::Key>> key =
-        entry.CreateKeysetKey(*id);
+    absl::StatusOr<util::SecretProto<Keyset::Key>> key =
+        entry.CreateKeysetKey(*id, config);
     if (!key.ok()) return key.status();
 
-    *keyset->add_key() = **key;
+    internal::CallWithCoreDumpProtection([&]() { *keyset->add_key() = **key; });
     if (entry.IsPrimary()) {
       if (primary_id.has_value()) {
-        return util::Status(
+        return absl::Status(
             absl::StatusCode::kInternal,
             "Primary is already set in this keyset (should never happen since "
             "primary is cleared when a new primary is added).");
@@ -202,12 +209,15 @@ util::StatusOr<KeysetHandle> KeysetHandleBuilder::Build() {
   }
 
   if (!primary_id.has_value()) {
-    return util::Status(absl::StatusCode::kFailedPrecondition,
+    return absl::Status(absl::StatusCode::kFailedPrecondition,
                         "No primary set in this keyset.");
   }
   keyset->set_primary_key_id(*primary_id);
-  util::StatusOr<std::vector<std::shared_ptr<const KeysetHandle::Entry>>>
+  absl::StatusOr<std::vector<std::shared_ptr<const KeysetHandle::Entry>>>
       entries = KeysetHandle::GetEntriesFromKeyset(*keyset);
+  if (!entries.ok()) {
+    return entries.status();
+  }
   return KeysetHandle(std::move(keyset), *std::move(entries),
                       monitoring_annotations_);
 }

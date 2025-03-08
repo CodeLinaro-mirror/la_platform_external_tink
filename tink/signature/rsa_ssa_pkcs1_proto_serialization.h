@@ -17,13 +17,13 @@
 #ifndef TINK_SIGNATURE_RSA_SSA_PKCS1_PROTO_SERIALIZATION_H_
 #define TINK_SIGNATURE_RSA_SSA_PKCS1_PROTO_SERIALIZATION_H_
 
-#include "tink/util/status.h"
+#include "absl/status/status.h"
 
 namespace crypto {
 namespace tink {
 
 // Registers proto parsers and serializers for RsaSsaPkcs1 parameters and keys.
-crypto::tink::util::Status RegisterRsaSsaPkcs1ProtoSerialization();
+absl::Status RegisterRsaSsaPkcs1ProtoSerialization();
 
 }  // namespace tink
 }  // namespace crypto

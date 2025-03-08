@@ -17,6 +17,8 @@
 #ifndef TINK_AEAD_XCHACHA20_POLY1305_KEY_H_
 #define TINK_AEAD_XCHACHA20_POLY1305_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -43,7 +45,7 @@ class XChaCha20Poly1305Key : public AeadKey {
 
   // Creates a new XChaCha20-Poly1305 key. If `variant` uses a prefix, then the
   // id is used to compute this prefix.
-  static util::StatusOr<XChaCha20Poly1305Key> Create(
+  static absl::StatusOr<XChaCha20Poly1305Key> Create(
       XChaCha20Poly1305Parameters::Variant variant,
       const RestrictedData& key_bytes, absl::optional<int> id_requirement,
       PartialKeyAccessToken token);
@@ -59,11 +61,15 @@ class XChaCha20Poly1305Key : public AeadKey {
     return parameters_;
   }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<XChaCha20Poly1305Key>(*this);
+  }
 
  private:
   XChaCha20Poly1305Key(const XChaCha20Poly1305Parameters& parameters,

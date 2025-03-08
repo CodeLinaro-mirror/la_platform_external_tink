@@ -25,8 +25,10 @@
 #include "absl/functional/any_invocable.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "tink/internal/configuration_helper.h"
 #include "tink/internal/keyset_wrapper.h"
 #include "tink/internal/keyset_wrapper_impl.h"
+#include "tink/key.h"
 #include "tink/primitive_wrapper.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -56,14 +58,17 @@ class KeysetWrapperStore {
   KeysetWrapperStore(KeysetWrapperStore&& other) = default;
   KeysetWrapperStore& operator=(KeysetWrapperStore&& other) = default;
 
-  // Adds a crypto::tink::PrimitiveWrapper and `primitive_getter` function to
-  // KeysetWrapperStore.
+  // Adds a crypto::tink::PrimitiveWrapper and two `primitive_getter` functions
+  // (one using the legacy KeyData API and one using the key objects) to
+  // KeysetWrapperStore. The wrapper would first check the key objects API, and
+  // if that fails, it would fall back to the using KeyData.
   template <class P, class Q>
-  crypto::tink::util::Status Add(
+  absl::Status Add(
       std::unique_ptr<PrimitiveWrapper<P, Q>> wrapper,
       absl::AnyInvocable<crypto::tink::util::StatusOr<std::unique_ptr<P>>(
           const google::crypto::tink::KeyData& key_data) const>
-          primitive_getter);
+          primitive_getter,
+      PrimitiveGetterFn<P, Key> primitive_getter_from_key);
 
   // Gets the PrimitiveWrapper that produces primitive P. This is a legacy
   // function.
@@ -85,19 +90,21 @@ class KeysetWrapperStore {
         std::unique_ptr<PrimitiveWrapper<P, Q>> wrapper,
         absl::AnyInvocable<crypto::tink::util::StatusOr<std::unique_ptr<P>>(
             const google::crypto::tink::KeyData& key_data) const>
-            primitive_getter)
+            primitive_getter,
+        PrimitiveGetterFn<P, Key> primitive_getter_from_key)
         : is_same_primitive_wrapping_(std::is_same<P, Q>::value),
           wrapper_type_index_(std::type_index(typeid(*wrapper))),
           q_type_index_(std::type_index(typeid(Q))) {
       keyset_wrapper_ = absl::make_unique<KeysetWrapperImpl<P, Q>>(
-          wrapper.get(), std::move(primitive_getter));
+          wrapper.get(), std::move(primitive_getter),
+          std::move(primitive_getter_from_key));
       original_wrapper_ = std::move(wrapper);
     }
 
     template <typename Q>
     crypto::tink::util::StatusOr<const KeysetWrapper<Q>*> Get() const {
       if (q_type_index_ != std::type_index(typeid(Q))) {
-        return crypto::tink::util::Status(
+        return absl::Status(
             absl::StatusCode::kInternal,
             "RegistryImpl::KeysetWrapper() called with wrong type");
       }
@@ -112,13 +119,13 @@ class KeysetWrapperStore {
         // This happens if a user uses a legacy method (like Registry::Wrap)
         // directly or has a custom key manager for a primitive which has a
         // PrimitiveWrapper<P,Q> with P != Q.
-        return crypto::tink::util::Status(
+        return absl::Status(
             absl::StatusCode::kFailedPrecondition,
             absl::StrCat("Cannot use primitive type ", typeid(P).name(),
                          " with a custom key manager."));
       }
       if (q_type_index_ != std::type_index(typeid(P))) {
-        return crypto::tink::util::Status(
+        return absl::Status(
             absl::StatusCode::kInternal,
             "RegistryImpl::LegacyWrapper() called with wrong type");
       }
@@ -153,29 +160,31 @@ class KeysetWrapperStore {
 };
 
 template <class P, class Q>
-crypto::tink::util::Status KeysetWrapperStore::Add(
+absl::Status KeysetWrapperStore::Add(
     std::unique_ptr<PrimitiveWrapper<P, Q>> wrapper,
     absl::AnyInvocable<crypto::tink::util::StatusOr<std::unique_ptr<P>>(
         const google::crypto::tink::KeyData& key_data) const>
-        primitive_getter) {
+        primitive_getter,
+    PrimitiveGetterFn<P, Key> primitive_getter_from_key) {
   if (wrapper == nullptr) {
-    return crypto::tink::util::Status(absl::StatusCode::kInvalidArgument,
-                                      "Parameter 'wrapper' must be non-null.");
+    return absl::Status(absl::StatusCode::kInvalidArgument,
+                        "Parameter 'wrapper' must be non-null.");
   }
   auto it = primitive_to_info_.find(std::type_index(typeid(Q)));
   if (it != primitive_to_info_.end()) {
     if (!it->second.HasSameType(*wrapper)) {
-      return util::Status(absl::StatusCode::kAlreadyExists,
+      return absl::Status(absl::StatusCode::kAlreadyExists,
                           "A wrapper named for this primitive already exists.");
     }
-    return crypto::tink::util::OkStatus();
+    return absl::OkStatus();
   }
 
   primitive_to_info_.insert(
       {std::type_index(typeid(Q)),
-       Info(std::move(wrapper), std::move(primitive_getter))});
+       Info(std::move(wrapper), std::move(primitive_getter),
+            std::move(primitive_getter_from_key))});
 
-  return crypto::tink::util::OkStatus();
+  return absl::OkStatus();
 }
 
 template <class P>
@@ -183,7 +192,7 @@ crypto::tink::util::StatusOr<const PrimitiveWrapper<P, P>*>
 KeysetWrapperStore::GetPrimitiveWrapper() const {
   auto it = primitive_to_info_.find(std::type_index(typeid(P)));
   if (it == primitive_to_info_.end()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kNotFound,
         absl::StrCat("No wrapper registered for type ", typeid(P).name()));
   }
@@ -195,7 +204,7 @@ crypto::tink::util::StatusOr<const KeysetWrapper<P>*> KeysetWrapperStore::Get()
     const {
   auto it = primitive_to_info_.find(std::type_index(typeid(P)));
   if (it == primitive_to_info_.end()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kNotFound,
         absl::StrCat("No wrapper registered for type ", typeid(P).name()));
   }

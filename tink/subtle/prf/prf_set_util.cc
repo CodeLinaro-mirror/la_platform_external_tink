@@ -24,10 +24,12 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "tink/internal/dfsan_forwarders.h"
+#include "tink/mac/internal/stateful_mac.h"
 #include "tink/prf/prf_set.h"
-#include "tink/subtle/mac/stateful_mac.h"
 #include "tink/subtle/prf/streaming_prf.h"
 #include "tink/util/input_stream_util.h"
+#include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
@@ -40,7 +42,7 @@ class PrfFromStreamingPrf : public Prf {
  public:
   explicit PrfFromStreamingPrf(std::unique_ptr<StreamingPrf> streaming_prf)
       : streaming_prf_(std::move(streaming_prf)) {}
-  util::StatusOr<std::string> Compute(absl::string_view input,
+  absl::StatusOr<std::string> Compute(absl::string_view input,
                                       size_t output_length) const override {
     auto inputstream = streaming_prf_->ComputePrf(input);
     auto output_result = ReadBytesFromStream(output_length, inputstream.get());
@@ -58,9 +60,9 @@ class PrfFromStreamingPrf : public Prf {
 class PrfFromStatefulMacFactory : public Prf {
  public:
   explicit PrfFromStatefulMacFactory(
-      std::unique_ptr<StatefulMacFactory> stateful_mac_factory)
+      std::unique_ptr<internal::StatefulMacFactory> stateful_mac_factory)
       : stateful_mac_factory_(std::move(stateful_mac_factory)) {}
-  util::StatusOr<std::string> Compute(absl::string_view input,
+  absl::StatusOr<std::string> Compute(absl::string_view input,
                                       size_t output_length) const override {
     auto stateful_mac_result = stateful_mac_factory_->Create();
     if (!stateful_mac_result.ok()) {
@@ -71,22 +73,25 @@ class PrfFromStatefulMacFactory : public Prf {
     if (!status.ok()) {
       return status;
     }
-    auto output_result = stateful_mac->Finalize();
-    if (!output_result.ok()) {
-      return output_result.status();
+    absl::StatusOr<util::SecretData> output =
+        stateful_mac->FinalizeAsSecretData();
+    if (!output.ok()) {
+      return output.status();
     }
-    std::string output = std::move(output_result.value());
-    if (output.size() < output_length) {
-      return util::Status(
+    // Clear the label on output -- this can now be given out.
+    internal::DfsanClearLabel(output->data(), output->size());
+    if (output->size() < output_length) {
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
-          absl::StrCat("PRF only supports outputs up to ", output.size(),
+          absl::StrCat("PRF only supports outputs up to ", output->size(),
                        " bytes, but ", output_length, " bytes were requested"));
     }
-    return output.substr(0, output_length);
+    return std::string(
+        util::SecretDataAsStringView(*output).substr(0, output_length));
   }
 
  private:
-  std::unique_ptr<StatefulMacFactory> stateful_mac_factory_;
+  std::unique_ptr<internal::StatefulMacFactory> stateful_mac_factory_;
 };
 
 }  // namespace
@@ -97,7 +102,7 @@ std::unique_ptr<Prf> CreatePrfFromStreamingPrf(
 }
 
 std::unique_ptr<Prf> CreatePrfFromStatefulMacFactory(
-    std::unique_ptr<StatefulMacFactory> stateful_mac_factory) {
+    std::unique_ptr<internal::StatefulMacFactory> stateful_mac_factory) {
   return absl::make_unique<PrfFromStatefulMacFactory>(
       std::move(stateful_mac_factory));
 }

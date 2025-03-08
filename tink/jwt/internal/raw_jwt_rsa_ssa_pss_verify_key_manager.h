@@ -27,8 +27,6 @@
 #include "tink/internal/fips_utils.h"
 #include "tink/public_key_verify.h"
 #include "tink/util/constants.h"
-#include "tink/util/errors.h"
-#include "tink/util/protobuf_helper.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "proto/common.pb.h"
@@ -43,7 +41,7 @@ class RawJwtRsaSsaPssVerifyKeyManager
                             List<PublicKeyVerify>> {
  public:
   class PublicKeyVerifyFactory : public PrimitiveFactory<PublicKeyVerify> {
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
+    absl::StatusOr<std::unique_ptr<PublicKeyVerify>> Create(
         const google::crypto::tink::JwtRsaSsaPssPublicKey&
             rsa_ssa_pss_public_key) const override;
   };
@@ -60,7 +58,7 @@ class RawJwtRsaSsaPssVerifyKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::JwtRsaSsaPssPublicKey& key) const override;
 
   internal::FipsCompatibility FipsStatus() const override {
@@ -68,14 +66,13 @@ class RawJwtRsaSsaPssVerifyKeyManager
   }
 
  private:
-  static crypto::tink::util::Status ValidateAlgorithm(
+  static absl::Status ValidateAlgorithm(
       const google::crypto::tink::JwtRsaSsaPssAlgorithm& algorithm);
 
-  static crypto::tink::util::StatusOr<google::crypto::tink::HashType>
-  HashForPssAlgorithm(
+  static absl::StatusOr<google::crypto::tink::HashType> HashForPssAlgorithm(
       const google::crypto::tink::JwtRsaSsaPssAlgorithm& algorithm);
 
-  static crypto::tink::util::StatusOr<int> SaltLengthForPssAlgorithm(
+  static absl::StatusOr<int> SaltLengthForPssAlgorithm(
       const google::crypto::tink::JwtRsaSsaPssAlgorithm& algorithm);
 
   const std::string key_type_ =

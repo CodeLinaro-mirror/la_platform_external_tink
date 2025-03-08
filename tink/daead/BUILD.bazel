@@ -120,6 +120,7 @@ cc_library(
     name = "deterministic_aead_parameters",
     hdrs = ["deterministic_aead_parameters.h"],
     include_prefix = "tink/daead",
+    visibility = ["//visibility:public"],
     deps = ["//tink:parameters"],
 )
 
@@ -127,6 +128,7 @@ cc_library(
     name = "deterministic_aead_key",
     hdrs = ["deterministic_aead_key.h"],
     include_prefix = "tink/daead",
+    visibility = ["//visibility:public"],
     deps = [
         ":deterministic_aead_parameters",
         "//tink:key",
@@ -139,6 +141,7 @@ cc_library(
     srcs = ["aes_siv_parameters.cc"],
     hdrs = ["aes_siv_parameters.h"],
     include_prefix = "tink/daead",
+    visibility = ["//visibility:public"],
     deps = [
         ":deterministic_aead_parameters",
         "//tink:parameters",
@@ -154,13 +157,14 @@ cc_library(
     srcs = ["aes_siv_key.cc"],
     hdrs = ["aes_siv_key.h"],
     include_prefix = "tink/daead",
+    visibility = ["//visibility:public"],
     deps = [
         ":aes_siv_parameters",
         ":deterministic_aead_key",
         "//tink:key",
         "//tink:partial_key_access_token",
         "//tink:restricted_data",
-        "//tink/subtle:subtle_util",
+        "//tink/internal:output_prefix_util",
         "//tink/util:status",
         "//tink/util:statusor",
         "@com_google_absl//absl/status",
@@ -171,32 +175,12 @@ cc_library(
 
 cc_library(
     name = "aes_siv_proto_serialization",
-    srcs = ["aes_siv_proto_serialization.cc"],
     hdrs = ["aes_siv_proto_serialization.h"],
     include_prefix = "tink/daead",
     deps = [
-        ":aes_siv_key",
-        ":aes_siv_parameters",
-        "//proto:aes_siv_cc_proto",
-        "//proto:tink_cc_proto",
-        "//tink:partial_key_access",
-        "//tink:restricted_data",
-        "//tink:secret_key_access_token",
-        "//tink/internal:key_parser",
-        "//tink/internal:key_serializer",
+        "//tink/daead/internal:aes_siv_proto_serialization_impl",
         "//tink/internal:mutable_serialization_registry",
-        "//tink/internal:parameters_parser",
-        "//tink/internal:parameters_serializer",
-        "//tink/internal:proto_key_serialization",
-        "//tink/internal:proto_parameters_serialization",
-        "//tink/util:secret_proto",
         "//tink/util:status",
-        "//tink/util:statusor",
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -205,6 +189,7 @@ cc_library(
     srcs = ["config_v0.cc"],
     hdrs = ["config_v0.h"],
     include_prefix = "tink/daead",
+    visibility = ["//visibility:public"],
     deps = [
         "//tink:configuration",
         "//tink/daead/internal:config_v0",
@@ -217,6 +202,7 @@ cc_library(
     srcs = ["key_gen_config_v0.cc"],
     hdrs = ["key_gen_config_v0.h"],
     include_prefix = "tink/daead",
+    visibility = ["//visibility:public"],
     deps = [
         "//tink:key_gen_configuration",
         "//tink/daead/internal:key_gen_config_v0",
@@ -367,6 +353,7 @@ cc_test(
     srcs = ["aes_siv_parameters_test.cc"],
     deps = [
         ":aes_siv_parameters",
+        "//tink:parameters",
         "//tink/util:statusor",
         "//tink/util:test_matchers",
         "@com_google_absl//absl/status",
@@ -380,6 +367,7 @@ cc_test(
     deps = [
         ":aes_siv_key",
         ":aes_siv_parameters",
+        "//tink:key",
         "//tink:partial_key_access",
         "//tink:restricted_data",
         "//tink/util:statusor",
@@ -409,10 +397,12 @@ cc_test(
         "//tink/internal:proto_key_serialization",
         "//tink/internal:proto_parameters_serialization",
         "//tink/internal:serialization",
+        "//tink/internal:tink_proto_structs",
         "//tink/subtle:random",
-        "//tink/util:statusor",
         "//tink/util:test_matchers",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:optional",
         "@com_google_googletest//:gtest_main",
     ],

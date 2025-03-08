@@ -39,13 +39,13 @@
 namespace crypto {
 namespace tink {
 
-using crypto::tink::util::Enums;
-using google::crypto::tink::RsaSsaPkcs1Params;
-using google::crypto::tink::RsaSsaPkcs1PublicKey;
+using ::crypto::tink::util::Enums;
+using ::google::crypto::tink::RsaSsaPkcs1Params;
+using RsaSsaPkcs1PublicKeyProto = ::google::crypto::tink::RsaSsaPkcs1PublicKey;
 
-util::StatusOr<std::unique_ptr<PublicKeyVerify>>
+absl::StatusOr<std::unique_ptr<PublicKeyVerify>>
 RsaSsaPkcs1VerifyKeyManager::PublicKeyVerifyFactory::Create(
-    const RsaSsaPkcs1PublicKey& rsa_ssa_pkcs1_public_key) const {
+    const RsaSsaPkcs1PublicKeyProto& rsa_ssa_pkcs1_public_key) const {
   internal::RsaPublicKey rsa_pub_key;
   rsa_pub_key.n = rsa_ssa_pkcs1_public_key.n();
   rsa_pub_key.e = rsa_ssa_pkcs1_public_key.e();
@@ -60,27 +60,27 @@ RsaSsaPkcs1VerifyKeyManager::PublicKeyVerifyFactory::Create(
   return {std::move(rsa_ssa_pkcs1_result.value())};
 }
 
-util::Status RsaSsaPkcs1VerifyKeyManager::ValidateParams(
+absl::Status RsaSsaPkcs1VerifyKeyManager::ValidateParams(
     const RsaSsaPkcs1Params& params) const {
   return internal::IsHashTypeSafeForSignature(
       Enums::ProtoToSubtle(params.hash_type()));
 }
 
-util::Status RsaSsaPkcs1VerifyKeyManager::ValidateKey(
-    const RsaSsaPkcs1PublicKey& key) const {
-  util::Status status = ValidateVersion(key.version(), get_version());
+absl::Status RsaSsaPkcs1VerifyKeyManager::ValidateKey(
+    const RsaSsaPkcs1PublicKeyProto& key) const {
+  absl::Status status = ValidateVersion(key.version(), get_version());
   if (!status.ok()) return status;
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> n =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> n =
       internal::StringToBignum(key.n());
   if (!n.ok()) {
     return n.status();
   }
-  util::Status modulus_status =
+  absl::Status modulus_status =
       internal::ValidateRsaModulusSize(BN_num_bits(n->get()));
   if (!modulus_status.ok()) {
     return modulus_status;
   }
-  util::Status exponent_status = internal::ValidateRsaPublicExponent(key.e());
+  absl::Status exponent_status = internal::ValidateRsaPublicExponent(key.e());
   if (!exponent_status.ok()) {
     return exponent_status;
   }

@@ -16,16 +16,19 @@
 
 #include "tink/jwt/internal/jwt_public_key_sign_impl.h"
 
+#include <memory>
 #include <string>
+#include <utility>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_split.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "tink/jwt/internal/jwt_format.h"
 #include "tink/jwt/raw_jwt.h"
+#include "tink/public_key_sign.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
@@ -33,41 +36,73 @@ namespace crypto {
 namespace tink {
 namespace jwt_internal {
 
-util::StatusOr<std::string> JwtPublicKeySignImpl::SignAndEncodeWithKid(
+absl::StatusOr<std::string> JwtPublicKeySignImpl::SignAndEncodeWithKid(
     const RawJwt& token, absl::optional<absl::string_view> kid) const {
   absl::optional<std::string> type_header;
   if (token.HasTypeHeader()) {
-    util::StatusOr<std::string> type = token.GetTypeHeader();
+    absl::StatusOr<std::string> type = token.GetTypeHeader();
     if (!type.ok()) {
       return type.status();
     }
     type_header = *type;
   }
+
+  if (kid_.has_value() && kid != kid_) {
+    return absl::Status(
+        absl::StatusCode::kInvalidArgument,
+        absl::StrFormat("invalid kid provided; expected: %s, got: %s", *kid_,
+                        kid.value_or("nullopt")));
+  }
+
   if (custom_kid_.has_value()) {
     if (kid.has_value()) {
-      return util::Status(absl::StatusCode::kInvalidArgument,
-                          "TINK keys are not allowed to have a kid value set.");
+      return absl::Status(
+          absl::StatusCode::kInvalidArgument,
+          "TINK keys are not allowed to have a custom kid value");
     }
     kid = *custom_kid_;
   }
-  util::StatusOr<std::string> encoded_header =
+  absl::StatusOr<std::string> encoded_header =
       CreateHeader(algorithm_, type_header, kid);
   if (!encoded_header.ok()) {
     return encoded_header.status();
   }
-  util::StatusOr<std::string> payload = token.GetJsonPayload();
+  absl::StatusOr<std::string> payload = token.GetJsonPayload();
   if (!payload.ok()) {
     return payload.status();
   }
   std::string encoded_payload = EncodePayload(*payload);
   std::string unsigned_token =
       absl::StrCat(*encoded_header, ".", encoded_payload);
-  util::StatusOr<std::string> tag = sign_->Sign(unsigned_token);
+  absl::StatusOr<std::string> tag = sign_->Sign(unsigned_token);
   if (!tag.ok()) {
     return tag.status();
   }
   std::string encoded_tag = EncodeSignature(*tag);
   return absl::StrCat(unsigned_token, ".", encoded_tag);
+}
+
+std::unique_ptr<JwtPublicKeySignImpl> JwtPublicKeySignImpl::WithKid(
+    std::unique_ptr<crypto::tink::PublicKeySign> sign,
+    absl::string_view algorithm, absl::string_view kid) {
+  return absl::WrapUnique(new JwtPublicKeySignImpl(
+      std::move(sign), algorithm, absl::nullopt, std::string(kid)));
+}
+
+std::unique_ptr<JwtPublicKeySignImpl> JwtPublicKeySignImpl::RawWithCustomKid(
+    std::unique_ptr<crypto::tink::PublicKeySign> sign,
+    absl::string_view algorithm, absl::string_view custom_kid) {
+  return absl::WrapUnique(new JwtPublicKeySignImpl(std::move(sign), algorithm,
+                                                   std::string(custom_kid),
+                                                   /*kid=*/absl::nullopt));
+}
+
+std::unique_ptr<JwtPublicKeySignImpl> JwtPublicKeySignImpl::Raw(
+    std::unique_ptr<crypto::tink::PublicKeySign> sign,
+    absl::string_view algorithm) {
+  return absl::WrapUnique(new JwtPublicKeySignImpl(std::move(sign), algorithm,
+                                                   /*custom_kid=*/absl::nullopt,
+                                                   /*kid=*/absl::nullopt));
 }
 
 }  // namespace jwt_internal

@@ -1,4 +1,4 @@
-// Copyright 2019 Google Inc.
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,28 +24,33 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/log/check.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
-#include "include/rapidjson/document.h"
 #include "tink/config/tink_fips.h"
 #include "tink/internal/ec_util.h"
+#include "tink/internal/fips_utils.h"
+#include "tink/internal/testing/wycheproof_util.h"
 #include "tink/public_key_verify.h"
-#include "tink/subtle/wycheproof_util.h"
-#include "tink/util/secret_data.h"
-#include "tink/util/status.h"
+#include "tink/signature/ed25519_private_key.h"
+#include "tink/signature/internal/testing/ed25519_test_vectors.h"
+#include "tink/signature/internal/testing/signature_test_vector.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
+#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
 namespace subtle {
 namespace {
 
+using ::crypto::tink::internal::wycheproof_testing::GetBytesFromHexValue;
+using ::crypto::tink::internal::wycheproof_testing::ReadTestVectors;
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
 using ::testing::Not;
+using ::testing::NotNull;
 using ::testing::Test;
 using ::testing::TestWithParam;
 using ::testing::ValuesIn;
@@ -75,63 +80,63 @@ std::vector<TestVector> GetTestVectors() {
       {
           /*id=*/1,
           /*public_key=*/
-          absl::HexStringToBytes(
+          test::HexDecodeOrDie(
               "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511"
               "a"),
           /*private_key=*/
-          absl::HexStringToBytes("9d61b19deffd5a60ba844af492ec2cc44449c5697b326"
-                                 "919703bac031cae7f60"),
+          test::HexDecodeOrDie("9d61b19deffd5a60ba844af492ec2cc44449c5697b326"
+                               "919703bac031cae7f60"),
           /*signature=*/
-          absl::HexStringToBytes("e5564300c360ac729086e2cc806e828a84877f1eb8e5d"
-                                 "974d873e065224901555fb8821590a33bacc61e39701c"
-                                 "f9b46bd25bf5f0595bbe24655141438e7a100b"),
+          test::HexDecodeOrDie("e5564300c360ac729086e2cc806e828a84877f1eb8e5d"
+                               "974d873e065224901555fb8821590a33bacc61e39701c"
+                               "f9b46bd25bf5f0595bbe24655141438e7a100b"),
           /*message=*/"",
       },
       {
           /*id=*/2,
           /*public_key=*/
-          absl::HexStringToBytes(
+          test::HexDecodeOrDie(
               "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660"
               "c"),
           /*private_key=*/
-          absl::HexStringToBytes("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba"
-                                 "624da8cf6ed4fb8a6fb"),
+          test::HexDecodeOrDie("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba"
+                               "624da8cf6ed4fb8a6fb"),
           /*signature=*/
-          absl::HexStringToBytes("92a009a9f0d4cab8720e820b5f642540a2b27b5416503"
-                                 "f8fb3762223ebdb69da085ac1e43e15996e458f3613d0"
-                                 "f11d8c387b2eaeb4302aeeb00d291612bb0c00"),
+          test::HexDecodeOrDie("92a009a9f0d4cab8720e820b5f642540a2b27b5416503"
+                               "f8fb3762223ebdb69da085ac1e43e15996e458f3613d0"
+                               "f11d8c387b2eaeb4302aeeb00d291612bb0c00"),
           /*message=*/"\x72",
       },
       {
           /*id=*/3,
           /*public_key=*/
-          absl::HexStringToBytes(
+          test::HexDecodeOrDie(
               "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb91154890802"
               "5"),
           /*private_key=*/
-          absl::HexStringToBytes("c5aa8df43f9f837bedb7442f31dcb7b166d38535076f0"
-                                 "94b85ce3a2e0b4458f7"),
+          test::HexDecodeOrDie("c5aa8df43f9f837bedb7442f31dcb7b166d38535076f0"
+                               "94b85ce3a2e0b4458f7"),
           /*signature=*/
-          absl::HexStringToBytes("6291d657deec24024827e69c3abe01a30ce548a284743"
-                                 "a445e3680d7db5ac3ac18ff9b538d16f290ae67f76098"
-                                 "4dc6594a7c15e9716ed28dc027beceea1ec40a"),
+          test::HexDecodeOrDie("6291d657deec24024827e69c3abe01a30ce548a284743"
+                               "a445e3680d7db5ac3ac18ff9b538d16f290ae67f76098"
+                               "4dc6594a7c15e9716ed28dc027beceea1ec40a"),
           /*message=*/"\xaf\x82",
       },
       {
           /*id=*/1024,
           /*public_key=*/
-          absl::HexStringToBytes(
+          test::HexDecodeOrDie(
               "278117fc144c72340f67d0f2316e8386ceffbf2b2428c9c51fef7c597f1d426"
               "e"),
           /*private_key=*/
-          absl::HexStringToBytes("f5e5767cf153319517630f226876b86c8160cc583bc01"
-                                 "3744c6bf255f5cc0ee5"),
+          test::HexDecodeOrDie("f5e5767cf153319517630f226876b86c8160cc583bc01"
+                               "3744c6bf255f5cc0ee5"),
           /*signature=*/
-          absl::HexStringToBytes("0aab4c900501b3e24d7cdf4663326a3a87df5e4843b2c"
-                                 "bdb67cbf6e460fec350aa5371b1508f9f4528ecea23c4"
-                                 "36d94b5e8fcd4f681e30a6ac00a9704a188a03"),
+          test::HexDecodeOrDie("0aab4c900501b3e24d7cdf4663326a3a87df5e4843b2c"
+                               "bdb67cbf6e460fec350aa5371b1508f9f4528ecea23c4"
+                               "36d94b5e8fcd4f681e30a6ac00a9704a188a03"),
           /*message=*/
-          absl::HexStringToBytes(
+          test::HexDecodeOrDie(
               "08b8b2b733424243760fe426a4b54908632110a66c2f6591eabd3345e3e4eb98"
               "fa6e264bf09efe12ee50f8f54e9f77b1e355f6c50544e23fb1433ddf73be84d8"
               "79de7c0046dc4996d9e773f4bc9efe5738829adb26c81b37c93a1b270b20329d"
@@ -189,7 +194,7 @@ TEST_F(Ed25519VerifyBoringSslTest, InvalidPublicKey) {
 // string_view.
 TEST_F(Ed25519VerifyBoringSslTest, MessageEmptyVersusNullStringView) {
   TestVector empty_message_test_vector = GetTestVectors()[0];
-  util::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
       Ed25519VerifyBoringSsl::New(empty_message_test_vector.public_key);
   ASSERT_THAT(verifier, IsOk());
 
@@ -219,7 +224,7 @@ TEST_P(Ed25519VerifyBoringSslParamsTest, VerifiesCorrectly) {
   }
   TestVector test_vector = GetParam();
 
-  util::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
       Ed25519VerifyBoringSsl::New(test_vector.public_key);
   ASSERT_THAT(verifier, IsOk());
   EXPECT_THAT((*verifier)->Verify(test_vector.signature, test_vector.message),
@@ -230,9 +235,12 @@ INSTANTIATE_TEST_SUITE_P(Ed25519VerifyBoringSslParamsTests,
                          Ed25519VerifyBoringSslParamsTest,
                          ValuesIn(GetTestVectors()));
 
-static util::StatusOr<std::unique_ptr<PublicKeyVerify>> GetVerifier(
-    const rapidjson::Value& test_group) {
-  std::string public_key = WycheproofUtil::GetBytes(test_group["key"]["pk"]);
+static absl::StatusOr<std::unique_ptr<PublicKeyVerify>> GetVerifier(
+    const google::protobuf::Value& test_group) {
+  const google::protobuf::Value& key =
+      test_group.struct_value().fields().at("key");
+  std::string public_key =
+      GetBytesFromHexValue(key.struct_value().fields().at("pk"));
   auto result = Ed25519VerifyBoringSsl::New(public_key);
   if (!result.ok()) {
     std::cout << "Failed: " << result.status() << "\n";
@@ -245,35 +253,29 @@ static util::StatusOr<std::unique_ptr<PublicKeyVerify>> GetVerifier(
 // a verfier cannot be constructed. This option can be used for
 // if a file contains test vectors that are not necessarily supported
 // by tink.
-bool TestSignatures(const std::string& filename, bool allow_skipping) {
-  std::unique_ptr<rapidjson::Document> root =
-      WycheproofUtil::ReadTestVectors(filename);
-  std::cout << (*root)["algorithm"].GetString();
-  std::cout << "generator version " << (*root)["generatorVersion"].GetString();
+bool TestSignatures(const std::string& filename) {
+  absl::StatusOr<google::protobuf::Struct> parsed_input =
+      ReadTestVectors(filename);
+  CHECK_OK(parsed_input.status());
+  const google::protobuf::Value& test_groups =
+      parsed_input->fields().at("testGroups");
   int passed_tests = 0;
   int failed_tests = 0;
-  for (const rapidjson::Value& test_group : (*root)["testGroups"].GetArray()) {
+  for (const google::protobuf::Value& test_group :
+       test_groups.list_value().values()) {
+    auto test_group_fields = test_group.struct_value().fields();
     auto verifier_result = GetVerifier(test_group);
-    if (!verifier_result.ok()) {
-      std::string curve = test_group["key"]["curve"].GetString();
-      if (allow_skipping) {
-        std::cout << "Could not construct verifier for curve " << curve
-                  << verifier_result.status();
-      } else {
-        ADD_FAILURE() << "Could not construct verifier for curve " << curve
-                      << verifier_result.status();
-        failed_tests += test_group["tests"].GetArray().Size();
-      }
-      continue;
-    }
+    CHECK_OK(verifier_result.status());
 
     auto verifier = std::move(verifier_result.value());
-    for (const rapidjson::Value& test : test_group["tests"].GetArray()) {
-      std::string expected = test["result"].GetString();
-      std::string msg = WycheproofUtil::GetBytes(test["msg"]);
-      std::string sig = WycheproofUtil::GetBytes(test["sig"]);
-      std::string id =
-          absl::StrCat(test["tcId"].GetInt(), " ", test["comment"].GetString());
+    for (const google::protobuf::Value& test :
+         test_group.struct_value().fields().at("tests").list_value().values()) {
+      auto test_fields = test.struct_value().fields();
+      std::string expected = test_fields.at("result").string_value();
+      std::string msg = GetBytesFromHexValue(test_fields.at("msg"));
+      std::string sig = GetBytesFromHexValue(test_fields.at("sig"));
+      std::string id = absl::StrCat(test_fields.at("tcId").number_value(), " ",
+                                    test_fields.at("comment").string_value());
       auto status = verifier->Verify(sig, msg);
       if (expected == "valid") {
         if (status.ok()) {
@@ -302,7 +304,9 @@ bool TestSignatures(const std::string& filename, bool allow_skipping) {
       }
     }
   }
-  int num_tests = (*root)["numberOfTests"].GetInt();
+  int num_tests =
+      (int)parsed_input->fields().at("numberOfTests").number_value();
+  CHECK_EQ(num_tests, passed_tests + failed_tests);
   std::cout << "total number of tests: " << num_tests;
   std::cout << "number of tests passed:" << passed_tests;
   std::cout << "number of tests failed:" << failed_tests;
@@ -310,7 +314,7 @@ bool TestSignatures(const std::string& filename, bool allow_skipping) {
 }
 
 TEST_F(Ed25519VerifyBoringSslTest, WycheproofCurve25519) {
-  ASSERT_TRUE(TestSignatures("eddsa_test.json", false));
+  ASSERT_TRUE(TestSignatures("eddsa_test.json"));
 }
 
 TEST(Ed25519VerifyBoringSslFipsTest, testFipsMode) {
@@ -322,9 +326,73 @@ TEST(Ed25519VerifyBoringSslFipsTest, testFipsMode) {
       "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025";
   // Create a new signer.
   EXPECT_THAT(
-      Ed25519VerifyBoringSsl::New(absl::HexStringToBytes(kPublicKey)).status(),
+      Ed25519VerifyBoringSsl::New(test::HexDecodeOrDie(kPublicKey)).status(),
       StatusIs(absl::StatusCode::kInternal));
 }
+
+using Ed25519VerifyBoringSslTestVectorTest =
+    testing::TestWithParam<internal::SignatureTestVector>;
+
+TEST_P(Ed25519VerifyBoringSslTestVectorTest, VerifySignatureInTestVector) {
+  const internal::SignatureTestVector& param = GetParam();
+  const Ed25519PrivateKey* typed_key =
+      dynamic_cast<const Ed25519PrivateKey*>(param.signature_private_key.get());
+  ASSERT_THAT(typed_key, NotNull());
+  if (internal::IsFipsModeEnabled()) {
+    // Users wants FIPS, but Ed25519 is not FIPS.
+    ASSERT_THAT(Ed25519VerifyBoringSsl::New(typed_key->GetPublicKey()),
+                Not(IsOk()));
+    return;
+  }
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      Ed25519VerifyBoringSsl::New(typed_key->GetPublicKey());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT((*verifier)->Verify(param.signature, param.message), IsOk());
+}
+
+TEST_P(Ed25519VerifyBoringSslTestVectorTest, DifferentMessageDoesNotVerify) {
+  const internal::SignatureTestVector& param = GetParam();
+  const Ed25519PrivateKey* typed_key =
+      dynamic_cast<const Ed25519PrivateKey*>(param.signature_private_key.get());
+  ASSERT_THAT(typed_key, NotNull());
+  if (internal::IsFipsModeEnabled()) {
+    // Users wants FIPS, but Ed25519 is not FIPS.
+    ASSERT_THAT(Ed25519VerifyBoringSsl::New(typed_key->GetPublicKey()),
+                Not(IsOk()));
+    return;
+  }
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      Ed25519VerifyBoringSsl::New(typed_key->GetPublicKey());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT(
+      (*verifier)->Verify(param.signature, absl::StrCat(param.message, "a")),
+      Not(IsOk()));
+}
+
+TEST_P(Ed25519VerifyBoringSslTestVectorTest,
+       DifferentFirstByteSignatureDoesNotVerify) {
+  const internal::SignatureTestVector& param = GetParam();
+  const Ed25519PrivateKey* typed_key =
+      dynamic_cast<const Ed25519PrivateKey*>(param.signature_private_key.get());
+  ASSERT_THAT(typed_key, NotNull());
+  if (internal::IsFipsModeEnabled()) {
+    // Users wants FIPS, but Ed25519 is not FIPS.
+    ASSERT_THAT(Ed25519VerifyBoringSsl::New(typed_key->GetPublicKey()),
+                Not(IsOk()));
+    return;
+  }
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      Ed25519VerifyBoringSsl::New(typed_key->GetPublicKey());
+  ASSERT_THAT(verifier, IsOk());
+  std::string modified_signature = param.signature;
+  modified_signature[0] ^= 1;
+  EXPECT_THAT((*verifier)->Verify(modified_signature, param.message),
+              Not(IsOk()));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Ed25519VerifyBoringSslTestVectorTest, Ed25519VerifyBoringSslTestVectorTest,
+    testing::ValuesIn(internal::CreateEd25519TestVectors()));
 
 }  // namespace
 }  // namespace subtle

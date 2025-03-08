@@ -19,17 +19,12 @@
 #include <memory>
 #include <utility>
 
-#include "absl/memory/memory.h"
-#include "absl/status/status.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/optional.h"
-#include "tink/insecure_secret_key_access.h"
 #include "tink/internal/key_parser.h"
 #include "tink/internal/key_serializer.h"
-#include "tink/internal/legacy_proto_key.h"
 #include "tink/internal/parameters_parser.h"
 #include "tink/internal/parameters_serializer.h"
-#include "tink/internal/proto_key_serialization.h"
 #include "tink/internal/serialization.h"
 #include "tink/internal/serialization_registry.h"
 #include "tink/key.h"
@@ -48,74 +43,77 @@ MutableSerializationRegistry& MutableSerializationRegistry::GlobalInstance() {
   return *instance;
 }
 
-util::Status MutableSerializationRegistry::RegisterParametersParser(
+absl::Status MutableSerializationRegistry::RegisterParametersParser(
     ParametersParser* parser) {
   absl::WriterMutexLock lock(&registry_mutex_);
   SerializationRegistry::Builder builder(registry_);
-  util::Status status = builder.RegisterParametersParser(parser);
+  absl::Status status = builder.RegisterParametersParser(parser);
   if (!status.ok()) return status;
   registry_ = std::move(builder).Build();
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::Status MutableSerializationRegistry::RegisterParametersSerializer(
+absl::Status MutableSerializationRegistry::RegisterParametersSerializer(
     ParametersSerializer* serializer) {
   absl::WriterMutexLock lock(&registry_mutex_);
   SerializationRegistry::Builder builder(registry_);
-  util::Status status = builder.RegisterParametersSerializer(serializer);
+  absl::Status status = builder.RegisterParametersSerializer(serializer);
   if (!status.ok()) return status;
   registry_ = std::move(builder).Build();
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::Status MutableSerializationRegistry::RegisterKeyParser(
+absl::Status MutableSerializationRegistry::RegisterKeyParser(
     KeyParser* parser) {
   absl::WriterMutexLock lock(&registry_mutex_);
   SerializationRegistry::Builder builder(registry_);
-  util::Status status = builder.RegisterKeyParser(parser);
+  absl::Status status = builder.RegisterKeyParser(parser);
   if (!status.ok()) return status;
   registry_ = std::move(builder).Build();
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::Status MutableSerializationRegistry::RegisterKeySerializer(
+absl::Status MutableSerializationRegistry::RegisterKeySerializer(
     KeySerializer* serializer) {
   absl::WriterMutexLock lock(&registry_mutex_);
   SerializationRegistry::Builder builder(registry_);
-  util::Status status = builder.RegisterKeySerializer(serializer);
+  absl::Status status = builder.RegisterKeySerializer(serializer);
   if (!status.ok()) return status;
   registry_ = std::move(builder).Build();
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::StatusOr<std::unique_ptr<Parameters>>
+absl::StatusOr<std::unique_ptr<Parameters>>
 MutableSerializationRegistry::ParseParameters(
     const Serialization& serialization) {
   absl::ReaderMutexLock lock(&registry_mutex_);
   return registry_.ParseParameters(serialization);
 }
 
-util::StatusOr<std::unique_ptr<Key>> MutableSerializationRegistry::ParseKey(
+absl::StatusOr<std::unique_ptr<Parameters>>
+MutableSerializationRegistry::ParseParametersWithLegacyFallback(
+    const Serialization& serialization) {
+  absl::ReaderMutexLock lock(&registry_mutex_);
+  return registry_.ParseParametersWithLegacyFallback(serialization);
+}
+
+absl::StatusOr<std::unique_ptr<Key>> MutableSerializationRegistry::ParseKey(
     const Serialization& serialization,
     absl::optional<SecretKeyAccessToken> token) {
   absl::ReaderMutexLock lock(&registry_mutex_);
   return registry_.ParseKey(serialization, token);
 }
 
-util::StatusOr<std::unique_ptr<Key>>
+absl::StatusOr<std::unique_ptr<Key>>
 MutableSerializationRegistry::ParseKeyWithLegacyFallback(
     const Serialization& serialization, SecretKeyAccessToken token) {
-  util::StatusOr<std::unique_ptr<Key>> key = ParseKey(serialization, token);
-  if (key.status().code() == absl::StatusCode::kNotFound) {
-    const ProtoKeySerialization* proto_serialization =
-        dynamic_cast<const ProtoKeySerialization*>(&serialization);
-    util::StatusOr<LegacyProtoKey> proto_key = internal::LegacyProtoKey::Create(
-        *proto_serialization, InsecureSecretKeyAccess::Get());
-    if (!proto_key.ok()) return proto_key.status();
-    return {absl::make_unique<LegacyProtoKey>(*proto_key)};
-  }
-  if (!key.ok()) return key.status();
-  return key;
+  absl::ReaderMutexLock lock(&registry_mutex_);
+  return registry_.ParseKeyWithLegacyFallback(serialization, token);
+}
+
+void MutableSerializationRegistry::Reset() {
+  absl::WriterMutexLock lock(&registry_mutex_);
+  registry_ = SerializationRegistry();
 }
 
 }  // namespace internal

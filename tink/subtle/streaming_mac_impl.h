@@ -21,9 +21,9 @@
 #include <string>
 #include <utility>
 
+#include "tink/mac/internal/stateful_mac.h"
 #include "tink/output_stream_with_result.h"
 #include "tink/streaming_mac.h"
-#include "tink/subtle/mac/stateful_mac.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
@@ -34,22 +34,23 @@ namespace subtle {
 class StreamingMacImpl : public StreamingMac {
  public:
   // Constructor
-  explicit StreamingMacImpl(std::unique_ptr<StatefulMacFactory> mac_factory)
+  explicit StreamingMacImpl(
+      std::unique_ptr<internal::StatefulMacFactory> mac_factory)
       : mac_factory_(std::move(mac_factory)) {}
 
   // Implement streaming mac class functions
   // Returns an ComputeMacOutputStream, which when closed will return the
   // message authentication code (MAC) of the data put into the stream.
-  util::StatusOr<std::unique_ptr<OutputStreamWithResult<std::string>>>
+  absl::StatusOr<std::unique_ptr<OutputStreamWithResult<std::string>>>
   NewComputeMacOutputStream() const override;
 
   // Returns an VerifyMacOutputStream which verifies if 'mac' is a correct
   // message authentication code (MAC) for the data written to it.
-  util::StatusOr<std::unique_ptr<OutputStreamWithResult<util::Status>>>
+  absl::StatusOr<std::unique_ptr<OutputStreamWithResult<absl::Status>>>
   NewVerifyMacOutputStream(const std::string& mac_value) const override;
 
  private:
-  std::unique_ptr<StatefulMacFactory> mac_factory_;
+  std::unique_ptr<internal::StatefulMacFactory> mac_factory_;
 };
 
 }  // namespace subtle

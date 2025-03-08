@@ -71,7 +71,7 @@ class ExampleKeyTypeManager : public KeyTypeManager<AesGcmKey, AesGcmKeyFormat,
  public:
   class AeadFactory : public PrimitiveFactory<Aead> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<Aead>> Create(
+    absl::StatusOr<std::unique_ptr<Aead>> Create(
         const AesGcmKey& key) const override {
       // Ignore the key and returned one with a fixed size for this test.
       return {subtle::AesGcmBoringSsl::New(
@@ -81,7 +81,7 @@ class ExampleKeyTypeManager : public KeyTypeManager<AesGcmKey, AesGcmKeyFormat,
 
   class AeadVariantFactory : public PrimitiveFactory<AeadVariant> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<AeadVariant>> Create(
+    absl::StatusOr<std::unique_ptr<AeadVariant>> Create(
         const AesGcmKey& key) const override {
       return absl::make_unique<AeadVariant>(key.key_value());
     }
@@ -100,17 +100,17 @@ class ExampleKeyTypeManager : public KeyTypeManager<AesGcmKey, AesGcmKeyFormat,
 
   // We mock out ValidateKey, ValidateKeyFormat, and DeriveKey so that we can
   // easily test proper behavior in case they return an error.
-  MOCK_METHOD(crypto::tink::util::Status, ValidateKey, (const AesGcmKey& key),
+  MOCK_METHOD(absl::Status, ValidateKey, (const AesGcmKey& key),
               (const, override));
-  MOCK_METHOD(crypto::tink::util::Status, ValidateKeyFormat,
-              (const AesGcmKeyFormat& key), (const, override));
-  MOCK_METHOD(crypto::tink::util::StatusOr<AesGcmKey>, DeriveKey,
+  MOCK_METHOD(absl::Status, ValidateKeyFormat, (const AesGcmKeyFormat& key),
+              (const, override));
+  MOCK_METHOD(absl::StatusOr<AesGcmKey>, DeriveKey,
               (const KeyFormatProto& key_format, InputStream* input_stream),
               (const, override));
 
   const std::string& get_key_type() const override { return kKeyType; }
 
-  crypto::tink::util::StatusOr<AesGcmKey> CreateKey(
+  absl::StatusOr<AesGcmKey> CreateKey(
       const AesGcmKeyFormat& key_format) const override {
     AesGcmKey result;
     result.set_key_value(subtle::Random::GetRandomBytes(key_format.key_size()));
@@ -172,7 +172,7 @@ TEST(KeyManagerImplTest, FactoryNewKeyFromMessageCallsValidate) {
   AesGcmKeyFormat key_format;
   key_format.set_key_size(16);
   EXPECT_CALL(internal_km, ValidateKeyFormat(_))
-      .WillOnce(Return(util::Status(absl::StatusCode::kOutOfRange,
+      .WillOnce(Return(absl::Status(absl::StatusCode::kOutOfRange,
                                     "FactoryNewKeyFromMessageCallsValidate")));
   EXPECT_THAT(key_manager->get_key_factory().NewKey(key_format).status(),
               StatusIs(absl::StatusCode::kOutOfRange,
@@ -188,7 +188,7 @@ TEST(KeyManagerImplTest, FactoryNewKeyFromStringViewCallsValidate) {
   key_format.set_key_size(16);
   EXPECT_CALL(internal_km, ValidateKeyFormat(_))
       .WillOnce(
-          Return(util::Status(absl::StatusCode::kOutOfRange,
+          Return(absl::Status(absl::StatusCode::kOutOfRange,
                               "FactoryNewKeyFromStringViewCallsValidate")));
   EXPECT_THAT(key_manager->get_key_factory()
                   .NewKey(key_format.SerializeAsString())
@@ -205,7 +205,7 @@ TEST(KeyManagerImplTest, FactoryNewKeyFromKeyDataCallsValidate) {
   AesGcmKeyFormat key_format;
   key_format.set_key_size(16);
   EXPECT_CALL(internal_km, ValidateKeyFormat(_))
-      .WillOnce(Return(util::Status(absl::StatusCode::kOutOfRange,
+      .WillOnce(Return(absl::Status(absl::StatusCode::kOutOfRange,
                                     "FactoryNewKeyFromKeyDataCallsValidate")));
   EXPECT_THAT(key_manager->get_key_factory()
                   .NewKeyData(key_format.SerializeAsString())
@@ -238,8 +238,8 @@ TEST(CreateDeriverFunctionForTest, UseParametersAndReturnValue) {
   key_format.set_key_size(9);
 
   EXPECT_CALL(internal_km, DeriveKey(_, _))
-      .WillOnce([](const AesGcmKeyFormat& format, InputStream* randomness)
-                    -> crypto::tink::util::StatusOr<AesGcmKey> {
+      .WillOnce([](const AesGcmKeyFormat& format,
+                   InputStream* randomness) -> absl::StatusOr<AesGcmKey> {
         auto bytes_or = ReadBytesFromStream(format.key_size(), randomness);
         if (!bytes_or.ok()) {
           return bytes_or.status();
@@ -260,7 +260,7 @@ TEST(CreateDeriverFunctionForTest, UseParametersAndReturnValue) {
 TEST(CreateDeriverFunctionForTest, ValidateKeyFormatIsCalled) {
   ExampleKeyTypeManager internal_km;
   EXPECT_CALL(internal_km, ValidateKeyFormat(_))
-      .WillOnce(Return(util::Status(
+      .WillOnce(Return(absl::Status(
           absl::StatusCode::kOutOfRange,
           "CreateDeriverFunctionForTest ValidateKeyFormatIsCalled")));
   auto deriver = CreateDeriverFunctionFor(&internal_km);
@@ -278,7 +278,7 @@ TEST(CreateDeriverFunctionForTest, ValidateKeyIsCalled) {
       WillOnce(Return(AesGcmKey()));
   EXPECT_CALL(internal_km, ValidateKey(_))
       .WillOnce(Return(
-          util::Status(absl::StatusCode::kOutOfRange,
+          absl::Status(absl::StatusCode::kOutOfRange,
                        "CreateDeriverFunctionForTest ValidateKeyIsCalled")));
 
   auto deriver = CreateDeriverFunctionFor(&internal_km);
@@ -384,7 +384,7 @@ TEST(KeyManagerImplTest, GetPrimitiveCallsValidate) {
   key.ParseFromString(key_data.value());
 
   EXPECT_CALL(internal_km, ValidateKey(_))
-      .WillOnce(Return(util::Status(absl::StatusCode::kOutOfRange,
+      .WillOnce(Return(absl::Status(absl::StatusCode::kOutOfRange,
                                     "GetPrimitiveCallsValidate")));
   EXPECT_THAT(key_manager->GetPrimitive(key_data).status(),
               StatusIs(absl::StatusCode::kOutOfRange,
@@ -406,7 +406,7 @@ TEST(KeyManagerImplTest, GetPrimitiveFromKeyCallsValidate) {
   key.ParseFromString(key_data.value());
 
   EXPECT_CALL(internal_km, ValidateKey(_))
-      .WillOnce(Return(util::Status(absl::StatusCode::kOutOfRange,
+      .WillOnce(Return(absl::Status(absl::StatusCode::kOutOfRange,
                                     "GetPrimitiveFromKeyCallsValidate")));
   EXPECT_THAT(key_manager->GetPrimitive(key).status(),
               StatusIs(absl::StatusCode::kOutOfRange,
@@ -440,7 +440,7 @@ class ExampleKeyTypeManagerWithoutFactory
  public:
   class AeadFactory : public PrimitiveFactory<Aead> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<Aead>> Create(
+    absl::StatusOr<std::unique_ptr<Aead>> Create(
         const AesGcmKey& key) const override {
       // Ignore the key and returned one with a fixed size for this test.
       return {subtle::AesGcmBoringSsl::New(
@@ -450,7 +450,7 @@ class ExampleKeyTypeManagerWithoutFactory
 
   class AeadVariantFactory : public PrimitiveFactory<AeadVariant> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<AeadVariant>> Create(
+    absl::StatusOr<std::unique_ptr<AeadVariant>> Create(
         const AesGcmKey& key) const override {
       return absl::make_unique<AeadVariant>(key.key_value());
     }
@@ -469,8 +469,8 @@ class ExampleKeyTypeManagerWithoutFactory
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  util::Status ValidateKey(const AesGcmKey& key) const override {
-    util::Status status = ValidateVersion(key.version(), kVersion);
+  absl::Status ValidateKey(const AesGcmKey& key) const override {
+    absl::Status status = ValidateVersion(key.version(), kVersion);
     if (!status.ok()) return status;
     return ValidateAesKeySize(key.key_value().size());
   }

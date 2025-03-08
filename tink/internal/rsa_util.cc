@@ -29,6 +29,7 @@
 #include "openssl/rsa.h"
 #include "tink/config/tink_fips.h"
 #include "tink/internal/bn_util.h"
+#include "tink/internal/call_with_core_dump_protection.h"
 #include "tink/internal/err_util.h"
 #include "tink/internal/fips_utils.h"
 #include "tink/internal/ssl_unique_ptr.h"
@@ -54,9 +55,9 @@ constexpr int kMaxRsaModulusSizeBits = 16 * 1024;
 // [3] https://msdn.microsoft.com/en-us/library/aa387685(VS.85).aspx
 constexpr int kMaxRsaExponentBits = 33;
 
-util::Status ValidateRsaModulusSize(size_t modulus_size) {
+absl::Status ValidateRsaModulusSize(size_t modulus_size) {
   if (modulus_size < 2048) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Modulus size is ", modulus_size,
                      " only modulus size >= 2048-bit is supported"));
@@ -68,43 +69,43 @@ util::Status ValidateRsaModulusSize(size_t modulus_size) {
   // https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/3318
   if (IsFipsModeEnabled()) {
     if (modulus_size != 2048 && modulus_size != 3072) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kInternal,
           absl::StrCat("Modulus size is ", modulus_size,
                        " only modulus size 2048 or 3072 is supported."));
     }
   }
 
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::Status ValidateRsaPublicExponent(const BIGNUM *exponent) {
+absl::Status ValidateRsaPublicExponent(const BIGNUM *exponent) {
   if (exponent == nullptr) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Public exponent must not be NULL.");
   }
 
   if (BN_is_odd(exponent) == 0) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Public exponent must be odd.");
   }
 
   if (CompareBignumWithWord(exponent, /*word=*/65536) <= 0) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Public exponent must be greater than 65536.");
   }
 
   // OpenSSL doesn't pose a limit to the size of the exponent, so for
   // consistency w.r.t. BoringSSL, we enforce it here.
   if (BN_num_bits(exponent) > 32) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Exponent size must be smaller than 32 bits");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::Status ValidateRsaPublicExponent(absl::string_view exponent) {
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> e =
+absl::Status ValidateRsaPublicExponent(absl::string_view exponent) {
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> e =
       internal::StringToBignum(exponent);
   if (!e.ok()) {
     return e.status();
@@ -112,27 +113,27 @@ util::Status ValidateRsaPublicExponent(absl::string_view exponent) {
   return ValidateRsaPublicExponent(e->get());
 }
 
-util::Status NewRsaKeyPair(int modulus_size_in_bits, const BIGNUM *e,
+absl::Status NewRsaKeyPair(int modulus_size_in_bits, const BIGNUM *e,
                            RsaPrivateKey *private_key,
                            RsaPublicKey *public_key) {
   internal::SslUniquePtr<RSA> rsa(RSA_new());
   if (rsa == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "Could not initialize RSA.");
   }
 
-  util::Status exponent_validation_res = ValidateRsaPublicExponent(e);
+  absl::Status exponent_validation_res = ValidateRsaPublicExponent(e);
   if (!exponent_validation_res.ok()) {
     return exponent_validation_res;
   }
 
   internal::SslUniquePtr<BIGNUM> e_copy(BN_new());
   if (BN_copy(e_copy.get(), e) == nullptr) {
-    return util::Status(absl::StatusCode::kInternal, internal::GetSslErrors());
+    return absl::Status(absl::StatusCode::kInternal, internal::GetSslErrors());
   }
   if (RSA_generate_key_ex(rsa.get(), modulus_size_in_bits, e_copy.get(),
                           /*cb=*/nullptr) != 1) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         absl::StrCat("Error generating private key: ",
                                      internal::GetSslErrors()));
   }
@@ -141,17 +142,17 @@ util::Status NewRsaKeyPair(int modulus_size_in_bits, const BIGNUM *e,
   RSA_get0_key(rsa.get(), &n_bn, &e_bn, &d_bn);
 
   // Save exponents.
-  util::StatusOr<std::string> n_str =
+  absl::StatusOr<std::string> n_str =
       internal::BignumToString(n_bn, BN_num_bytes(n_bn));
   if (!n_str.ok()) {
     return n_str.status();
   }
-  util::StatusOr<std::string> e_str =
+  absl::StatusOr<std::string> e_str =
       internal::BignumToString(e_bn, BN_num_bytes(e_bn));
   if (!e_str.ok()) {
     return e_str.status();
   }
-  util::StatusOr<util::SecretData> d_str =
+  absl::StatusOr<util::SecretData> d_str =
       internal::BignumToSecretData(d_bn, BN_num_bytes(d_bn));
   if (!d_str.ok()) {
     return d_str.status();
@@ -165,12 +166,12 @@ util::Status NewRsaKeyPair(int modulus_size_in_bits, const BIGNUM *e,
   // Save factors.
   const BIGNUM *p_bn, *q_bn;
   RSA_get0_factors(rsa.get(), &p_bn, &q_bn);
-  util::StatusOr<util::SecretData> p_str =
+  absl::StatusOr<util::SecretData> p_str =
       internal::BignumToSecretData(p_bn, BN_num_bytes(p_bn));
   if (!p_str.ok()) {
     return p_str.status();
   }
-  util::StatusOr<util::SecretData> q_str =
+  absl::StatusOr<util::SecretData> q_str =
       internal::BignumToSecretData(q_bn, BN_num_bytes(q_bn));
   if (!q_str.ok()) {
     return q_str.status();
@@ -181,17 +182,17 @@ util::Status NewRsaKeyPair(int modulus_size_in_bits, const BIGNUM *e,
   // Save CRT parameters.
   const BIGNUM *dp_bn, *dq_bn, *crt_bn;
   RSA_get0_crt_params(rsa.get(), &dp_bn, &dq_bn, &crt_bn);
-  util::StatusOr<util::SecretData> dp_str =
+  absl::StatusOr<util::SecretData> dp_str =
       internal::BignumToSecretData(dp_bn, BN_num_bytes(dp_bn));
   if (!dp_str.ok()) {
     return dp_str.status();
   }
-  util::StatusOr<util::SecretData> dq_str =
+  absl::StatusOr<util::SecretData> dq_str =
       internal::BignumToSecretData(dq_bn, BN_num_bytes(dq_bn));
   if (!dq_str.ok()) {
     return dq_str.status();
   }
-  util::StatusOr<util::SecretData> crt_str =
+  absl::StatusOr<util::SecretData> crt_str =
       internal::BignumToSecretData(crt_bn, BN_num_bytes(crt_bn));
   if (!crt_str.ok()) {
     return crt_str.status();
@@ -200,16 +201,16 @@ util::Status NewRsaKeyPair(int modulus_size_in_bits, const BIGNUM *e,
   private_key->dq = *std::move(dq_str);
   private_key->crt = *std::move(crt_str);
 
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::Status GetRsaModAndExponents(const RsaPrivateKey &key, RSA *rsa) {
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> n =
+absl::Status GetRsaModAndExponents(const RsaPrivateKey &key, RSA *rsa) {
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> n =
       internal::StringToBignum(key.n);
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> e =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> e =
       internal::StringToBignum(key.e);
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> d =
-      internal::StringToBignum(util::SecretDataAsStringView(key.d));
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> d =
+      internal::SecretDataToBignum(key.d);
   if (!n.ok()) {
     return n.status();
   }
@@ -219,8 +220,10 @@ util::Status GetRsaModAndExponents(const RsaPrivateKey &key, RSA *rsa) {
   if (!d.ok()) {
     return d.status();
   }
-  if (RSA_set0_key(rsa, n->get(), e->get(), d->get()) != 1) {
-    return util::Status(
+  if (CallWithCoreDumpProtection([&]() {
+        return RSA_set0_key(rsa, n->get(), e->get(), d->get());
+      }) != 1) {
+    return absl::Status(
         absl::StatusCode::kInternal,
         absl::StrCat("Could not load RSA key: ", internal::GetSslErrors()));
   }
@@ -228,14 +231,14 @@ util::Status GetRsaModAndExponents(const RsaPrivateKey &key, RSA *rsa) {
   n->release();
   e->release();
   d->release();
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::Status GetRsaPrimeFactors(const RsaPrivateKey &key, RSA *rsa) {
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> p =
-      internal::StringToBignum(util::SecretDataAsStringView(key.p));
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> q =
-      internal::StringToBignum(util::SecretDataAsStringView(key.q));
+absl::Status GetRsaPrimeFactors(const RsaPrivateKey &key, RSA *rsa) {
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> p =
+      internal::SecretDataToBignum(key.p);
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> q =
+      internal::SecretDataToBignum(key.q);
   if (!p.ok()) {
     return p.status();
   }
@@ -243,22 +246,22 @@ util::Status GetRsaPrimeFactors(const RsaPrivateKey &key, RSA *rsa) {
     return q.status();
   }
   if (RSA_set0_factors(rsa, p->get(), q->get()) != 1) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInternal,
         absl::StrCat("Could not load RSA key: ", internal::GetSslErrors()));
   }
   p->release();
   q->release();
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::Status GetRsaCrtParams(const RsaPrivateKey &key, RSA *rsa) {
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> dp =
-      internal::StringToBignum(util::SecretDataAsStringView(key.dp));
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> dq =
-      internal::StringToBignum(util::SecretDataAsStringView(key.dq));
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> crt =
-      internal::StringToBignum(util::SecretDataAsStringView(key.crt));
+absl::Status GetRsaCrtParams(const RsaPrivateKey &key, RSA *rsa) {
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> dp =
+      internal::SecretDataToBignum(key.dp);
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> dq =
+      internal::SecretDataToBignum(key.dq);
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> crt =
+      internal::SecretDataToBignum(key.crt);
   if (!dp.ok()) {
     return dp.status();
   }
@@ -269,17 +272,17 @@ util::Status GetRsaCrtParams(const RsaPrivateKey &key, RSA *rsa) {
     return crt.status();
   }
   if (RSA_set0_crt_params(rsa, dp->get(), dq->get(), crt->get()) != 1) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInternal,
         absl::StrCat("Could not load RSA key: ", internal::GetSslErrors()));
   }
   dp->release();
   dq->release();
   crt->release();
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
-util::StatusOr<internal::SslUniquePtr<RSA>> RsaPrivateKeyToRsa(
+absl::StatusOr<internal::SslUniquePtr<RSA>> RsaPrivateKeyToRsa(
     const RsaPrivateKey &private_key) {
   auto n = internal::StringToBignum(private_key.n);
   if (!n.ok()) {
@@ -294,40 +297,43 @@ util::StatusOr<internal::SslUniquePtr<RSA>> RsaPrivateKeyToRsa(
   if (!exponent_status.ok()) {
     return exponent_status;
   }
-  internal::SslUniquePtr<RSA> rsa(RSA_new());
-  if (rsa.get() == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
-                        "BoringSsl RSA allocation error");
-  }
-  util::Status status = GetRsaModAndExponents(private_key, rsa.get());
-  if (!status.ok()) {
-    return status;
-  }
-  status = GetRsaPrimeFactors(private_key, rsa.get());
-  if (!status.ok()) {
-    return status;
-  }
-  status = GetRsaCrtParams(private_key, rsa.get());
-  if (!status.ok()) {
-    return status;
-  }
+  return CallWithCoreDumpProtection(
+      [&]() -> absl::StatusOr<internal::SslUniquePtr<RSA>> {
+        internal::SslUniquePtr<RSA> rsa(RSA_new());
+        if (rsa.get() == nullptr) {
+          return absl::Status(absl::StatusCode::kInternal,
+                              "BoringSsl RSA allocation error");
+        }
+        absl::Status status = GetRsaModAndExponents(private_key, rsa.get());
+        if (!status.ok()) {
+          return status;
+        }
+        status = GetRsaPrimeFactors(private_key, rsa.get());
+        if (!status.ok()) {
+          return status;
+        }
+        status = GetRsaCrtParams(private_key, rsa.get());
+        if (!status.ok()) {
+          return status;
+        }
 
-  if (RSA_check_key(rsa.get()) == 0) {
-    return util::Status(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrCat("Could not load RSA key: ", internal::GetSslErrors()));
-  }
+        if (RSA_check_key(rsa.get()) == 0) {
+          return absl::Status(absl::StatusCode::kInvalidArgument,
+                              absl::StrCat("Could not load RSA key: ",
+                                           internal::GetSslErrors()));
+        }
 #ifdef OPENSSL_IS_BORINGSSL
-  if (RSA_check_fips(rsa.get()) == 0) {
-    return util::Status(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrCat("Could not load RSA key: ", internal::GetSslErrors()));
-  }
+        if (RSA_check_fips(rsa.get()) == 0) {
+          return absl::Status(absl::StatusCode::kInvalidArgument,
+                              absl::StrCat("Could not load RSA key: ",
+                                           internal::GetSslErrors()));
+        }
 #endif
-  return std::move(rsa);
+        return std::move(rsa);
+      });
 }
 
-util::StatusOr<internal::SslUniquePtr<RSA>> RsaPublicKeyToRsa(
+absl::StatusOr<internal::SslUniquePtr<RSA>> RsaPublicKeyToRsa(
     const RsaPublicKey &public_key) {
   auto n = internal::StringToBignum(public_key.n);
   if (!n.ok()) {
@@ -343,30 +349,30 @@ util::StatusOr<internal::SslUniquePtr<RSA>> RsaPublicKeyToRsa(
   }
   internal::SslUniquePtr<RSA> rsa(RSA_new());
   if (rsa.get() == nullptr) {
-    return util::Status(absl::StatusCode::kInternal, "RSA allocation error");
+    return absl::Status(absl::StatusCode::kInternal, "RSA allocation error");
   }
   // The value d is null for a public RSA key.
   if (RSA_set0_key(rsa.get(), n->get(), e->get(),
                    /*d=*/nullptr) != 1) {
-    return util::Status(absl::StatusCode::kInternal, "Could not set RSA key.");
+    return absl::Status(absl::StatusCode::kInternal, "Could not set RSA key.");
   }
   n->release();
   e->release();
   return std::move(rsa);
 }
 
-util::Status RsaCheckPublicKey(const RSA *key) {
+absl::Status RsaCheckPublicKey(const RSA *key) {
   if (key == nullptr) {
-    return util::Status(absl::StatusCode::kInvalidArgument, "RSA key is null");
+    return absl::Status(absl::StatusCode::kInvalidArgument, "RSA key is null");
   }
 
   // BoringSSL `RSA_check_key` supports checking the public key.
   if (internal::IsBoringSsl()) {
     if (RSA_check_key(key) != 1) {
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "Invalid RSA key format");
     }
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
   const BIGNUM *n = nullptr;
@@ -375,18 +381,18 @@ util::Status RsaCheckPublicKey(const RSA *key) {
   RSA_get0_key(key, &n, &e, &d);
 
   if (e == nullptr) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "RSA key's public exponent is null");
   }
   if (n == nullptr) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "RSA key's public modulus is null");
   }
 
   // Check the size of the public modulus.
   unsigned n_bits = BN_num_bits(n);
   if (n_bits > kMaxRsaModulusSizeBits) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat(
             "RSA key's public modulus size is too large; expected at most ",
@@ -396,14 +402,14 @@ util::Status RsaCheckPublicKey(const RSA *key) {
   unsigned e_bits = BN_num_bits(e);
   // Valis size is 1 < e_bits <= kMaxRsaExponentBits.
   if (e_bits > kMaxRsaExponentBits || e_bits < 2) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Invalid public exponent size of ", e_bits, " bits"));
   }
 
   // The exponent must be odd to be relatively prime with phi(n).
   if (!BN_is_odd(e)) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Public exponent is not odd");
   }
 
@@ -411,11 +417,11 @@ util::Status RsaCheckPublicKey(const RSA *key) {
   // n is larger than the maximum modulus size; if this not the case, directly
   // compare n and e.
   if (n_bits <= kMaxRsaExponentBits || BN_ucmp(n, e) <= 0) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "RSA key's public exponent is smaller than the modulus");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace internal

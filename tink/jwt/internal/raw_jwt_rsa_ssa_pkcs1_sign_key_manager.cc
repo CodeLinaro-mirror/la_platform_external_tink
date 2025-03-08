@@ -19,7 +19,6 @@
 #include <memory>
 #include <string>
 
-#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "tink/internal/bn_util.h"
@@ -31,8 +30,6 @@
 #include "tink/signature/sig_util.h"
 #include "tink/subtle/rsa_ssa_pkcs1_sign_boringssl.h"
 #include "tink/util/enums.h"
-#include "tink/util/errors.h"
-#include "tink/util/protobuf_helper.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -85,9 +82,10 @@ internal::RsaPrivateKey RsaPrivateKeyProtoToSubtle(
 
 }  // namespace
 
-StatusOr<JwtRsaSsaPkcs1PrivateKey> RawJwtRsaSsaPkcs1SignKeyManager::CreateKey(
+absl::StatusOr<JwtRsaSsaPkcs1PrivateKey>
+RawJwtRsaSsaPkcs1SignKeyManager::CreateKey(
     const JwtRsaSsaPkcs1KeyFormat& jwt_rsa_ssa_pkcs1_key_format) const {
-  StatusOr<internal::SslUniquePtr<BIGNUM>> e =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> e =
       internal::StringToBignum(jwt_rsa_ssa_pkcs1_key_format.public_exponent());
   if (!e.ok()) {
     return e.status();
@@ -109,11 +107,11 @@ StatusOr<JwtRsaSsaPkcs1PrivateKey> RawJwtRsaSsaPkcs1SignKeyManager::CreateKey(
   return key_proto;
 }
 
-StatusOr<std::unique_ptr<PublicKeySign>>
+absl::StatusOr<std::unique_ptr<PublicKeySign>>
 RawJwtRsaSsaPkcs1SignKeyManager::PublicKeySignFactory::Create(
     const JwtRsaSsaPkcs1PrivateKey& private_key) const {
   internal::RsaPrivateKey key = RsaPrivateKeyProtoToSubtle(private_key);
-  util::StatusOr<google::crypto::tink::HashType> hash =
+  absl::StatusOr<google::crypto::tink::HashType> hash =
       RawJwtRsaSsaPkcs1VerifyKeyManager::HashForPkcs1Algorithm(
           private_key.public_key().algorithm());
   if (!hash.ok()) {
@@ -121,19 +119,19 @@ RawJwtRsaSsaPkcs1SignKeyManager::PublicKeySignFactory::Create(
   }
   internal::RsaSsaPkcs1Params params;
   params.hash_type = Enums::ProtoToSubtle(*hash);
-  util::StatusOr<std::unique_ptr<PublicKeySign>> signer =
+  absl::StatusOr<std::unique_ptr<PublicKeySign>> signer =
       subtle::RsaSsaPkcs1SignBoringSsl::New(key, params);
   if (!signer.ok()) return signer.status();
   // To check that the key is correct, we sign a test message with private key
   // and verify with public key.
-  util::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
       RawJwtRsaSsaPkcs1VerifyKeyManager().GetPrimitive<PublicKeyVerify>(
           private_key.public_key());
   if (!verifier.ok()) return verifier.status();
-  util::Status sign_verify_result =
+  absl::Status sign_verify_result =
       SignAndVerify(signer->get(), verifier->get());
   if (!sign_verify_result.ok()) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "security bug: signing with private key followed by "
                         "verifying with public key failed");
   }

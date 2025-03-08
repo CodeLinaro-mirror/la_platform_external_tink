@@ -17,6 +17,8 @@
 #ifndef TINK_HYBRID_HPKE_PUBLIC_KEY_H_
 #define TINK_HYBRID_HPKE_PUBLIC_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 
 #include "absl/strings/string_view.h"
@@ -43,7 +45,7 @@ class HpkePublicKey : public HybridPublicKey {
   // Creates a new HPKE public key from `public_key_bytes`. If `parameters`
   // specify a variant that uses a prefix, then `id_requirement` is used to
   // compute this prefix.
-  static util::StatusOr<HpkePublicKey> Create(
+  static absl::StatusOr<HpkePublicKey> Create(
       const HpkeParameters& parameters, absl::string_view public_key_bytes,
       absl::optional<int> id_requirement, PartialKeyAccessToken token);
 
@@ -55,11 +57,15 @@ class HpkePublicKey : public HybridPublicKey {
 
   const HpkeParameters& GetParameters() const override { return parameters_; }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<HpkePublicKey>(*this);
+  }
 
  private:
   explicit HpkePublicKey(const HpkeParameters& parameters,

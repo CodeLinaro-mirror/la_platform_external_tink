@@ -59,9 +59,9 @@ class MonitoredPrf : public Prf {
   MonitoredPrf(const MonitoredPrf&) = delete;
   MonitoredPrf& operator=(const MonitoredPrf&) = delete;
 
-  util::StatusOr<std::string> Compute(absl::string_view input,
+  absl::StatusOr<std::string> Compute(absl::string_view input,
                                       size_t output_length) const override {
-    util::StatusOr<std::string> result = prf_->Compute(input, output_length);
+    absl::StatusOr<std::string> result = prf_->Compute(input, output_length);
     if (!result.ok()) {
       if (monitoring_client_ != nullptr) {
         monitoring_client_->LogFailure();
@@ -113,29 +113,29 @@ class PrfSetPrimitiveWrapper : public PrfSet {
   std::map<uint32_t, Prf*> prfs_;
 };
 
-util::Status Validate(PrimitiveSet<Prf>* prf_set) {
+absl::Status Validate(PrimitiveSet<Prf>* prf_set) {
   if (prf_set == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "prf_set must be non-NULL");
   }
   if (prf_set->get_primary() == nullptr) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "prf_set has no primary");
   }
   for (auto prf : prf_set->get_all()) {
     if (prf->get_output_prefix_type() != OutputPrefixType::RAW) {
-      return util::Status(absl::StatusCode::kInvalidArgument,
+      return absl::Status(absl::StatusCode::kInvalidArgument,
                           "PrfSet should only be used with prefix type RAW");
     }
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace
 
-util::StatusOr<std::unique_ptr<PrfSet>> PrfSetWrapper::Wrap(
+absl::StatusOr<std::unique_ptr<PrfSet>> PrfSetWrapper::Wrap(
     std::unique_ptr<PrimitiveSet<Prf>> prf_set) const {
-  util::Status status = Validate(prf_set.get());
+  absl::Status status = Validate(prf_set.get());
   if (!status.ok()) return status;
 
   MonitoringClientFactory* const monitoring_factory =
@@ -144,12 +144,12 @@ util::StatusOr<std::unique_ptr<PrfSet>> PrfSetWrapper::Wrap(
   if (monitoring_factory == nullptr) {
     return {absl::make_unique<PrfSetPrimitiveWrapper>(std::move(prf_set))};
   }
-  util::StatusOr<MonitoringKeySetInfo> keyset_info =
+  absl::StatusOr<MonitoringKeySetInfo> keyset_info =
       internal::MonitoringKeySetInfoFromPrimitiveSet(*prf_set);
   if (!keyset_info.ok()) {
     return keyset_info.status();
   }
-  util::StatusOr<std::unique_ptr<MonitoringClient>> monitoring_client =
+  absl::StatusOr<std::unique_ptr<MonitoringClient>> monitoring_client =
       monitoring_factory->New(
           MonitoringContext(kPrimitive, kComputeApi, *keyset_info));
   if (!monitoring_client.ok()) {

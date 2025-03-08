@@ -17,6 +17,8 @@
 #ifndef TINK_EXPERIMENTAL_PQCRYPTO_KEM_ML_KEM_PUBLIC_KEY_H_
 #define TINK_EXPERIMENTAL_PQCRYPTO_KEM_ML_KEM_PUBLIC_KEY_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 
 #include "absl/base/attributes.h"
@@ -44,7 +46,7 @@ class MlKemPublicKey : public KemPublicKey {
   // Creates a new ML-KEM public key from `public_key_bytes`. If the
   // `parameters` specify a variant that uses a prefix, then `id_requirement` is
   // used to compute this prefix.
-  static util::StatusOr<MlKemPublicKey> Create(
+  static absl::StatusOr<MlKemPublicKey> Create(
       const MlKemParameters& parameters, absl::string_view public_key_bytes,
       absl::optional<int> id_requirement, PartialKeyAccessToken token);
 
@@ -63,11 +65,15 @@ class MlKemPublicKey : public KemPublicKey {
     return parameters_;
   }
 
-  absl::optional<int> GetIdRequirement() const override {
+  absl::optional<int32_t> GetIdRequirement() const override {
     return id_requirement_;
   }
 
   bool operator==(const Key& other) const override;
+
+  std::unique_ptr<Key> Clone() const override {
+    return std::make_unique<MlKemPublicKey>(*this);
+  }
 
  private:
   explicit MlKemPublicKey(const MlKemParameters& parameters,

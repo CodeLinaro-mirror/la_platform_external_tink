@@ -16,21 +16,31 @@
 
 #include "tink/aead/internal/cord_aes_gcm_boringssl.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 
+#include "absl/log/check.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/cord.h"
+#include "absl/strings/cord_buffer.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
+#ifdef OPENSSL_IS_BORINGSSL
+#include "openssl/base.h"
+#include "openssl/cipher.h"
+#else
 #include "openssl/evp.h"
+#endif
 #include "tink/aead/cord_aead.h"
 #include "tink/aead/internal/aead_util.h"
+#include "tink/aead/internal/cord_utils.h"
 #include "tink/internal/ssl_unique_ptr.h"
 #include "tink/subtle/random.h"
-#include "tink/subtle/subtle_util.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -43,15 +53,19 @@ namespace {
 constexpr int kIvSizeInBytes = 12;
 constexpr int kTagSizeInBytes = 16;
 
+// Encrypt/decrypt at most `kMaxSegmentSize` bytes at a time, then attempt to
+// remove the processed segment from the Cord.
+constexpr int kMaxSegmentSize = 512 << 10;  // 512 KiB
+
 // Set the IV `iv` for the given `context`. if `encryption` is true, set the
 // context for encryption, and for decryption otherwise.
-util::Status SetIvAndDirection(EVP_CIPHER_CTX* context, absl::string_view iv,
+absl::Status SetIvAndDirection(EVP_CIPHER_CTX* context, absl::string_view iv,
                                bool encryption) {
   const int encryption_flag = encryption ? 1 : 0;
   // Set the IV size.
   if (EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, iv.size(),
                           /*ptr=*/nullptr) <= 0) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "Failed to set the IV size");
   }
   // Finally set the IV bytes.
@@ -59,21 +73,21 @@ util::Status SetIvAndDirection(EVP_CIPHER_CTX* context, absl::string_view iv,
                         /*key=*/nullptr,
                         reinterpret_cast<const uint8_t*>(&iv[0]),
                         /*enc=*/encryption_flag) <= 0) {
-    return util::Status(absl::StatusCode::kInternal, "Failed to set the IV");
+    return absl::Status(absl::StatusCode::kInternal, "Failed to set the IV");
   }
 
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 #if defined(OPENSSL_IS_BORINGSSL) || OPENSSL_VERSION_NUMBER < 0x30000000L
 // Returns a new EVP_CIPHER_CTX for encryption (`encryption` == true) or
 // decryption (`encryption` == false). It tries to skip part of the
 // initialization copying `partial_context`.
-util::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> NewContextFromPartial(
+absl::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> NewContextFromPartial(
     EVP_CIPHER_CTX* partial_context, absl::string_view iv, bool encryption) {
   internal::SslUniquePtr<EVP_CIPHER_CTX> context(EVP_CIPHER_CTX_new());
   if (context == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "EVP_CIPHER_CTX_new failed");
   }
   // Try making a copy of `partial_context` to skip some pre-computations.
@@ -85,10 +99,10 @@ util::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> NewContextFromPartial(
   // [1]https://github.com/google/boringssl/blob/4c8bcf0da2951cacd8ed8eaa7fd2df4b22fca23b/crypto/fipsmodule/cipher/cipher.c#L116
   // [2]https://github.com/openssl/openssl/blob/830bf8e1e4749ad65c51b6a1d0d769ae689404ba/crypto/evp/evp_enc.c#L703
   if (EVP_CIPHER_CTX_copy(context.get(), partial_context) <= 0) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "EVP_CIPHER_CTX_copy failed");
   }
-  util::Status res =
+  absl::Status res =
       SetIvAndDirection(context.get(), iv, /*encryption=*/encryption);
   if (!res.ok()) {
     return res;
@@ -131,11 +145,50 @@ util::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> NewContext(
 }
 #endif
 
+// Encrypts/decrypts and removes `bytes_to_crypt` bytes from `input` using
+// `context` and writes the result to `writer`. Returns true if the operation
+// was successful, false otherwise.
+bool DoCryptAndConsume(absl::Cord& input, size_t bytes_to_crypt,
+                       EVP_CIPHER_CTX& context, CordWriter& writer) {
+  DCHECK(input.size() >= bytes_to_crypt);
+  int unused_len = 0;
+  while (bytes_to_crypt > 0) {
+    // Process at most `kMaxSegmentSize` bytes at a time, then remove the
+    // decrypted segment from the Cord.
+    const int segment_size = std::min<int>(bytes_to_crypt, kMaxSegmentSize);
+    CordReader reader(input);
+    int left_in_segment = segment_size;
+    while (left_in_segment > 0) {
+      absl::string_view chunk = reader.Peek().substr(0, left_in_segment);
+      size_t chunk_size = chunk.size();
+      while (!chunk.empty()) {
+        absl::Span<char> buffer = writer.NextWriteBuffer();
+        // Portion of `chunk` to that fits in `buffer`.
+        absl::string_view to_crypt = chunk.substr(0, buffer.size());
+        if (!EVP_CipherUpdate(
+                &context, reinterpret_cast<uint8_t*>(buffer.data()),
+                &unused_len,
+                reinterpret_cast<const uint8_t*>(to_crypt.data()),
+                to_crypt.size())) {
+          return false;
+        }
+        writer.Advance(to_crypt.size());
+        chunk.remove_prefix(to_crypt.size());
+      }
+      left_in_segment -= chunk_size;
+      reader.Skip(chunk_size);
+    }
+    input.RemovePrefix(segment_size);
+    bytes_to_crypt -= segment_size;
+  }
+  return true;
+}
+
 }  // namespace
 
-util::StatusOr<std::unique_ptr<CordAead>> CordAesGcmBoringSsl::New(
+absl::StatusOr<std::unique_ptr<CordAead>> CordAesGcmBoringSsl::New(
     const util::SecretData& key_value) {
-  util::StatusOr<const EVP_CIPHER*> cipher =
+  absl::StatusOr<const EVP_CIPHER*> cipher =
       internal::GetAesGcmCipherForKeySize(key_value.size());
   if (!cipher.ok()) {
     return cipher.status();
@@ -153,7 +206,7 @@ util::StatusOr<std::unique_ptr<CordAead>> CordAesGcmBoringSsl::New(
   if (EVP_CipherInit_ex(partial_context.get(), *cipher, /*engine=*/nullptr,
                         reinterpret_cast<const uint8_t*>(&key_value[0]),
                         /*iv=*/nullptr, /*enc=*/1) <= 0) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "Context initialization failed");
   }
 
@@ -162,12 +215,12 @@ util::StatusOr<std::unique_ptr<CordAead>> CordAesGcmBoringSsl::New(
   return std::move(aead);
 }
 
-util::StatusOr<absl::Cord> CordAesGcmBoringSsl::Encrypt(
+absl::StatusOr<absl::Cord> CordAesGcmBoringSsl::Encrypt(
     absl::Cord plaintext, absl::Cord associated_data) const {
   std::string iv = subtle::Random::GetRandomBytes(kIvSizeInBytes);
 
 #if defined(OPENSSL_IS_BORINGSSL) || OPENSSL_VERSION_NUMBER < 0x30000000L
-  util::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> context =
+  absl::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> context =
       NewContextFromPartial(partial_context_.get(), iv, /*encryption=*/true);
 #else
   util::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> context =
@@ -177,123 +230,87 @@ util::StatusOr<absl::Cord> CordAesGcmBoringSsl::Encrypt(
     return context.status();
   }
 
-  int len = 0;
+  int unused_len = 0;
   // Process AAD.
-  for (auto ad_chunk : associated_data.Chunks()) {
-    if (!EVP_EncryptUpdate(context->get(), /*out=*/nullptr, &len,
+  for (absl::string_view ad_chunk : associated_data.Chunks()) {
+    if (!EVP_EncryptUpdate(context->get(), /*out=*/nullptr, &unused_len,
                            reinterpret_cast<const uint8_t*>(ad_chunk.data()),
                            ad_chunk.size())) {
-      return util::Status(absl::StatusCode::kInternal, "Encryption failed");
+      return absl::Status(absl::StatusCode::kInternal, "Encryption failed");
     }
   }
 
-  char* buffer = std::allocator<char>().allocate(plaintext.size());
-  absl::Cord ciphertext_buffer = absl::MakeCordFromExternal(
-      absl::string_view(buffer, plaintext.size()), [](absl::string_view sv) {
-        std::allocator<char>().deallocate(const_cast<char*>(sv.data()),
-                                          sv.size());
-      });
-  uint64_t ciphertext_buffer_offset = 0;
-
-  for (auto plaintext_chunk : plaintext.Chunks()) {
-    if (!EVP_EncryptUpdate(
-            context->get(),
-            reinterpret_cast<uint8_t*>(&(buffer[ciphertext_buffer_offset])),
-            &len, reinterpret_cast<const uint8_t*>(plaintext_chunk.data()),
-            plaintext_chunk.size())) {
-      return util::Status(absl::StatusCode::kInternal, "Encryption failed");
-    }
-    ciphertext_buffer_offset += plaintext_chunk.size();
-  }
-  if (!EVP_EncryptFinal_ex(context->get(), nullptr, &len)) {
-    return util::Status(absl::StatusCode::kInternal, "Encryption failed");
+  CordWriter writer(kIvSizeInBytes + plaintext.size() + kTagSizeInBytes);
+  writer.Write(iv);
+  if (!DoCryptAndConsume(plaintext, plaintext.size(), **context, writer)) {
+    return absl::Status(absl::StatusCode::kInternal, "Encryption failed");
   }
 
-  std::string tag;
-  subtle::ResizeStringUninitialized(&tag, kTagSizeInBytes);
+  if (!EVP_EncryptFinal_ex(context->get(), /*out=*/nullptr, &unused_len)) {
+    return absl::Status(absl::StatusCode::kInternal, "Encryption failed");
+  }
+
+  char tag[kTagSizeInBytes];
   if (!EVP_CIPHER_CTX_ctrl(context->get(), EVP_CTRL_GCM_GET_TAG,
-                           kTagSizeInBytes,
-                           reinterpret_cast<uint8_t*>(&tag[0]))) {
-    return util::Status(absl::StatusCode::kInternal, "Encryption failed");
+                           kTagSizeInBytes, reinterpret_cast<uint8_t*>(tag))) {
+    return absl::Status(absl::StatusCode::kInternal, "Encryption failed");
   }
-
-  // Create result cord
-  absl::Cord result;
-  result.Append(iv);
-  result.Append(ciphertext_buffer);
-  result.Append(tag);
-  return result;
+  writer.Write(absl::string_view(tag, kTagSizeInBytes));
+  return std::move(writer).data();
 }
 
-util::StatusOr<absl::Cord> CordAesGcmBoringSsl::Decrypt(
+absl::StatusOr<absl::Cord> CordAesGcmBoringSsl::Decrypt(
     absl::Cord ciphertext, absl::Cord associated_data) const {
   if (ciphertext.size() < kIvSizeInBytes + kTagSizeInBytes) {
-    return util::Status(absl::StatusCode::kInternal, "Ciphertext too short");
+    return absl::Status(absl::StatusCode::kInternal, "Ciphertext too short");
   }
 
-  // First bytes contain the IV.
-  std::string iv = std::string(ciphertext.Subcord(0, kIvSizeInBytes));
-  absl::Cord raw_ciphertext = ciphertext.Subcord(
-      kIvSizeInBytes, ciphertext.size() - kIvSizeInBytes - kTagSizeInBytes);
-
+  char iv[kIvSizeInBytes];
+  CordReader(ciphertext).ReadN(kIvSizeInBytes, iv);
+  ciphertext.RemovePrefix(kIvSizeInBytes);
+  absl::string_view iv_view(iv, kIvSizeInBytes);
 #if defined(OPENSSL_IS_BORINGSSL) || OPENSSL_VERSION_NUMBER < 0x30000000L
-  util::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> context =
-      NewContextFromPartial(partial_context_.get(), iv, /*encryption=*/false);
+  absl::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> context =
+      NewContextFromPartial(partial_context_.get(), iv_view,
+                            /*encryption=*/false);
 #else
   util::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> context =
-      NewContext(key_, iv, /*encryption=*/false);
+      NewContext(key_, iv_view, /*encryption=*/false);
 #endif
   if (!context.ok()) {
     return context.status();
   }
 
-  int len = 0;
+  int unused_len = 0;
   // Process associated data.
-  for (auto ad_chunk : associated_data.Chunks()) {
-    if (!EVP_DecryptUpdate(context->get(), /*out=*/nullptr, &len,
+  for (absl::string_view ad_chunk : associated_data.Chunks()) {
+    if (!EVP_DecryptUpdate(context->get(), /*out=*/nullptr, &unused_len,
                            reinterpret_cast<const uint8_t*>(ad_chunk.data()),
                            ad_chunk.size())) {
-      return util::Status(absl::StatusCode::kInternal, "Decryption failed");
+      return absl::Status(absl::StatusCode::kInternal, "Decryption failed");
     }
   }
 
-  uint64_t plaintext_len = ciphertext.size() - kIvSizeInBytes - kTagSizeInBytes;
-  char* plaintext_buffer = std::allocator<char>().allocate(plaintext_len);
-  uint64_t plaintext_buffer_offset = 0;
-
-  absl::Cord result = absl::MakeCordFromExternal(
-      absl::string_view(plaintext_buffer, plaintext_len),
-      [](absl::string_view sv) {
-        std::allocator<char>().deallocate(const_cast<char*>(sv.data()),
-                                          sv.size());
-      });
-
-  for (auto ct_chunk : raw_ciphertext.Chunks()) {
-    if (!EVP_DecryptUpdate(context->get(),
-                           reinterpret_cast<uint8_t*>(
-                               &plaintext_buffer[plaintext_buffer_offset]),
-                           &len,
-                           reinterpret_cast<const uint8_t*>(ct_chunk.data()),
-                           ct_chunk.size())) {
-      return util::Status(absl::StatusCode::kInternal, "Decryption failed");
-    }
-    plaintext_buffer_offset += ct_chunk.size();
+  size_t ciphertext_size = ciphertext.size() - kTagSizeInBytes;
+  CordWriter writer(ciphertext_size);
+  if (!DoCryptAndConsume(ciphertext, ciphertext_size, **context, writer)) {
+    return absl::Status(absl::StatusCode::kInternal, "Decryption failed");
   }
 
   // Set expected tag value to last chunk in ciphertext Cord.
-  std::string tag = std::string(
-      ciphertext.Subcord(ciphertext.size() - kTagSizeInBytes, kTagSizeInBytes));
+  char tag[kTagSizeInBytes];
+  CordReader(ciphertext).ReadN(kTagSizeInBytes, tag);
 
   if (!EVP_CIPHER_CTX_ctrl(context->get(), EVP_CTRL_GCM_SET_TAG,
-                           kTagSizeInBytes, &tag[0])) {
-    return util::Status(absl::StatusCode::kInternal,
+                           kTagSizeInBytes, tag)) {
+    return absl::Status(absl::StatusCode::kInternal,
                         "Could not set authentication tag");
   }
   // Verify authentication tag.
-  if (!EVP_DecryptFinal_ex(context->get(), nullptr, &len)) {
-    return util::Status(absl::StatusCode::kInternal, "Authentication failed");
+  if (!EVP_DecryptFinal_ex(context->get(), /*out=*/nullptr, &unused_len)) {
+    return absl::Status(absl::StatusCode::kInternal, "Authentication failed");
   }
-  return result;
+  return std::move(writer).data();
 }
 
 }  // namespace internal

@@ -23,16 +23,17 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
+#include "tink/internal/secret_buffer.h"
 
 namespace crypto {
 namespace tink {
 namespace util {
 namespace {
 
+using ::crypto::tink::internal::SecretBuffer;
 using ::testing::AnyOf;
 using ::testing::ElementsAreArray;
 using ::testing::Eq;
-
 
 constexpr int kEightKb = 8192;
 struct alignas(kEightKb) TwoMbAlignedStruct {
@@ -51,13 +52,10 @@ TEST(SecretUniqueptrTest, Alignment) {
 
 #endif
 
-TEST(SecretDataTest, OneByOneInsertion) {
+TEST(SecretDataTest, SecretDataFromSpan) {
   constexpr unsigned char kContents[] = {41, 42, 64, 12, 41, 0,
                                          52, 56, 6,  12, 127, 13};
-  SecretData data;
-  for (unsigned char c : kContents) {
-    data.push_back(c);
-  }
+  SecretData data = SecretDataFromSpan(kContents);
   EXPECT_THAT(data, ElementsAreArray(kContents));
 }
 
@@ -87,10 +85,7 @@ TEST(SecretDataTest, StringViewFromSecretData) {
 TEST(SecretDataTest, SecretDataCopy) {
   constexpr unsigned char kContents[] = {41, 42, 64, 12, 41, 0,
                                          52, 56, 6,  12, 127, 13};
-  SecretData data;
-  for (unsigned char c : kContents) {
-    data.push_back(c);
-  }
+  SecretData data = SecretDataFromSpan(kContents);
   SecretData data_copy = data;
   EXPECT_THAT(data_copy, ElementsAreArray(kContents));
 }
@@ -111,6 +106,30 @@ TEST(SecretDataTest, SecretDataEqualsFalseSize) {
   SecretData d1 = SecretDataFromStringView("abc");
   SecretData d2 = SecretDataFromStringView("ab");
   EXPECT_THAT(SecretDataEquals(d1, d2), Eq(false));
+}
+
+TEST(SecretDataTest, ToSecretBuffer) {
+  SecretData data = SecretDataFromStringView("abc");
+  SecretBuffer buffer = internal::AsSecretBuffer(data);
+  EXPECT_THAT(buffer.AsStringView(), Eq("abc"));
+}
+
+TEST(SecretDataTest, ToSecretBufferRvalue) {
+  SecretData data = SecretDataFromStringView("abc");
+  SecretBuffer buffer = internal::AsSecretBuffer(std::move(data));
+  EXPECT_THAT(buffer.AsStringView(), Eq("abc"));
+}
+
+TEST(SecretDataTest, FromSecretBuffer) {
+  SecretBuffer buffer = SecretBuffer("abc");
+  SecretData data = internal::AsSecretData(buffer);
+  EXPECT_THAT(SecretDataAsStringView(data), Eq("abc"));
+}
+
+TEST(SecretDataTest, FromSecretBufferRvalue) {
+  SecretBuffer buffer = SecretBuffer("abc");
+  SecretData data = internal::AsSecretData(std::move(buffer));
+  EXPECT_THAT(SecretDataAsStringView(data), Eq("abc"));
 }
 
 TEST(SecretValueTest, DefaultConstructor) {
@@ -152,6 +171,7 @@ TEST(SecretValueTest, MoveAssignment) {
   // NOLINTNEXTLINE(bugprone-use-after-move)
   EXPECT_THAT(s.value(), AnyOf(Eq(0), Eq(102)));
 }
+
 
 }  // namespace
 }  // namespace util

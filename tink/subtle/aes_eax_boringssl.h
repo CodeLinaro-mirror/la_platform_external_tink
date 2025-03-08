@@ -24,12 +24,14 @@
 #include <string>
 #include <utility>
 
+#include "absl/base/nullability.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "openssl/aes.h"
 #include "openssl/evp.h"
 #include "tink/aead.h"
 #include "tink/internal/fips_utils.h"
+#include "tink/internal/secret_buffer.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -44,14 +46,14 @@ class AesEaxBoringSsl : public Aead {
   // Currently supported key sizes are 128 and 256 bits.
   // Currently supported nonce sizes are 12 and 16 bytes.
   // The tag size is fixed to 16 bytes.
-  static crypto::tink::util::StatusOr<std::unique_ptr<Aead>> New(
-      const util::SecretData& key, size_t nonce_size_in_bytes);
+  static absl::StatusOr<std::unique_ptr<Aead>> New(const util::SecretData& key,
+                                                   size_t nonce_size_in_bytes);
 
-  crypto::tink::util::StatusOr<std::string> Encrypt(
+  absl::StatusOr<std::string> Encrypt(
       absl::string_view plaintext,
       absl::string_view associated_data) const override;
 
-  crypto::tink::util::StatusOr<std::string> Decrypt(
+  absl::StatusOr<std::string> Decrypt(
       absl::string_view ciphertext,
       absl::string_view associated_data) const override;
 
@@ -94,8 +96,8 @@ class AesEaxBoringSsl : public Aead {
                           const uint8_t y[kBlockSize]);
 
   // Encrypts a single block with AES.
-  void EncryptBlock(Block* block) const;
-  void EncryptBlock(util::SecretData* block) const;
+  void EncryptBlock(absl::Nonnull<Block*> block) const;
+  void EncryptBlock(absl::Nonnull<internal::SecretBuffer*> block) const;
 
   // Pads a partial data block of size 0 <= len <= kBlockSize.
   Block Pad(absl::Span<const uint8_t> data) const;
@@ -113,8 +115,8 @@ class AesEaxBoringSsl : public Aead {
   // of an OMAC computation over the nonce. `in` are the bytes that are
   // encrypted or decrypted, and the result is written to `out`. `in`.data()
   // MUST NOT be null.
-  crypto::tink::util::Status CtrCrypt(const Block& N, absl::string_view in,
-                                      absl::Span<char> out) const;
+  absl::Status CtrCrypt(const Block& N, absl::string_view in,
+                        absl::Span<char> out) const;
 
   const util::SecretUniquePtr<AES_KEY> aeskey_;
   const size_t nonce_size_;

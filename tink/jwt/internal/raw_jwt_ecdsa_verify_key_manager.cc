@@ -26,8 +26,6 @@
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/ecdsa_verify_boringssl.h"
 #include "tink/util/enums.h"
-#include "tink/util/errors.h"
-#include "tink/util/protobuf_helper.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/validation.h"
@@ -45,11 +43,11 @@ using google::crypto::tink::JwtEcdsaPublicKey;
 using google::crypto::tink::EllipticCurveType;
 using google::crypto::tink::HashType;
 
-StatusOr<std::unique_ptr<PublicKeyVerify>>
+absl::StatusOr<std::unique_ptr<PublicKeyVerify>>
 RawJwtEcdsaVerifyKeyManager::PublicKeyVerifyFactory::Create(
-      const JwtEcdsaPublicKey& jwt_ecdsa_public_key) const {
+    const JwtEcdsaPublicKey& jwt_ecdsa_public_key) const {
   internal::EcKey ec_key;
-  util::StatusOr<google::crypto::tink::EllipticCurveType> curve =
+  absl::StatusOr<google::crypto::tink::EllipticCurveType> curve =
       CurveForEcdsaAlgorithm(jwt_ecdsa_public_key.algorithm());
   if (!curve.ok()) {
     return curve.status();
@@ -57,7 +55,7 @@ RawJwtEcdsaVerifyKeyManager::PublicKeyVerifyFactory::Create(
   ec_key.curve = Enums::ProtoToSubtle(*curve);
   ec_key.pub_x = jwt_ecdsa_public_key.x();
   ec_key.pub_y = jwt_ecdsa_public_key.y();
-  util::StatusOr<google::crypto::tink::HashType> hash_type =
+  absl::StatusOr<google::crypto::tink::HashType> hash_type =
       HashForEcdsaAlgorithm(jwt_ecdsa_public_key.algorithm());
   if (!hash_type.ok()) {
     return hash_type.status();
@@ -69,7 +67,7 @@ RawJwtEcdsaVerifyKeyManager::PublicKeyVerifyFactory::Create(
   return {*std::move(result)};
 }
 
-StatusOr<EllipticCurveType>
+absl::StatusOr<EllipticCurveType>
 RawJwtEcdsaVerifyKeyManager::CurveForEcdsaAlgorithm(
     const JwtEcdsaAlgorithm& algorithm) {
   switch (algorithm) {
@@ -85,7 +83,7 @@ RawJwtEcdsaVerifyKeyManager::CurveForEcdsaAlgorithm(
   }
 }
 
-StatusOr<HashType> RawJwtEcdsaVerifyKeyManager::HashForEcdsaAlgorithm(
+absl::StatusOr<HashType> RawJwtEcdsaVerifyKeyManager::HashForEcdsaAlgorithm(
     const JwtEcdsaAlgorithm& algorithm) {
   switch (algorithm) {
     case JwtEcdsaAlgorithm::ES256:
@@ -106,12 +104,12 @@ Status RawJwtEcdsaVerifyKeyManager::ValidateAlgorithm(
     case JwtEcdsaAlgorithm::ES256:
     case JwtEcdsaAlgorithm::ES384:
     case JwtEcdsaAlgorithm::ES512:
-      return util::OkStatus();
+      return absl::OkStatus();
     default:
       return Status(absl::StatusCode::kInvalidArgument,
                     "Unsupported Ecdsa Algorithm");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 Status RawJwtEcdsaVerifyKeyManager::ValidateKey(

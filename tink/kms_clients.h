@@ -47,15 +47,14 @@ class KmsClients {
   // kms_client.GetAead to get a remote AEAD instance, and use that to create
   // an encrypted keyset using KeysetHandle::Write, or create an envelope
   // AEAD using KmsEnvelopeAead::New.
-  static crypto::tink::util::Status Add(std::unique_ptr<KmsClient> kms_client) {
+  static absl::Status Add(std::unique_ptr<KmsClient> kms_client) {
     return GlobalInstance().LocalAdd(std::move(kms_client));
   }
 
   // Returns the first KmsClient that was added previously via Add(),
   // and that does support 'key_uri', which must be non-empty.
   // Retains the ownership of the returned KmsClient.
-  static crypto::tink::util::StatusOr<const KmsClient*>
-      Get(absl::string_view key_uri) {
+  static absl::StatusOr<const KmsClient *> Get(absl::string_view key_uri) {
     return GlobalInstance().LocalGet(key_uri);
   }
 
@@ -63,10 +62,8 @@ class KmsClients {
   KmsClients() {}
 
   // Per-instance API, to be used by GlobalInstance();
-  crypto::tink::util::Status
-      LocalAdd(std::unique_ptr<KmsClient> kms_client);
-  crypto::tink::util::StatusOr<const KmsClient*>
-      LocalGet(absl::string_view key_uri);
+  absl::Status LocalAdd(std::unique_ptr<KmsClient> kms_client);
+  absl::StatusOr<const KmsClient *> LocalGet(absl::string_view key_uri);
   absl::Mutex clients_mutex_;
   std::vector<std::unique_ptr<KmsClient>> clients_
       ABSL_GUARDED_BY(clients_mutex_);

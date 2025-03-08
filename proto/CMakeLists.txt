@@ -120,6 +120,12 @@ tink_cc_proto(
 )
 
 tink_cc_proto(
+  NAME x_aes_gcm_cc_proto
+  SRCS x_aes_gcm.proto
+)
+
+
+tink_cc_proto(
   NAME kms_aead_cc_proto
   SRCS kms_aead.proto
 )
@@ -176,6 +182,16 @@ tink_cc_proto(
 tink_cc_proto(
   NAME jwt_hmac_cc_proto
   SRCS jwt_hmac.proto
+)
+
+tink_cc_proto(
+  NAME ml_dsa_cc_proto
+  SRCS ml_dsa.proto
+)
+
+tink_cc_proto(
+  NAME slh_dsa_cc_proto
+  SRCS slh_dsa.proto
 )
 
 tink_cc_proto(

@@ -23,7 +23,7 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
-#include "tink/hybrid/ecies_aead_hkdf_dem_helper.h"
+#include "tink/hybrid/internal/ecies_aead_hkdf_dem_helper.h"
 #include "tink/hybrid_decrypt.h"
 #include "tink/internal/ec_util.h"
 #include "tink/subtle/ecies_hkdf_recipient_kem_boringssl.h"
@@ -40,10 +40,10 @@ namespace crypto {
 namespace tink {
 
 namespace {
-util::Status Validate(const EciesAeadHkdfPrivateKey& key) {
+absl::Status Validate(const EciesAeadHkdfPrivateKey& key) {
   if (!key.has_public_key() || !key.public_key().has_params() ||
       key.public_key().x().empty() || key.key_value().empty()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Invalid EciesAeadHkdfPublicKey: missing required fields.");
   }
@@ -52,23 +52,23 @@ util::Status Validate(const EciesAeadHkdfPrivateKey& key) {
       key.public_key().params().kem_params().curve_type() ==
           EllipticCurveType::CURVE25519) {
     if (!key.public_key().y().empty()) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "Invalid EciesAeadHkdfPublicKey: has unexpected field.");
     }
   } else if (key.public_key().y().empty()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Invalid EciesAeadHkdfPublicKey: missing required fields.");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 }  // namespace
 
 // static
-util::StatusOr<std::unique_ptr<HybridDecrypt>> EciesAeadHkdfHybridDecrypt::New(
+absl::StatusOr<std::unique_ptr<HybridDecrypt>> EciesAeadHkdfHybridDecrypt::New(
     const EciesAeadHkdfPrivateKey& recipient_key) {
-  util::Status status = Validate(recipient_key);
+  absl::Status status = Validate(recipient_key);
   if (!status.ok()) return status;
 
   auto kem_result = subtle::EciesHkdfRecipientKemBoringSsl::New(
@@ -77,7 +77,7 @@ util::StatusOr<std::unique_ptr<HybridDecrypt>> EciesAeadHkdfHybridDecrypt::New(
       util::SecretDataFromStringView(recipient_key.key_value()));
   if (!kem_result.ok()) return kem_result.status();
 
-  auto dem_result = EciesAeadHkdfDemHelper::New(
+  auto dem_result = internal::EciesAeadHkdfDemHelper::New(
       recipient_key.public_key().params().dem_params().aead_dem());
   if (!dem_result.ok()) return dem_result.status();
 
@@ -86,7 +86,7 @@ util::StatusOr<std::unique_ptr<HybridDecrypt>> EciesAeadHkdfHybridDecrypt::New(
       std::move(dem_result).value()))};
 }
 
-util::StatusOr<std::string> EciesAeadHkdfHybridDecrypt::Decrypt(
+absl::StatusOr<std::string> EciesAeadHkdfHybridDecrypt::Decrypt(
     absl::string_view ciphertext, absl::string_view context_info) const {
   // Extract KEM-bytes from the ciphertext.
   auto header_size_result = internal::EcPointEncodingSizeInBytes(
@@ -96,18 +96,19 @@ util::StatusOr<std::string> EciesAeadHkdfHybridDecrypt::Decrypt(
   if (!header_size_result.ok()) return header_size_result.status();
   auto header_size = header_size_result.value();
   if (ciphertext.size() < header_size) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "ciphertext too short");
   }
 
   // Use KEM to get a symmetric key.
-  auto symmetric_key_result = recipient_kem_->GenerateKey(
-      absl::string_view(ciphertext).substr(0, header_size),
-      util::Enums::ProtoToSubtle(
-          recipient_key_params_.kem_params().hkdf_hash_type()),
-      recipient_key_params_.kem_params().hkdf_salt(), context_info,
-      dem_helper_->dem_key_size_in_bytes(),
-      util::Enums::ProtoToSubtle(recipient_key_params_.ec_point_format()));
+  absl::StatusOr<util::SecretData> symmetric_key_result =
+      recipient_kem_->GenerateKey(
+          absl::string_view(ciphertext).substr(0, header_size),
+          util::Enums::ProtoToSubtle(
+              recipient_key_params_.kem_params().hkdf_hash_type()),
+          recipient_key_params_.kem_params().hkdf_salt(), context_info,
+          dem_helper_->dem_key_size_in_bytes(),
+          util::Enums::ProtoToSubtle(recipient_key_params_.ec_point_format()));
   if (!symmetric_key_result.ok()) return symmetric_key_result.status();
   auto symmetric_key = std::move(symmetric_key_result.value());
 

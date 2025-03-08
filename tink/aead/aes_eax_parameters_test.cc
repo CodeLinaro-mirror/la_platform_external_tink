@@ -16,9 +16,13 @@
 
 #include "tink/aead/aes_eax_parameters.h"
 
+#include <memory>
+#include <utility>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "tink/parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 
@@ -29,6 +33,7 @@ namespace {
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
 using ::testing::Eq;
+using ::testing::IsTrue;
 using ::testing::TestWithParam;
 using ::testing::Values;
 
@@ -59,7 +64,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(AesEaxParametersTest, BuildParametersSucceeds) {
   BuildTestCase test_case = GetParam();
 
-  util::StatusOr<AesEaxParameters> parameters =
+  absl::StatusOr<AesEaxParameters> parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(test_case.key_size)
           .SetIvSizeInBytes(test_case.iv_size)
@@ -262,50 +267,104 @@ TEST(AesEaxParametersTest, BuildWithInvalidTagSizeFails) {
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST_P(AesEaxParametersTest, CopyConstructor) {
-  BuildTestCase test_case = GetParam();
-
-  util::StatusOr<AesEaxParameters> parameters =
+TEST(AesEaxParametersTest, CopyConstructor) {
+  absl::StatusOr<AesEaxParameters> parameters =
       AesEaxParameters::Builder()
-          .SetKeySizeInBytes(test_case.key_size)
-          .SetIvSizeInBytes(test_case.iv_size)
-          .SetTagSizeInBytes(test_case.tag_size)
-          .SetVariant(test_case.variant)
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesEaxParameters::Variant::kTink)
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
   AesEaxParameters copy(*parameters);
-  EXPECT_THAT(copy.GetKeySizeInBytes(), Eq(test_case.key_size));
-  EXPECT_THAT(copy.GetIvSizeInBytes(), Eq(test_case.iv_size));
-  EXPECT_THAT(copy.GetTagSizeInBytes(), Eq(test_case.tag_size));
-  EXPECT_THAT(copy.GetVariant(), Eq(test_case.variant));
-  EXPECT_THAT(copy.HasIdRequirement(), test_case.has_id_requirement);
+
+  EXPECT_THAT(copy.GetKeySizeInBytes(), Eq(32));
+  EXPECT_THAT(copy.GetIvSizeInBytes(), Eq(16));
+  EXPECT_THAT(copy.GetTagSizeInBytes(), Eq(16));
+  EXPECT_THAT(copy.GetVariant(), Eq(AesEaxParameters::Variant::kTink));
+  EXPECT_THAT(copy.HasIdRequirement(), IsTrue());
 }
 
-TEST_P(AesEaxParametersTest, CopyAssignment) {
-  BuildTestCase test_case = GetParam();
-
-  util::StatusOr<AesEaxParameters> parameters =
+TEST(AesEaxParametersTest, CopyAssignment) {
+  absl::StatusOr<AesEaxParameters> parameters =
       AesEaxParameters::Builder()
-          .SetKeySizeInBytes(test_case.key_size)
-          .SetIvSizeInBytes(test_case.iv_size)
-          .SetTagSizeInBytes(test_case.tag_size)
-          .SetVariant(test_case.variant)
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesEaxParameters::Variant::kTink)
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  AesEaxParameters copy = *parameters;
-  EXPECT_THAT(copy.GetKeySizeInBytes(), Eq(test_case.key_size));
-  EXPECT_THAT(copy.GetIvSizeInBytes(), Eq(test_case.iv_size));
-  EXPECT_THAT(copy.GetTagSizeInBytes(), Eq(test_case.tag_size));
-  EXPECT_THAT(copy.GetVariant(), Eq(test_case.variant));
-  EXPECT_THAT(copy.HasIdRequirement(), test_case.has_id_requirement);
+  absl::StatusOr<AesEaxParameters> copy =
+      AesEaxParameters::Builder()
+          .SetKeySizeInBytes(16)
+          .SetIvSizeInBytes(12)
+          .SetTagSizeInBytes(12)
+          .SetVariant(AesEaxParameters::Variant::kNoPrefix)
+          .Build();
+  ASSERT_THAT(copy, IsOk());
+
+  *copy = *parameters;
+
+  EXPECT_THAT(copy->GetKeySizeInBytes(), Eq(32));
+  EXPECT_THAT(copy->GetIvSizeInBytes(), Eq(16));
+  EXPECT_THAT(copy->GetTagSizeInBytes(), Eq(16));
+  EXPECT_THAT(copy->GetVariant(), Eq(AesEaxParameters::Variant::kTink));
+  EXPECT_THAT(copy->HasIdRequirement(), IsTrue());
+}
+
+TEST(AesEaxParametersTest, MoveConstructor) {
+  absl::StatusOr<AesEaxParameters> parameters =
+      AesEaxParameters::Builder()
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesEaxParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  AesEaxParameters move(std::move(*parameters));
+
+  EXPECT_THAT(move.GetKeySizeInBytes(), Eq(32));
+  EXPECT_THAT(move.GetIvSizeInBytes(), Eq(16));
+  EXPECT_THAT(move.GetTagSizeInBytes(), Eq(16));
+  EXPECT_THAT(move.GetVariant(), Eq(AesEaxParameters::Variant::kTink));
+  EXPECT_THAT(move.HasIdRequirement(), IsTrue());
+}
+
+TEST(AesEaxParametersTest, MoveAssignment) {
+  absl::StatusOr<AesEaxParameters> parameters =
+      AesEaxParameters::Builder()
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesEaxParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  absl::StatusOr<AesEaxParameters> move =
+      AesEaxParameters::Builder()
+          .SetKeySizeInBytes(16)
+          .SetIvSizeInBytes(12)
+          .SetTagSizeInBytes(12)
+          .SetVariant(AesEaxParameters::Variant::kNoPrefix)
+          .Build();
+  ASSERT_THAT(move, IsOk());
+
+  *move = std::move(*parameters);
+
+  EXPECT_THAT(move->GetKeySizeInBytes(), Eq(32));
+  EXPECT_THAT(move->GetIvSizeInBytes(), Eq(16));
+  EXPECT_THAT(move->GetTagSizeInBytes(), Eq(16));
+  EXPECT_THAT(move->GetVariant(), Eq(AesEaxParameters::Variant::kTink));
+  EXPECT_THAT(move->HasIdRequirement(), IsTrue());
 }
 
 TEST_P(AesEaxParametersTest, SameParametersEquals) {
   BuildTestCase test_case = GetParam();
 
-  util::StatusOr<AesEaxParameters> parameters =
+  absl::StatusOr<AesEaxParameters> parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(test_case.key_size)
           .SetIvSizeInBytes(test_case.iv_size)
@@ -314,7 +373,7 @@ TEST_P(AesEaxParametersTest, SameParametersEquals) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesEaxParameters> other_parameters =
+  absl::StatusOr<AesEaxParameters> other_parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(test_case.key_size)
           .SetIvSizeInBytes(test_case.iv_size)
@@ -330,7 +389,7 @@ TEST_P(AesEaxParametersTest, SameParametersEquals) {
 }
 
 TEST(AesEaxParametersTest, DifferentKeySizeNotEqual) {
-  util::StatusOr<AesEaxParameters> parameters =
+  absl::StatusOr<AesEaxParameters> parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -339,7 +398,7 @@ TEST(AesEaxParametersTest, DifferentKeySizeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesEaxParameters> other_parameters =
+  absl::StatusOr<AesEaxParameters> other_parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(24)
           .SetIvSizeInBytes(16)
@@ -353,7 +412,7 @@ TEST(AesEaxParametersTest, DifferentKeySizeNotEqual) {
 }
 
 TEST(AesEaxParametersTest, DifferentIvSizeNotEqual) {
-  util::StatusOr<AesEaxParameters> parameters =
+  absl::StatusOr<AesEaxParameters> parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(12)
@@ -362,7 +421,7 @@ TEST(AesEaxParametersTest, DifferentIvSizeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesEaxParameters> other_parameters =
+  absl::StatusOr<AesEaxParameters> other_parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -376,7 +435,7 @@ TEST(AesEaxParametersTest, DifferentIvSizeNotEqual) {
 }
 
 TEST(AesEaxParametersTest, DifferentTagSizeNotEqual) {
-  util::StatusOr<AesEaxParameters> parameters =
+  absl::StatusOr<AesEaxParameters> parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -385,7 +444,7 @@ TEST(AesEaxParametersTest, DifferentTagSizeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesEaxParameters> other_parameters =
+  absl::StatusOr<AesEaxParameters> other_parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -399,7 +458,7 @@ TEST(AesEaxParametersTest, DifferentTagSizeNotEqual) {
 }
 
 TEST(AesEaxParametersTest, DifferentVariantNotEqual) {
-  util::StatusOr<AesEaxParameters> parameters =
+  absl::StatusOr<AesEaxParameters> parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -408,7 +467,7 @@ TEST(AesEaxParametersTest, DifferentVariantNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesEaxParameters> other_parameters =
+  absl::StatusOr<AesEaxParameters> other_parameters =
       AesEaxParameters::Builder()
           .SetKeySizeInBytes(32)
           .SetIvSizeInBytes(16)
@@ -419,6 +478,20 @@ TEST(AesEaxParametersTest, DifferentVariantNotEqual) {
 
   EXPECT_TRUE(*parameters != *other_parameters);
   EXPECT_FALSE(*parameters == *other_parameters);
+}
+
+TEST(AesEaxParametersTest, Clone) {
+  absl::StatusOr<AesEaxParameters> parameters =
+      AesEaxParameters::Builder()
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesEaxParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  std::unique_ptr<Parameters> cloned_parameters = parameters->Clone();
+  ASSERT_THAT(*cloned_parameters, Eq(*parameters));
 }
 
 }  // namespace

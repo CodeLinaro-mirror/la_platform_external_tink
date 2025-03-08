@@ -24,7 +24,6 @@
 #include "tink/core/key_type_manager.h"
 #include "tink/core/template_util.h"
 #include "tink/internal/fips_utils.h"
-#include "tink/jwt/internal/jwt_public_key_verify_impl.h"
 #include "tink/jwt/internal/jwt_public_key_verify_internal.h"
 #include "tink/jwt/internal/raw_jwt_rsa_ssa_pss_verify_key_manager.h"
 #include "tink/util/status.h"
@@ -42,9 +41,9 @@ class JwtRsaSsaPssVerifyKeyManager
  public:
   class PublicKeyVerifyFactory
       : public PrimitiveFactory<JwtPublicKeyVerifyInternal> {
-    crypto::tink::util::StatusOr<std::unique_ptr<JwtPublicKeyVerifyInternal>>
-    Create(const google::crypto::tink::JwtRsaSsaPssPublicKey&
-               jwt_rsa_ssa_pss_public_key) const override;
+    absl::StatusOr<std::unique_ptr<JwtPublicKeyVerifyInternal>> Create(
+        const google::crypto::tink::JwtRsaSsaPssPublicKey&
+            jwt_rsa_ssa_pss_public_key) const override;
 
    private:
     const RawJwtRsaSsaPssVerifyKeyManager raw_key_manager_;
@@ -60,7 +59,7 @@ class JwtRsaSsaPssVerifyKeyManager
 
   const std::string& get_key_type() const override;
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::JwtRsaSsaPssPublicKey& key) const override;
 
   internal::FipsCompatibility FipsStatus() const override {
@@ -68,7 +67,7 @@ class JwtRsaSsaPssVerifyKeyManager
   }
 
  private:
-  static crypto::tink::util::StatusOr<std::string> AlgorithmName(
+  static absl::StatusOr<std::string> AlgorithmName(
       const google::crypto::tink::JwtRsaSsaPssAlgorithm& algorithm);
   const RawJwtRsaSsaPssVerifyKeyManager raw_key_manager_;
   friend class JwtRsaSsaPssSignKeyManager;

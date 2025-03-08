@@ -16,48 +16,45 @@
 
 #include "tink/mac/hmac_key.h"
 
-#include <memory>
 #include <string>
 #include <utility>
 
 #include "absl/base/attributes.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_format.h"
 #include "absl/types/optional.h"
+#include "tink/internal/output_prefix_util.h"
 #include "tink/key.h"
 #include "tink/mac/hmac_parameters.h"
 #include "tink/partial_key_access_token.h"
 #include "tink/restricted_data.h"
-#include "tink/subtle/subtle_util.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {
 namespace tink {
 
-util::StatusOr<HmacKey> HmacKey::Create(const HmacParameters& parameters,
+absl::StatusOr<HmacKey> HmacKey::Create(const HmacParameters& parameters,
                                         const RestrictedData& key_bytes,
                                         absl::optional<int> id_requirement,
                                         PartialKeyAccessToken token) {
   if (parameters.KeySizeInBytes() != key_bytes.size()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Key size does not match HMAC parameters");
   }
   if (parameters.HasIdRequirement() && !id_requirement.has_value()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create key without ID requirement with parameters with ID "
         "requirement");
   }
   if (!parameters.HasIdRequirement() && id_requirement.has_value()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create key with ID requirement with parameters without ID "
         "requirement");
   }
-  util::StatusOr<std::string> output_prefix =
+  absl::StatusOr<std::string> output_prefix =
       ComputeOutputPrefix(parameters, id_requirement);
   if (!output_prefix.ok()) {
     return output_prefix.status();
@@ -66,7 +63,7 @@ util::StatusOr<HmacKey> HmacKey::Create(const HmacParameters& parameters,
                  *std::move(output_prefix));
 }
 
-util::StatusOr<std::string> HmacKey::ComputeOutputPrefix(
+absl::StatusOr<std::string> HmacKey::ComputeOutputPrefix(
     const HmacParameters& parameters, absl::optional<int> id_requirement) {
   switch (parameters.GetVariant()) {
     case HmacParameters::Variant::kNoPrefix:
@@ -75,21 +72,19 @@ util::StatusOr<std::string> HmacKey::ComputeOutputPrefix(
       ABSL_FALLTHROUGH_INTENDED;
     case HmacParameters::Variant::kCrunchy:
       if (!id_requirement.has_value()) {
-        return util::Status(
+        return absl::Status(
             absl::StatusCode::kInvalidArgument,
             "id requirement must have value with kCrunchy or kLegacy");
       }
-      return absl::StrCat(absl::HexStringToBytes("00"),
-                          subtle::BigEndian32(*id_requirement));
+      return internal::ComputeOutputPrefix(0, *id_requirement);
     case HmacParameters::Variant::kTink:
       if (!id_requirement.has_value()) {
-        return util::Status(absl::StatusCode::kInvalidArgument,
+        return absl::Status(absl::StatusCode::kInvalidArgument,
                             "id requirement must have value with kTink");
       }
-      return absl::StrCat(absl::HexStringToBytes("01"),
-                          subtle::BigEndian32(*id_requirement));
+      return internal::ComputeOutputPrefix(1, *id_requirement);
     default:
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           absl::StrCat("Invalid variant: ", parameters.GetVariant()));
   }

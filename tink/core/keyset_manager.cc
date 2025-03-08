@@ -42,7 +42,7 @@ using google::crypto::tink::KeyStatusType;
 using google::crypto::tink::KeyTemplate;
 
 // static
-StatusOr<std::unique_ptr<KeysetManager>> KeysetManager::New(
+absl::StatusOr<std::unique_ptr<KeysetManager>> KeysetManager::New(
     const KeyTemplate& key_template) {
   auto manager = absl::make_unique<KeysetManager>();
   auto rotate_result = manager->Rotate(key_template);
@@ -51,7 +51,7 @@ StatusOr<std::unique_ptr<KeysetManager>> KeysetManager::New(
 }
 
 // static
-StatusOr<std::unique_ptr<KeysetManager>> KeysetManager::New(
+absl::StatusOr<std::unique_ptr<KeysetManager>> KeysetManager::New(
     const KeysetHandle& keyset_handle) {
   auto manager = absl::make_unique<KeysetManager>();
   absl::MutexLock lock(&manager->keyset_mutex_);
@@ -65,11 +65,11 @@ std::unique_ptr<KeysetHandle> KeysetManager::GetKeysetHandle() {
   return handle;
 }
 
-StatusOr<uint32_t> KeysetManager::Add(const KeyTemplate& key_template) {
+absl::StatusOr<uint32_t> KeysetManager::Add(const KeyTemplate& key_template) {
   return Add(key_template, false);
 }
 
-StatusOr<uint32_t> KeysetManager::Add(
+absl::StatusOr<uint32_t> KeysetManager::Add(
     const google::crypto::tink::KeyTemplate& key_template, bool as_primary) {
   KeyGenConfiguration config;
   Status status =
@@ -82,7 +82,8 @@ StatusOr<uint32_t> KeysetManager::Add(
                                    keyset_.get());
 }
 
-StatusOr<uint32_t> KeysetManager::Rotate(const KeyTemplate& key_template) {
+absl::StatusOr<uint32_t> KeysetManager::Rotate(
+    const KeyTemplate& key_template) {
   return Add(key_template, true);
 }
 
@@ -97,7 +98,7 @@ Status KeysetManager::Enable(uint32_t key_id) {
                          key_id, Enums::KeyStatusName(key.status()));
       }
       key.set_status(KeyStatusType::ENABLED);
-      return util::OkStatus();
+      return absl::OkStatus();
     }
   }
   return ToStatusF(absl::StatusCode::kNotFound,
@@ -119,7 +120,7 @@ Status KeysetManager::Disable(uint32_t key_id) {
                          key_id, Enums::KeyStatusName(key.status()));
       }
       key.set_status(KeyStatusType::DISABLED);
-      return util::OkStatus();
+      return absl::OkStatus();
     }
   }
   return ToStatusF(absl::StatusCode::kNotFound,
@@ -138,7 +139,7 @@ Status KeysetManager::Delete(uint32_t key_id) {
     auto key = *key_iter;
     if (key.key_id() == key_id) {
       keyset_->mutable_key()->erase(key_iter);
-      return util::OkStatus();
+      return absl::OkStatus();
     }
   }
   return ToStatusF(absl::StatusCode::kNotFound,
@@ -162,7 +163,7 @@ Status KeysetManager::Destroy(uint32_t key_id) {
       }
       key.clear_key_data();
       key.set_status(KeyStatusType::DESTROYED);
-      return util::OkStatus();
+      return absl::OkStatus();
     }
   }
   return ToStatusF(absl::StatusCode::kNotFound,
@@ -180,7 +181,7 @@ Status KeysetManager::SetPrimary(uint32_t key_id) {
                          key_id);
       }
       keyset_->set_primary_key_id(key_id);
-      return util::OkStatus();
+      return absl::OkStatus();
     }
   }
   return ToStatusF(absl::StatusCode::kNotFound,

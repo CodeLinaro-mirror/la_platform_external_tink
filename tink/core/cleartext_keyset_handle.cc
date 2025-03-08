@@ -40,36 +40,35 @@ namespace crypto {
 namespace tink {
 
 // static
-util::StatusOr<std::unique_ptr<KeysetHandle>> CleartextKeysetHandle::Read(
+absl::StatusOr<std::unique_ptr<KeysetHandle>> CleartextKeysetHandle::Read(
     std::unique_ptr<KeysetReader> reader,
-    const absl::flat_hash_map<std::string, std::string>&
-        monitoring_annotations) {
-  util::StatusOr<std::unique_ptr<Keyset>> keyset_result = reader->Read();
+    absl::flat_hash_map<std::string, std::string> monitoring_annotations) {
+  absl::StatusOr<std::unique_ptr<Keyset>> keyset_result = reader->Read();
   if (!keyset_result.ok()) {
     return ToStatusF(absl::StatusCode::kInvalidArgument,
                      "Error reading keyset data: %s",
                      keyset_result.status().message());
   }
-  util::StatusOr<std::vector<std::shared_ptr<const KeysetHandle::Entry>>>
+  absl::StatusOr<std::vector<std::shared_ptr<const KeysetHandle::Entry>>>
       entries = KeysetHandle::GetEntriesFromKeyset(**keyset_result);
   if (!entries.ok()) {
     return entries.status();
   }
   if (entries->size() != (*keyset_result)->key_size()) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "Error converting keyset proto into key entries.");
   }
   std::unique_ptr<KeysetHandle> handle(
       new KeysetHandle(util::SecretProto<Keyset>(**keyset_result), *entries,
-                       monitoring_annotations));
+                       std::move(monitoring_annotations)));
   return std::move(handle);
 }
 
 // static
-crypto::tink::util::Status CleartextKeysetHandle::Write(
-    KeysetWriter* writer, const KeysetHandle& keyset_handle) {
+absl::Status CleartextKeysetHandle::Write(KeysetWriter* writer,
+                                          const KeysetHandle& keyset_handle) {
   if (!writer) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Error KeysetWriter cannot be null");
   }
   return writer->Write(keyset_handle.get_keyset());

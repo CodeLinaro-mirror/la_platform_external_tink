@@ -21,7 +21,6 @@
 #include "absl/types/optional.h"
 #include "tink/jwt/jwt_validator.h"
 #include "tink/jwt/verified_jwt.h"
-#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {
@@ -51,7 +50,7 @@ class JwtPublicKeyVerifyInternal {
   // When `kid` does not have a value a kid header in the token is ignored.
   // `kid` is set by the primitive wrapper based on the output prefix type and
   // the key id.
-  virtual crypto::tink::util::StatusOr<VerifiedJwt> VerifyAndDecodeWithKid(
+  virtual absl::StatusOr<VerifiedJwt> VerifyAndDecodeWithKid(
       absl::string_view compact, const JwtValidator& validator,
       absl::optional<absl::string_view> kid) const = 0;
 

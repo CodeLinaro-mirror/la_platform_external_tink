@@ -44,13 +44,13 @@
 #include "tink/keyset_writer.h"
 #include "tink/kms_client.h"
 #include "tink/mac.h"
+#include "tink/mac/internal/stateful_mac.h"
 #include "tink/output_stream.h"
 #include "tink/public_key_sign.h"
 #include "tink/public_key_verify.h"
 #include "tink/random_access_stream.h"
 #include "tink/streaming_aead.h"
 #include "tink/subtle/common_enums.h"
-#include "tink/subtle/mac/stateful_mac.h"
 #include "tink/util/buffer.h"
 #include "tink/util/constants.h"
 #include "tink/util/status.h"
@@ -74,7 +74,7 @@ std::string ReadTestFile(absl::string_view filename);
 // Converts a hexadecimal string into a string of bytes.
 // Returns a status if the size of the input is odd or if the input contains
 // characters that are not hexadecimal.
-crypto::tink::util::StatusOr<std::string> HexDecode(absl::string_view hex);
+absl::StatusOr<std::string> HexDecode(absl::string_view hex);
 
 // Converts a hexadecimal string into a string of bytes.
 // Dies if the input is not a valid hexadecimal string.
@@ -167,10 +167,6 @@ google::crypto::tink::EcdsaPrivateKey GetEcdsaTestPrivateKey(
     google::crypto::tink::HashType hash_type,
     google::crypto::tink::EcdsaSignatureEncoding encoding);
 
-// TODO(ambrosin): Remove because it is unused.
-// Generates a fresh test key for ED25519.
-google::crypto::tink::Ed25519PrivateKey GetEd25519TestPrivateKey();
-
 // Embeds the given Proto into a KeyData proto.
 template <typename Proto>
 google::crypto::tink::KeyData AsKeyData(
@@ -194,7 +190,7 @@ google::crypto::tink::KeyData AsKeyData(
 // detect things like strings that are entirely zero.
 //
 // Note: By itself, this is a very weak test for randomness.
-util::Status ZTestUniformString(absl::string_view bytes);
+absl::Status ZTestUniformString(absl::string_view bytes);
 // Tests that the crosscorrelation of two strings of equal length points to
 // independent and uniformly distributed strings. Returns non ok status if the z
 // test fails by more than 10 standard deviations.
@@ -206,7 +202,7 @@ util::Status ZTestUniformString(absl::string_view bytes);
 //
 // Note: Having a correlation of zero is only a necessary but not sufficient
 // condition for independence.
-util::Status ZTestCrosscorrelationUniformStrings(absl::string_view bytes1,
+absl::Status ZTestCrosscorrelationUniformStrings(absl::string_view bytes1,
                                                  absl::string_view bytes2);
 // Tests that the autocorrelation of a string points to the bits being
 // independent and uniformly distributed. Rotates the string in a cyclic
@@ -221,7 +217,7 @@ util::Status ZTestCrosscorrelationUniformStrings(absl::string_view bytes1,
 //
 // Note: Having a correlation of zero is only a necessary but not sufficient
 // condition for independence.
-util::Status ZTestAutocorrelationUniformString(absl::string_view bytes);
+absl::Status ZTestAutocorrelationUniformString(absl::string_view bytes);
 
 // A dummy implementation of Aead-interface.
 // An instance of DummyAead can be identified by a name specified
@@ -232,22 +228,22 @@ class DummyAead : public Aead {
 
   // Computes a dummy ciphertext, which is concatenation of provided 'plaintext'
   // with the name of this DummyAead.
-  crypto::tink::util::StatusOr<std::string> Encrypt(
+  absl::StatusOr<std::string> Encrypt(
       absl::string_view plaintext,
       absl::string_view associated_data) const override {
     return absl::StrCat(aead_name_.size(), ":", associated_data.size(), ":",
                         aead_name_, associated_data, plaintext);
   }
 
-  crypto::tink::util::StatusOr<std::string> Decrypt(
+  absl::StatusOr<std::string> Decrypt(
       absl::string_view ciphertext,
       absl::string_view associated_data) const override {
     std::string prefix =
         absl::StrCat(aead_name_.size(), ":", associated_data.size(), ":",
                      aead_name_, associated_data);
     if (!absl::StartsWith(ciphertext, prefix)) {
-      return crypto::tink::util::Status(absl::StatusCode::kInvalidArgument,
-                                        "Dummy operation failed.");
+      return absl::Status(absl::StatusCode::kInvalidArgument,
+                          "Dummy operation failed.");
     }
     ciphertext.remove_prefix(prefix.size());
     return std::string(ciphertext);
@@ -266,7 +262,7 @@ class DummyCordAead : public CordAead {
 
   // Computes a dummy ciphertext, which is concatenation of provided 'plaintext'
   // with the name of this DummyCordAead.
-  crypto::tink::util::StatusOr<absl::Cord> Encrypt(
+  absl::StatusOr<absl::Cord> Encrypt(
       absl::Cord plaintext, absl::Cord associated_data) const override {
     auto ciphertext =
         aead_.Encrypt(plaintext.Flatten(), associated_data.Flatten());
@@ -278,7 +274,7 @@ class DummyCordAead : public CordAead {
     return ciphertext_cord;
   }
 
-  crypto::tink::util::StatusOr<absl::Cord> Decrypt(
+  absl::StatusOr<absl::Cord> Decrypt(
       absl::Cord ciphertext, absl::Cord associated_data) const override {
     auto plaintext =
         aead_.Decrypt(ciphertext.Flatten(), associated_data.Flatten());
@@ -303,13 +299,13 @@ class DummyDeterministicAead : public DeterministicAead {
   explicit DummyDeterministicAead(absl::string_view daead_name)
       : aead_(daead_name) {}
 
-  crypto::tink::util::StatusOr<std::string> EncryptDeterministically(
+  absl::StatusOr<std::string> EncryptDeterministically(
       absl::string_view plaintext,
       absl::string_view associated_data) const override {
     return aead_.Encrypt(plaintext, associated_data);
   }
 
-  crypto::tink::util::StatusOr<std::string> DecryptDeterministically(
+  absl::StatusOr<std::string> DecryptDeterministically(
       absl::string_view ciphertext,
       absl::string_view associated_data) const override {
     return aead_.Decrypt(ciphertext, associated_data);
@@ -329,7 +325,7 @@ class DummyStreamingAead : public StreamingAead {
   explicit DummyStreamingAead(absl::string_view streaming_aead_name)
       : streaming_aead_name_(streaming_aead_name) {}
 
-  crypto::tink::util::StatusOr<std::unique_ptr<crypto::tink::OutputStream>>
+  absl::StatusOr<std::unique_ptr<crypto::tink::OutputStream>>
   NewEncryptingStream(
       std::unique_ptr<crypto::tink::OutputStream> ciphertext_destination,
       absl::string_view associated_data) const override {
@@ -338,7 +334,7 @@ class DummyStreamingAead : public StreamingAead {
         absl::StrCat(streaming_aead_name_, associated_data))};
   }
 
-  crypto::tink::util::StatusOr<std::unique_ptr<crypto::tink::InputStream>>
+  absl::StatusOr<std::unique_ptr<crypto::tink::InputStream>>
   NewDecryptingStream(
       std::unique_ptr<crypto::tink::InputStream> ciphertext_source,
       absl::string_view associated_data) const override {
@@ -347,8 +343,7 @@ class DummyStreamingAead : public StreamingAead {
         absl::StrCat(streaming_aead_name_, associated_data))};
   }
 
-  crypto::tink::util::StatusOr<
-      std::unique_ptr<crypto::tink::RandomAccessStream>>
+  absl::StatusOr<std::unique_ptr<crypto::tink::RandomAccessStream>>
   NewDecryptingRandomAccessStream(
       std::unique_ptr<crypto::tink::RandomAccessStream> ciphertext_source,
       absl::string_view associated_data) const override {
@@ -367,9 +362,9 @@ class DummyStreamingAead : public StreamingAead {
         : ct_dest_(std::move(ct_dest)),
           header_(header),
           after_init_(false),
-          status_(util::OkStatus()) {}
+          status_(absl::OkStatus()) {}
 
-    crypto::tink::util::StatusOr<int> Next(void** data) override {
+    absl::StatusOr<int> Next(void** data) override {
       if (!after_init_) {  // Try to initialize.
         after_init_ = true;
         auto next_result = ct_dest_->Next(data);
@@ -379,7 +374,7 @@ class DummyStreamingAead : public StreamingAead {
         }
         if (next_result.value() < header_.size()) {
           status_ =
-              util::Status(absl::StatusCode::kInternal, "Buffer too small");
+              absl::Status(absl::StatusCode::kInternal, "Buffer too small");
         } else {
           memcpy(*data, header_.data(), static_cast<int>(header_.size()));
           ct_dest_->BackUp(next_result.value() - header_.size());
@@ -402,7 +397,7 @@ class DummyStreamingAead : public StreamingAead {
         return 0;
       }
     }
-    util::Status Close() override {
+    absl::Status Close() override {
       if (!after_init_) {  // Call Next() to write the header to ct_dest_.
         void* buf;
         auto next_result = Next(&buf);
@@ -420,7 +415,7 @@ class DummyStreamingAead : public StreamingAead {
     std::unique_ptr<crypto::tink::OutputStream> ct_dest_;
     std::string header_;
     bool after_init_;
-    util::Status status_;
+    absl::Status status_;
   };  // class DummyEncryptingStream
 
   // Upon first call to Next() tries to read from 'ct_source' a header
@@ -434,26 +429,26 @@ class DummyStreamingAead : public StreamingAead {
         : ct_source_(std::move(ct_source)),
           exp_header_(expected_header),
           after_init_(false),
-          status_(util::OkStatus()) {}
+          status_(absl::OkStatus()) {}
 
-    crypto::tink::util::StatusOr<int> Next(const void** data) override {
+    absl::StatusOr<int> Next(const void** data) override {
       if (!after_init_) {  // Try to initialize.
         after_init_ = true;
         auto next_result = ct_source_->Next(data);
         if (!next_result.ok()) {
           status_ = next_result.status();
           if (status_.code() == absl::StatusCode::kOutOfRange) {
-            status_ = util::Status(absl::StatusCode::kInvalidArgument,
+            status_ = absl::Status(absl::StatusCode::kInvalidArgument,
                                    "Could not read header");
           }
           return status_;
         }
         if (next_result.value() < exp_header_.size()) {
           status_ =
-              util::Status(absl::StatusCode::kInternal, "Buffer too small");
+              absl::Status(absl::StatusCode::kInternal, "Buffer too small");
         } else if (memcmp((*data), exp_header_.data(),
                           static_cast<int>(exp_header_.size()))) {
-          status_ = util::Status(absl::StatusCode::kInvalidArgument,
+          status_ = absl::Status(absl::StatusCode::kInvalidArgument,
                                  "Corrupted header");
         }
         if (status_.ok()) {
@@ -482,7 +477,7 @@ class DummyStreamingAead : public StreamingAead {
     std::unique_ptr<crypto::tink::InputStream> ct_source_;
     std::string exp_header_;
     bool after_init_;
-    util::Status status_;
+    absl::Status status_;
   };  // class DummyDecryptingStream
 
   // Upon first call to PRead() tries to read from `ct_source` a header
@@ -497,10 +492,9 @@ class DummyStreamingAead : public StreamingAead {
         absl::string_view expected_header)
         : ct_source_(std::move(ct_source)), exp_header_(expected_header) {}
 
-    crypto::tink::util::Status PRead(
-        int64_t position, int count,
-        crypto::tink::util::Buffer* dest_buffer) override {
-      util::Status status = CheckHeader();
+    absl::Status PRead(int64_t position, int count,
+                       crypto::tink::util::Buffer* dest_buffer) override {
+      absl::Status status = CheckHeader();
       if (!status.ok()) {
         return status;
       }
@@ -510,8 +504,8 @@ class DummyStreamingAead : public StreamingAead {
                                dest_buffer);
     }
 
-    util::StatusOr<int64_t> size() override {
-      util::Status status = CheckHeader();
+    absl::StatusOr<int64_t> size() override {
+      absl::Status status = CheckHeader();
       if (!status.ok()) {
         return status;
       }
@@ -519,11 +513,11 @@ class DummyStreamingAead : public StreamingAead {
       if (!ct_size_result.ok()) return ct_size_result.status();
       auto pt_size = ct_size_result.value() - exp_header_.size();
       if (pt_size >= 0) return pt_size;
-      return util::Status(absl::StatusCode::kUnavailable, "size not available");
+      return absl::Status(absl::StatusCode::kUnavailable, "size not available");
     }
 
    private:
-    util::Status CheckHeader() ABSL_LOCKS_EXCLUDED(header_check_status_mutex_) {
+    absl::Status CheckHeader() ABSL_LOCKS_EXCLUDED(header_check_status_mutex_) {
       absl::MutexLock lock(&header_check_status_mutex_);
       if (header_check_status_.code() != absl::StatusCode::kUnavailable) {
         return header_check_status_;
@@ -536,14 +530,14 @@ class DummyStreamingAead : public StreamingAead {
         return header_check_status_;
       }
       // EOF or Ok indicate a valid read has happened.
-      header_check_status_ = util::OkStatus();
+      header_check_status_ = absl::OkStatus();
       // Invalid header.
       if (buf->size() < exp_header_.size()) {
-        header_check_status_ = util::Status(absl::StatusCode::kInvalidArgument,
+        header_check_status_ = absl::Status(absl::StatusCode::kInvalidArgument,
                                             "Could not read header");
       } else if (memcmp(buf->get_mem_block(), exp_header_.data(),
                         static_cast<int>(exp_header_.size()))) {
-        header_check_status_ = util::Status(absl::StatusCode::kInvalidArgument,
+        header_check_status_ = absl::Status(absl::StatusCode::kInvalidArgument,
                                             "Corrupted header");
       }
       return header_check_status_;
@@ -552,9 +546,9 @@ class DummyStreamingAead : public StreamingAead {
     std::unique_ptr<crypto::tink::RandomAccessStream> ct_source_;
     std::string exp_header_;
     mutable absl::Mutex header_check_status_mutex_;
-    util::Status header_check_status_
+    absl::Status header_check_status_
         ABSL_GUARDED_BY(header_check_status_mutex_) =
-            util::Status(absl::StatusCode::kUnavailable, "Uninitialized");
+            absl::Status(absl::StatusCode::kUnavailable, "Uninitialized");
   };  // class DummyDecryptingRandomAccessStream
 
  private:
@@ -571,7 +565,7 @@ class DummyHybridEncrypt : public HybridEncrypt {
 
   // Computes a dummy ciphertext, which is concatenation of provided 'plaintext'
   // with the name of this DummyHybridEncrypt.
-  crypto::tink::util::StatusOr<std::string> Encrypt(
+  absl::StatusOr<std::string> Encrypt(
       absl::string_view plaintext,
       absl::string_view context_info) const override {
     return dummy_aead_.Encrypt(plaintext, context_info);
@@ -591,7 +585,7 @@ class DummyHybridDecrypt : public HybridDecrypt {
 
   // Decrypts a dummy ciphertext, which should be a concatenation
   // of a plaintext with the name of this DummyHybridDecrypt.
-  crypto::tink::util::StatusOr<std::string> Decrypt(
+  absl::StatusOr<std::string> Decrypt(
       absl::string_view ciphertext,
       absl::string_view context_info) const override {
     return dummy_aead_.Decrypt(ciphertext, context_info);
@@ -611,8 +605,7 @@ class DummyPublicKeySign : public PublicKeySign {
 
   // Computes a dummy signature, which is a concatenation of 'data'
   // with the name of this DummyPublicKeySign.
-  crypto::tink::util::StatusOr<std::string> Sign(
-      absl::string_view data) const override {
+  absl::StatusOr<std::string> Sign(absl::string_view data) const override {
     return dummy_aead_.Encrypt("", data);
   }
 
@@ -630,8 +623,8 @@ class DummyPublicKeyVerify : public PublicKeyVerify {
 
   // Verifies a dummy signature, should be a concatenation of the name
   // of this DummyPublicKeyVerify with the provided 'data'.
-  crypto::tink::util::Status Verify(absl::string_view signature,
-                                    absl::string_view data) const override {
+  absl::Status Verify(absl::string_view signature,
+                      absl::string_view data) const override {
     return dummy_aead_.Decrypt(signature, data).status();
   }
 
@@ -649,13 +642,13 @@ class DummyMac : public Mac {
 
   // Computes a dummy MAC, which is concatenation of provided 'data'
   // with the name of this DummyMac.
-  crypto::tink::util::StatusOr<std::string> ComputeMac(
+  absl::StatusOr<std::string> ComputeMac(
       absl::string_view data) const override {
     return dummy_aead_.Encrypt("", data);
   }
 
-  crypto::tink::util::Status VerifyMac(absl::string_view mac,
-                                       absl::string_view data) const override {
+  absl::Status VerifyMac(absl::string_view mac,
+                         absl::string_view data) const override {
     return dummy_aead_.Decrypt(mac, data).status();
   }
 
@@ -663,45 +656,22 @@ class DummyMac : public Mac {
   DummyAead dummy_aead_;
 };
 
-// A dummy implementation of Stateful Mac interface.
-// An instance of DummyStatefulMac can be identified by a name specified
-// as a parameter of the constructor.
-// Over the same inputs, the DummyStatefulMac and DummyMac should give the same
-// output; DummyStatefulMac builds and internal_state_ and calls DummyMac.
-class DummyStatefulMac : public subtle::StatefulMac {
- public:
-  explicit DummyStatefulMac(const std::string& mac_name)
-      : dummy_aead_(absl::StrCat("DummyMac:", mac_name)), buffer_("") {}
-
-  util::Status Update(absl::string_view data) override {
-    absl::StrAppend(&buffer_, data);
-    return util::OkStatus();
-  }
-  util::StatusOr<std::string> Finalize() override {
-    return dummy_aead_.Encrypt("", buffer_);
-  }
-
- private:
-  DummyAead dummy_aead_;
-  std::string buffer_;
-};
-
 // A dummy implementation of KeysetWriter-interface.
 class DummyKeysetWriter : public KeysetWriter {
  public:
-  static util::StatusOr<std::unique_ptr<DummyKeysetWriter>> New(
+  static absl::StatusOr<std::unique_ptr<DummyKeysetWriter>> New(
       std::unique_ptr<std::ostream> destination_stream) {
     return absl::WrapUnique(
         new DummyKeysetWriter(std::move(destination_stream)));
   }
 
-  util::Status Write(const google::crypto::tink::Keyset& keyset) override {
-    return util::OkStatus();
+  absl::Status Write(const google::crypto::tink::Keyset& keyset) override {
+    return absl::OkStatus();
   }
 
-  util::Status Write(
+  absl::Status Write(
       const google::crypto::tink::EncryptedKeyset& encrypted_keyset) override {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
  private:
@@ -723,11 +693,11 @@ class DummyKmsClient : public KmsClient {
     return key_uri == key_uri_;
   }
 
-  crypto::tink::util::StatusOr<std::unique_ptr<Aead>> GetAead(
+  absl::StatusOr<std::unique_ptr<Aead>> GetAead(
       absl::string_view key_uri) const override {
     if (!DoesSupport(key_uri))
-      return crypto::tink::util::Status(absl::StatusCode::kInvalidArgument,
-                                        "key_uri not supported");
+      return absl::Status(absl::StatusCode::kInvalidArgument,
+                          "key_uri not supported");
     return {absl::make_unique<DummyAead>(key_uri)};
   }
 
@@ -741,7 +711,7 @@ class DummyKmsClient : public KmsClient {
 class FakeKeysetDeriver : public KeysetDeriver {
  public:
   explicit FakeKeysetDeriver(absl::string_view name) : name_(name) {}
-  util::StatusOr<std::unique_ptr<KeysetHandle>> DeriveKeyset(
+  absl::StatusOr<std::unique_ptr<KeysetHandle>> DeriveKeyset(
       absl::string_view salt) const override {
     google::crypto::tink::Keyset::Key key;
     key.mutable_key_data()->set_type_url(

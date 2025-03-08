@@ -17,13 +17,15 @@
 #include "tink/jwt/internal/jwt_public_key_verify_impl.h"
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "google/protobuf/struct.pb.h"
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
@@ -32,6 +34,7 @@
 #include "tink/jwt/jwt_validator.h"
 #include "tink/jwt/raw_jwt.h"
 #include "tink/jwt/verified_jwt.h"
+#include "tink/public_key_verify.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
@@ -39,61 +42,94 @@ namespace crypto {
 namespace tink {
 namespace jwt_internal {
 
-util::StatusOr<VerifiedJwt> JwtPublicKeyVerifyImpl::VerifyAndDecodeWithKid(
+absl::StatusOr<VerifiedJwt> JwtPublicKeyVerifyImpl::VerifyAndDecodeWithKid(
     absl::string_view compact, const JwtValidator& validator,
     absl::optional<absl::string_view> kid) const {
+  if (kid_.has_value() && kid != kid_) {
+    return absl::Status(
+        absl::StatusCode::kInvalidArgument,
+        absl::StrFormat("invalid kid provided; expected: %s, got: %s", *kid_,
+                        kid.value_or("nullopt")));
+  }
+
   // TODO(juerg): Refactor this code into a util function.
   std::size_t signature_pos = compact.find_last_of('.');
   if (signature_pos == absl::string_view::npos) {
-    return util::Status(absl::StatusCode::kInvalidArgument, "invalid token");
+    return absl::Status(absl::StatusCode::kInvalidArgument, "invalid token");
   }
   absl::string_view unsigned_token = compact.substr(0, signature_pos);
   std::string signature;
   if (!DecodeSignature(compact.substr(signature_pos + 1), &signature)) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "invalid JWT signature");
   }
-  util::Status verify_result = verify_->Verify(signature, unsigned_token);
+  absl::Status verify_result = verify_->Verify(signature, unsigned_token);
   if (!verify_result.ok()) {
     // Use a different error code so that we can distinguish it.
-    return util::Status(absl::StatusCode::kUnauthenticated,
+    return absl::Status(absl::StatusCode::kUnauthenticated,
                         verify_result.message());
   }
   std::vector<absl::string_view> parts = absl::StrSplit(unsigned_token, '.');
   if (parts.size() != 2) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "only tokens in JWS compact serialization format are supported");
   }
   std::string json_header;
   if (!DecodeHeader(parts[0], &json_header)) {
-    return util::Status(absl::StatusCode::kInvalidArgument, "invalid header");
+    return absl::Status(absl::StatusCode::kInvalidArgument, "invalid header");
   }
-  util::StatusOr<google::protobuf::Struct> header =
+  absl::StatusOr<google::protobuf::Struct> header =
       JsonStringToProtoStruct(json_header);
   if (!header.ok()) {
     return header.status();
   }
-  util::Status validate_header_result =
+  absl::Status validate_header_result =
       ValidateHeader(*header, algorithm_, kid, custom_kid_);
   if (!validate_header_result.ok()) {
     return validate_header_result;
   }
   std::string json_payload;
   if (!DecodePayload(parts[1], &json_payload)) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "invalid JWT payload");
   }
-  util::StatusOr<RawJwt> raw_jwt = RawJwtParser::FromJson(
-      GetTypeHeader(*header), json_payload);
+  absl::StatusOr<RawJwt> raw_jwt =
+      RawJwtParser::FromJson(GetTypeHeader(*header), json_payload);
   if (!raw_jwt.ok()) {
     return raw_jwt.status();
   }
-  util::Status validate_result = validator.Validate(*raw_jwt);
+  absl::Status validate_result = validator.Validate(*raw_jwt);
   if (!validate_result.ok()) {
     return validate_result;
   }
   return VerifiedJwt(*std::move(raw_jwt));
+}
+
+std::unique_ptr<JwtPublicKeyVerifyImpl> JwtPublicKeyVerifyImpl::WithKid(
+    std::unique_ptr<crypto::tink::PublicKeyVerify> verify,
+    absl::string_view algorithm, absl::string_view kid) {
+  return absl::WrapUnique(new JwtPublicKeyVerifyImpl(
+      std::move(verify), algorithm, /*custom_kid=*/absl::nullopt,
+      std::string(kid)));
+}
+
+std::unique_ptr<JwtPublicKeyVerifyImpl>
+JwtPublicKeyVerifyImpl::RawWithCustomKid(
+    std::unique_ptr<crypto::tink::PublicKeyVerify> verify,
+    absl::string_view algorithm, absl::string_view custom_kid) {
+  return absl::WrapUnique(new JwtPublicKeyVerifyImpl(
+      std::move(verify), algorithm, std::string(custom_kid),
+      /*kid=*/absl::nullopt));
+}
+
+std::unique_ptr<JwtPublicKeyVerifyImpl> JwtPublicKeyVerifyImpl::Raw(
+    std::unique_ptr<crypto::tink::PublicKeyVerify> verify,
+    absl::string_view algorithm) {
+  return absl::WrapUnique(
+      new JwtPublicKeyVerifyImpl(std::move(verify), algorithm,
+                                 /*custom_kid=*/absl::nullopt,
+                                 /*kid=*/absl::nullopt));
 }
 
 }  // namespace jwt_internal

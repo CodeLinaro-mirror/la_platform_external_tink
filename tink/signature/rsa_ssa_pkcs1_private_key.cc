@@ -17,6 +17,7 @@
 #include "tink/signature/rsa_ssa_pkcs1_private_key.h"
 
 #include "absl/status/status.h"
+#include "tink/internal/call_with_core_dump_protection.h"
 #ifdef OPENSSL_IS_BORINGSSL
 #include "openssl/base.h"
 #endif
@@ -36,93 +37,103 @@ namespace crypto {
 namespace tink {
 namespace {
 
-util::Status ValidateKeyPair(
+absl::Status ValidateKeyPair(
     const BigInteger& public_exponent, const BigInteger& modulus,
     const RestrictedBigInteger& p, const RestrictedBigInteger& q,
     const RestrictedBigInteger& d, const RestrictedBigInteger& dp,
     const RestrictedBigInteger& dq, const RestrictedBigInteger& q_inv) {
   internal::SslUniquePtr<RSA> rsa(RSA_new());
   if (rsa.get() == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "Internal RSA allocation error");
   }
 
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> n =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> n =
       internal::StringToBignum(modulus.GetValue());
   if (!n.ok()) {
     return n.status();
   }
 
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> e =
+  absl::StatusOr<internal::SslUniquePtr<BIGNUM>> e =
       internal::StringToBignum(public_exponent.GetValue());
   if (!e.ok()) {
     return e.status();
   }
 
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> d_bn =
-      internal::StringToBignum(d.GetSecret(InsecureSecretKeyAccess::Get()));
-  if (!d_bn.ok()) {
-    return d_bn.status();
-  }
+  return internal::CallWithCoreDumpProtection(
+      [&]() -> absl::Status {
+        absl::StatusOr<internal::SslUniquePtr<BIGNUM>> d_bn =
+            internal::StringToBignum(
+                d.GetSecret(InsecureSecretKeyAccess::Get()));
+        if (!d_bn.ok()) {
+          return d_bn.status();
+        }
 
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> p_bn =
-      internal::StringToBignum(p.GetSecret(InsecureSecretKeyAccess::Get()));
-  if (!p_bn.ok()) {
-    return p_bn.status();
-  }
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> q_bn =
-      internal::StringToBignum(q.GetSecret(InsecureSecretKeyAccess::Get()));
-  if (!q_bn.ok()) {
-    return q_bn.status();
-  }
+        absl::StatusOr<internal::SslUniquePtr<BIGNUM>> p_bn =
+            internal::StringToBignum(
+                p.GetSecret(InsecureSecretKeyAccess::Get()));
+        if (!p_bn.ok()) {
+          return p_bn.status();
+        }
+        absl::StatusOr<internal::SslUniquePtr<BIGNUM>> q_bn =
+            internal::StringToBignum(
+                q.GetSecret(InsecureSecretKeyAccess::Get()));
+        if (!q_bn.ok()) {
+          return q_bn.status();
+        }
 
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> dp_bn =
-      internal::StringToBignum(dp.GetSecret(InsecureSecretKeyAccess::Get()));
-  if (!dp_bn.ok()) {
-    return dp_bn.status();
-  }
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> dq_bn =
-      internal::StringToBignum(dq.GetSecret(InsecureSecretKeyAccess::Get()));
-  if (!dq_bn.ok()) {
-    return dq_bn.status();
-  }
-  util::StatusOr<internal::SslUniquePtr<BIGNUM>> q_inv_bn =
-      internal::StringToBignum(q_inv.GetSecret(InsecureSecretKeyAccess::Get()));
-  if (!q_inv_bn.ok()) {
-    return q_inv_bn.status();
-  }
+        absl::StatusOr<internal::SslUniquePtr<BIGNUM>> dp_bn =
+            internal::StringToBignum(
+                dp.GetSecret(InsecureSecretKeyAccess::Get()));
+        if (!dp_bn.ok()) {
+          return dp_bn.status();
+        }
+        absl::StatusOr<internal::SslUniquePtr<BIGNUM>> dq_bn =
+            internal::StringToBignum(
+                dq.GetSecret(InsecureSecretKeyAccess::Get()));
+        if (!dq_bn.ok()) {
+          return dq_bn.status();
+        }
+        absl::StatusOr<internal::SslUniquePtr<BIGNUM>> q_inv_bn =
+            internal::StringToBignum(
+                q_inv.GetSecret(InsecureSecretKeyAccess::Get()));
+        if (!q_inv_bn.ok()) {
+          return q_inv_bn.status();
+        }
 
-  // Build RSA key from the given values.  The RSA object takes ownership of the
-  // given values after the call.
-  if (RSA_set0_key(rsa.get(), n->release(), e->release(), d_bn->release()) !=
-          1 ||
-      RSA_set0_factors(rsa.get(), p_bn->release(), q_bn->release()) != 1 ||
-      RSA_set0_crt_params(rsa.get(), dp_bn->release(), dq_bn->release(),
-                          q_inv_bn->release()) != 1) {
-    return util::Status(absl::StatusCode::kInternal,
-                        "Internal RSA key loading error");
-  }
+        // Build RSA key from the given values.  The RSA object takes ownership
+        // of the given values after the call.
+        if (RSA_set0_key(rsa.get(), n->release(), e->release(),
+                         d_bn->release()) != 1 ||
+            RSA_set0_factors(rsa.get(), p_bn->release(), q_bn->release()) !=
+                1 ||
+            RSA_set0_crt_params(rsa.get(), dp_bn->release(), dq_bn->release(),
+                                q_inv_bn->release()) != 1) {
+          return absl::Status(absl::StatusCode::kInternal,
+                              "Internal RSA key loading error");
+        }
 
-  // Validate key.
-  int check_key_status = RSA_check_key(rsa.get());
-  if (check_key_status == 0) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
-                        "RSA key pair is not valid");
-  }
+        // Validate key.
+        int check_key_status = RSA_check_key(rsa.get());
+        if (check_key_status == 0) {
+          return absl::Status(absl::StatusCode::kInvalidArgument,
+                              "RSA key pair is not valid");
+        }
 
-  if (check_key_status == -1) {
-    return util::Status(absl::StatusCode::kInternal,
-                        "An error ocurred while checking the key");
-  }
+        if (check_key_status == -1) {
+          return absl::Status(absl::StatusCode::kInternal,
+                              "An error ocurred while checking the key");
+        }
 
 #ifdef OPENSSL_IS_BORINGSSL
-  if (RSA_check_fips(rsa.get()) == 0) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
-                        "RSA key pair is not valid in FIPS mode");
-  }
+        if (RSA_check_fips(rsa.get()) == 0) {
+          return absl::Status(absl::StatusCode::kInvalidArgument,
+                              "RSA key pair is not valid in FIPS mode");
+        }
 #endif
 
-  return util::OkStatus();
+        return absl::OkStatus();
+      });
 }
 
 }  // namespace
@@ -173,35 +184,35 @@ RsaSsaPkcs1PrivateKey::Builder::SetCrtCoefficient(
   return *this;
 }
 
-util::StatusOr<RsaSsaPkcs1PrivateKey> RsaSsaPkcs1PrivateKey::Builder::Build(
+absl::StatusOr<RsaSsaPkcs1PrivateKey> RsaSsaPkcs1PrivateKey::Builder::Build(
     PartialKeyAccessToken token) {
   if (!public_key_.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Cannot build without setting the public key");
   }
 
   if (!p_.has_value() || !q_.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Cannot build without setting both prime factors");
   }
 
   if (!dp_.has_value() || !dq_.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Cannot build without setting both prime exponents");
   }
 
   if (!d_.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Cannot build without setting the private exponent");
   }
 
   if (!q_inv_.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Cannot build without setting the CRT coefficient");
   }
 
   // Validate key pair.
-  util::Status key_pair_validation = ValidateKeyPair(
+  absl::Status key_pair_validation = ValidateKeyPair(
       public_key_->GetParameters().GetPublicExponent(),
       public_key_->GetModulus(token), *p_, *q_, *d_, *dp_, *dq_, *q_inv_);
   if (!key_pair_validation.ok()) {

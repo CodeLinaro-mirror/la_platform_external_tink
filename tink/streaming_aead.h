@@ -28,7 +28,6 @@
 namespace crypto {
 namespace tink {
 
-
 // An interface for streaming authenticated encryption with associated data.
 // Streaming encryption is typically used for encrypting large plaintexts such
 // as large files.  Tink may eventually contain multiple interfaces for
@@ -37,6 +36,12 @@ namespace tink {
 // authentication. The underlying encryption modes are selected so that partial
 // plaintext can be obtained fast by decrypting and authenticating just a part
 // of the ciphertext.
+//
+// Instances of StreamingAead must follow the nOAE definition as proposed in the
+// paper "Online Authenticated-Encryption and its Nonce-Reuse Misuse-Resistance"
+// by Hoang, Reyhanitabar, Rogaway and Vizár
+// https://eprint.iacr.org/2015/189.pdf
+
 class StreamingAead {
  public:
   // Returns a wrapper around 'ciphertext_destination', such that any bytes
@@ -45,8 +50,7 @@ class StreamingAead {
   // ciphertext and has to be passed in as parameter for decryption.
   // ByteCount() of the wrapper returns the number of written plaintext bytes.
   // Closing the wrapper results in closing of the wrapped stream.
-  virtual crypto::tink::util::StatusOr<
-      std::unique_ptr<crypto::tink::OutputStream>>
+  virtual absl::StatusOr<std::unique_ptr<crypto::tink::OutputStream>>
   NewEncryptingStream(
       std::unique_ptr<crypto::tink::OutputStream> ciphertext_destination,
       absl::string_view associated_data) const = 0;
@@ -56,8 +60,7 @@ class StreamingAead {
   // using 'associated_data' as associated authenticated data, and the
   // read bytes are bytes of the resulting plaintext.
   // ByteCount() of the wrapper returns the number of read plaintext bytes.
-  virtual crypto::tink::util::StatusOr<
-      std::unique_ptr<crypto::tink::InputStream>>
+  virtual absl::StatusOr<std::unique_ptr<crypto::tink::InputStream>>
   NewDecryptingStream(
       std::unique_ptr<crypto::tink::InputStream> ciphertext_source,
       absl::string_view associated_data) const = 0;
@@ -71,8 +74,7 @@ class StreamingAead {
   // truncated then size() will return a wrong result.  Reading the last block
   // of the plaintext will verify whether size() is correct.
   // Reading through the wrapper is thread safe.
-  virtual crypto::tink::util::StatusOr<
-      std::unique_ptr<crypto::tink::RandomAccessStream>>
+  virtual absl::StatusOr<std::unique_ptr<crypto::tink::RandomAccessStream>>
   NewDecryptingRandomAccessStream(
       std::unique_ptr<crypto::tink::RandomAccessStream> ciphertext_source,
       absl::string_view associated_data) const = 0;

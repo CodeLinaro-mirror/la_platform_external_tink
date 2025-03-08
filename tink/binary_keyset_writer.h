@@ -35,14 +35,13 @@ namespace tink {
 // https://developers.google.com/protocol-buffers/docs/encoding
 class BinaryKeysetWriter : public KeysetWriter {
  public:
-  static crypto::tink::util::StatusOr<std::unique_ptr<BinaryKeysetWriter>> New(
+  static absl::StatusOr<std::unique_ptr<BinaryKeysetWriter>> New(
       std::unique_ptr<std::ostream> destination_stream);
 
-  crypto::tink::util::Status
-  Write(const google::crypto::tink::Keyset& keyset) override;
+  absl::Status Write(const google::crypto::tink::Keyset& keyset) override;
 
-  crypto::tink::util::Status
-  Write(const google::crypto::tink::EncryptedKeyset& encrypted_keyset) override;
+  absl::Status Write(
+      const google::crypto::tink::EncryptedKeyset& encrypted_keyset) override;
 
  private:
   explicit BinaryKeysetWriter(std::unique_ptr<std::ostream> destination_stream)

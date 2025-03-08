@@ -20,16 +20,12 @@
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
-#include "absl/strings/string_view.h"
 #include "tink/internal/ec_util.h"
 #include "tink/jwt/internal/raw_jwt_ecdsa_verify_key_manager.h"
 #include "tink/public_key_sign.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/ecdsa_sign_boringssl.h"
 #include "tink/util/enums.h"
-#include "tink/util/errors.h"
-#include "tink/util/protobuf_helper.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -48,17 +44,17 @@ using google::crypto::tink::JwtEcdsaKeyFormat;
 using google::crypto::tink::JwtEcdsaPrivateKey;
 using google::crypto::tink::JwtEcdsaPublicKey;
 
-StatusOr<JwtEcdsaPrivateKey> RawJwtEcdsaSignKeyManager::CreateKey(
+absl::StatusOr<JwtEcdsaPrivateKey> RawJwtEcdsaSignKeyManager::CreateKey(
     const JwtEcdsaKeyFormat& jwt_ecdsa_key_format) const {
   // Generate new EC key.
-  util::StatusOr<google::crypto::tink::EllipticCurveType> curve =
+  absl::StatusOr<google::crypto::tink::EllipticCurveType> curve =
       RawJwtEcdsaVerifyKeyManager::CurveForEcdsaAlgorithm(
           jwt_ecdsa_key_format.algorithm());
   if (!curve.ok()) {
     return curve.status();
   }
 
-  util::StatusOr<internal::EcKey> ec_key =
+  absl::StatusOr<internal::EcKey> ec_key =
       internal::NewEcKey(util::Enums::ProtoToSubtle(*curve));
   if (!ec_key.ok()) return ec_key.status();
 
@@ -66,7 +62,7 @@ StatusOr<JwtEcdsaPrivateKey> RawJwtEcdsaSignKeyManager::CreateKey(
   JwtEcdsaPrivateKey jwt_ecdsa_private_key;
   jwt_ecdsa_private_key.set_version(get_version());
   jwt_ecdsa_private_key.set_key_value(
-      std::string(util::SecretDataAsStringView(ec_key->priv)));
+      util::SecretDataAsStringView(ec_key->priv));
   auto jwt_ecdsa_public_key = jwt_ecdsa_private_key.mutable_public_key();
   jwt_ecdsa_public_key->set_version(get_version());
   jwt_ecdsa_public_key->set_x(ec_key->pub_x);
@@ -75,12 +71,12 @@ StatusOr<JwtEcdsaPrivateKey> RawJwtEcdsaSignKeyManager::CreateKey(
   return jwt_ecdsa_private_key;
 }
 
-StatusOr<std::unique_ptr<PublicKeySign>>
+absl::StatusOr<std::unique_ptr<PublicKeySign>>
 RawJwtEcdsaSignKeyManager::PublicKeySignFactory::Create(
     const JwtEcdsaPrivateKey& jwt_ecdsa_private_key) const {
   const JwtEcdsaPublicKey& public_key = jwt_ecdsa_private_key.public_key();
   internal::EcKey ec_key;
-  util::StatusOr<google::crypto::tink::EllipticCurveType> curve =
+  absl::StatusOr<google::crypto::tink::EllipticCurveType> curve =
       RawJwtEcdsaVerifyKeyManager::CurveForEcdsaAlgorithm(
           public_key.algorithm());
   if (!curve.ok()) {
@@ -91,7 +87,7 @@ RawJwtEcdsaSignKeyManager::PublicKeySignFactory::Create(
   ec_key.pub_y = public_key.y();
   ec_key.priv =
       util::SecretDataFromStringView(jwt_ecdsa_private_key.key_value());
-  util::StatusOr<google::crypto::tink::HashType> hash_type =
+  absl::StatusOr<google::crypto::tink::HashType> hash_type =
       RawJwtEcdsaVerifyKeyManager::HashForEcdsaAlgorithm(
           public_key.algorithm());
   if (!hash_type.ok()) {

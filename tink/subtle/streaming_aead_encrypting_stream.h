@@ -37,16 +37,15 @@ class StreamingAeadEncryptingStream : public OutputStream {
   // such that any bytes written via the wrapper are AEAD-encrypted
   // by 'segment_encrypter' using 'associated_data' as associated
   // authenticated data.
-  static
-  crypto::tink::util::StatusOr<std::unique_ptr<crypto::tink::OutputStream>>
-      New(std::unique_ptr<StreamSegmentEncrypter> segment_encrypter,
-          std::unique_ptr<crypto::tink::OutputStream> ciphertext_destination);
+  static absl::StatusOr<std::unique_ptr<crypto::tink::OutputStream>> New(
+      std::unique_ptr<StreamSegmentEncrypter> segment_encrypter,
+      std::unique_ptr<crypto::tink::OutputStream> ciphertext_destination);
 
   // -----------------------
   // Methods of OutputStream-interface implemented by this class.
-  crypto::tink::util::StatusOr<int> Next(void** data) override;
+  absl::StatusOr<int> Next(void** data) override;
   void BackUp(int count) override;
-  crypto::tink::util::Status Close() override;
+  absl::Status Close() override;
   int64_t Position() const override;
 
  private:
@@ -57,7 +56,7 @@ class StreamingAeadEncryptingStream : public OutputStream {
   std::vector<uint8_t> ct_buffer_;  // ciphertext buffer
   std::vector<uint8_t> pt_to_encrypt_;  // plaintext to be encrypted
   int64_t position_;  // number of plaintext bytes written to this stream
-  crypto::tink::util::Status status_;  // status of the stream
+  absl::Status status_;  // status of the stream
 
   // Counters that describe the state of the data in pt_buffer_.
   int count_backedup_;    // # bytes in pt_buffer_ that were backed up

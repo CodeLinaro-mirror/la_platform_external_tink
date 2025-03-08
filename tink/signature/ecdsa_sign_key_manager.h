@@ -45,7 +45,7 @@ class EcdsaSignKeyManager
                                    List<PublicKeySign>> {
  public:
   class PublicKeySignFactory : public PrimitiveFactory<PublicKeySign> {
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicKeySign>> Create(
+    absl::StatusOr<std::unique_ptr<PublicKeySign>> Create(
         const google::crypto::tink::EcdsaPrivateKey& private_key)
         const override;
   };
@@ -62,21 +62,20 @@ class EcdsaSignKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::EcdsaPrivateKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::EcdsaKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::EcdsaPrivateKey> CreateKey(
+  absl::StatusOr<google::crypto::tink::EcdsaPrivateKey> CreateKey(
       const google::crypto::tink::EcdsaKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::EcdsaPrivateKey> DeriveKey(
+  absl::StatusOr<google::crypto::tink::EcdsaPrivateKey> DeriveKey(
       const google::crypto::tink::EcdsaKeyFormat& key_format,
       InputStream* input_stream) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::EcdsaPublicKey>
-  GetPublicKey(
+  absl::StatusOr<google::crypto::tink::EcdsaPublicKey> GetPublicKey(
       const google::crypto::tink::EcdsaPrivateKey& private_key) const override {
     return private_key.public_key();
   }

@@ -31,6 +31,97 @@ tink_cc_library(
     tink::util::status
 )
 
+tink_cc_library(
+  NAME aes_cmac_prf_proto_serialization_impl
+  SRCS
+    aes_cmac_prf_proto_serialization_impl.cc
+    aes_cmac_prf_proto_serialization_impl.h
+  DEPS
+    absl::no_destructor
+    absl::status
+    absl::statusor
+    absl::string_view
+    absl::optional
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::internal::key_parser
+    tink::internal::key_serializer
+    tink::internal::mutable_serialization_registry
+    tink::internal::parameters_parser
+    tink::internal::parameters_serializer
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::proto_parser
+    tink::internal::serialization_registry
+    tink::internal::tink_proto_structs
+    tink::prf::aes_cmac_prf_key
+    tink::prf::aes_cmac_prf_parameters
+    tink::util::secret_data
+)
+
+tink_cc_library(
+  NAME hkdf_prf_proto_serialization_impl
+  SRCS
+    hkdf_prf_proto_serialization_impl.cc
+    hkdf_prf_proto_serialization_impl.h
+  DEPS
+    absl::no_destructor
+    absl::status
+    absl::statusor
+    absl::string_view
+    absl::optional
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::internal::common_proto_enums
+    tink::internal::key_parser
+    tink::internal::key_serializer
+    tink::internal::mutable_serialization_registry
+    tink::internal::parameters_parser
+    tink::internal::parameters_serializer
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::proto_parser
+    tink::internal::serialization_registry
+    tink::internal::tink_proto_structs
+    tink::prf::hkdf_prf_key
+    tink::prf::hkdf_prf_parameters
+    tink::util::secret_data
+)
+
+tink_cc_library(
+  NAME hmac_prf_proto_serialization_impl
+  SRCS
+    hmac_prf_proto_serialization_impl.cc
+    hmac_prf_proto_serialization_impl.h
+  DEPS
+    absl::no_destructor
+    absl::status
+    absl::statusor
+    absl::string_view
+    absl::optional
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::internal::common_proto_enums
+    tink::internal::key_parser
+    tink::internal::key_serializer
+    tink::internal::mutable_serialization_registry
+    tink::internal::parameters_parser
+    tink::internal::parameters_serializer
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::proto_parser
+    tink::internal::serialization_registry
+    tink::internal::tink_proto_structs
+    tink::prf::hmac_prf_key
+    tink::prf::hmac_prf_parameters
+    tink::util::secret_data
+)
+
+# tests
+
 tink_cc_test(
   NAME config_v0_test
   SRCS
@@ -53,5 +144,99 @@ tink_cc_test(
     tink::prf::prf_set
     tink::util::statusor
     tink::util::test_matchers
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME aes_cmac_prf_proto_serialization_impl_test
+  SRCS
+    aes_cmac_prf_proto_serialization_impl_test.cc
+  DEPS
+    tink::prf::internal::aes_cmac_prf_proto_serialization_impl
+    gmock
+    absl::status
+    absl::string_view
+    absl::optional
+    tink::core::insecure_secret_key_access_testonly
+    tink::core::key
+    tink::core::parameters
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::serialization
+    tink::internal::serialization_registry
+    tink::prf::aes_cmac_prf_key
+    tink::prf::aes_cmac_prf_parameters
+    tink::subtle::random
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::proto::aes_cmac_prf_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME hkdf_prf_proto_serialization_impl_test
+  SRCS
+    hkdf_prf_proto_serialization_impl_test.cc
+  DEPS
+    tink::prf::internal::hkdf_prf_proto_serialization_impl
+    gmock
+    absl::status
+    absl::statusor
+    absl::string_view
+    absl::optional
+    tink::core::insecure_secret_key_access_testonly
+    tink::core::key
+    tink::core::parameters
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::serialization
+    tink::internal::serialization_registry
+    tink::internal::tink_proto_structs
+    tink::prf::hkdf_prf_key
+    tink::prf::hkdf_prf_parameters
+    tink::subtle::random
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+    tink::proto::common_cc_proto
+    tink::proto::hkdf_prf_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME hmac_prf_proto_serialization_impl_test
+  SRCS
+    hmac_prf_proto_serialization_impl_test.cc
+  DEPS
+    tink::prf::internal::hmac_prf_proto_serialization_impl
+    gmock
+    absl::status
+    absl::statusor
+    absl::string_view
+    absl::optional
+    tink::core::insecure_secret_key_access_testonly
+    tink::core::key
+    tink::core::parameters
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::serialization
+    tink::internal::serialization_registry
+    tink::internal::tink_proto_structs
+    tink::prf::hmac_prf_key
+    tink::prf::hmac_prf_parameters
+    tink::subtle::random
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::proto::common_cc_proto
+    tink::proto::hmac_prf_cc_proto
     tink::proto::tink_cc_proto
 )

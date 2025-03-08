@@ -36,7 +36,7 @@ namespace tink {
 namespace {
 
 using ::crypto::tink::test::IsOk;
-using ::google::crypto::tink::AesCmacKey;
+using AesCmacKeyProto = ::google::crypto::tink::AesCmacKey;
 using ::google::crypto::tink::AesCmacKeyFormat;
 using ::google::crypto::tink::AesCmacParams;
 using ::testing::Eq;
@@ -52,7 +52,7 @@ TEST(AesCmacKeyManagerTest, Basics) {
 }
 
 TEST(AesCmacKeyManagerTest, ValidateEmptyKey) {
-  EXPECT_THAT(AesCmacKeyManager().ValidateKey(AesCmacKey()), Not(IsOk()));
+  EXPECT_THAT(AesCmacKeyManager().ValidateKey(AesCmacKeyProto()), Not(IsOk()));
 }
 
 AesCmacParams ValidParams() {
@@ -139,7 +139,7 @@ TEST(AesCmacKeyManagerTest, ValidateKeyFormatTagSizes) {
 TEST(AesCmacKeyManagerTest, CreateKey) {
   AesCmacKeyFormat format = ValidKeyFormat();
   ASSERT_THAT(AesCmacKeyManager().CreateKey(format), IsOk());
-  AesCmacKey key = AesCmacKeyManager().CreateKey(format).value();
+  AesCmacKeyProto key = AesCmacKeyManager().CreateKey(format).value();
   EXPECT_THAT(key.version(), Eq(0));
   EXPECT_THAT(key.key_value(), SizeIs(format.key_size()));
   EXPECT_THAT(key.params().tag_size(), Eq(format.params().tag_size()));
@@ -147,27 +147,27 @@ TEST(AesCmacKeyManagerTest, CreateKey) {
 
 TEST(AesCmacKeyManagerTest, ValidateKey) {
   AesCmacKeyFormat format = ValidKeyFormat();
-  AesCmacKey key = AesCmacKeyManager().CreateKey(format).value();
+  AesCmacKeyProto key = AesCmacKeyManager().CreateKey(format).value();
   EXPECT_THAT(AesCmacKeyManager().ValidateKey(key), IsOk());
 }
 
 TEST(AesCmacKeyManagerTest, ValidateKeyInvalidVersion) {
   AesCmacKeyFormat format = ValidKeyFormat();
-  AesCmacKey key = AesCmacKeyManager().CreateKey(format).value();
+  AesCmacKeyProto key = AesCmacKeyManager().CreateKey(format).value();
   key.set_version(1);
   EXPECT_THAT(AesCmacKeyManager().ValidateKey(key), Not(IsOk()));
 }
 
 TEST(AesCmacKeyManagerTest, ValidateKeyShortKey) {
   AesCmacKeyFormat format = ValidKeyFormat();
-  AesCmacKey key = AesCmacKeyManager().CreateKey(format).value();
+  AesCmacKeyProto key = AesCmacKeyManager().CreateKey(format).value();
   key.set_key_value("0123456789abcdef");
   EXPECT_THAT(AesCmacKeyManager().ValidateKey(key), Not(IsOk()));
 }
 
 TEST(AesCmacKeyManagerTest, ValidateKeyLongTagSize) {
   AesCmacKeyFormat format = ValidKeyFormat();
-  AesCmacKey key = AesCmacKeyManager().CreateKey(format).value();
+  AesCmacKeyProto key = AesCmacKeyManager().CreateKey(format).value();
   key.mutable_params()->set_tag_size(17);
   EXPECT_THAT(AesCmacKeyManager().ValidateKey(key), Not(IsOk()));
 }
@@ -175,14 +175,14 @@ TEST(AesCmacKeyManagerTest, ValidateKeyLongTagSize) {
 
 TEST(AesCmacKeyManagerTest, ValidateKeyTooShortTagSize) {
   AesCmacKeyFormat format = ValidKeyFormat();
-  AesCmacKey key = AesCmacKeyManager().CreateKey(format).value();
+  AesCmacKeyProto key = AesCmacKeyManager().CreateKey(format).value();
   key.mutable_params()->set_tag_size(9);
   EXPECT_THAT(AesCmacKeyManager().ValidateKey(key), Not(IsOk()));
 }
 
 TEST(AesCmacKeyManagerTest, GetMacPrimitive) {
   AesCmacKeyFormat format = ValidKeyFormat();
-  AesCmacKey key = AesCmacKeyManager().CreateKey(format).value();
+  AesCmacKeyProto key = AesCmacKeyManager().CreateKey(format).value();
   auto manager_mac_or = AesCmacKeyManager().GetPrimitive<Mac>(key);
   ASSERT_THAT(manager_mac_or, IsOk());
   auto mac_value_or = manager_mac_or.value()->ComputeMac("some plaintext");
@@ -198,21 +198,21 @@ TEST(AesCmacKeyManagerTest, GetMacPrimitive) {
 
 TEST(AesCmacKeyManagerTest, GetChunkedMacPrimitive) {
   AesCmacKeyFormat format = ValidKeyFormat();
-  AesCmacKey key = AesCmacKeyManager().CreateKey(format).value();
+  AesCmacKeyProto key = AesCmacKeyManager().CreateKey(format).value();
 
-  util::StatusOr<std::unique_ptr<ChunkedMac>> chunked_mac =
+  absl::StatusOr<std::unique_ptr<ChunkedMac>> chunked_mac =
       AesCmacKeyManager().GetPrimitive<ChunkedMac>(key);
   ASSERT_THAT(chunked_mac, IsOk());
 
-  util::StatusOr<std::unique_ptr<ChunkedMacComputation>> computation =
+  absl::StatusOr<std::unique_ptr<ChunkedMacComputation>> computation =
       (*chunked_mac)->CreateComputation();
   ASSERT_THAT(computation, IsOk());
   ASSERT_THAT((*computation)->Update("abc"), IsOk());
   ASSERT_THAT((*computation)->Update("xyz"), IsOk());
-  util::StatusOr<std::string> tag = (*computation)->ComputeMac();
+  absl::StatusOr<std::string> tag = (*computation)->ComputeMac();
   ASSERT_THAT(tag, IsOk());
 
-  util::StatusOr<std::unique_ptr<ChunkedMacVerification>> verification =
+  absl::StatusOr<std::unique_ptr<ChunkedMacVerification>> verification =
       (*chunked_mac)->CreateVerification(*tag);
   ASSERT_THAT(verification, IsOk());
   ASSERT_THAT((*verification)->Update("abc"), IsOk());
@@ -222,27 +222,27 @@ TEST(AesCmacKeyManagerTest, GetChunkedMacPrimitive) {
 
 TEST(AesCmacKeyManagerTest, MixPrimitives) {
   AesCmacKeyFormat format = ValidKeyFormat();
-  AesCmacKey key = AesCmacKeyManager().CreateKey(format).value();
+  AesCmacKeyProto key = AesCmacKeyManager().CreateKey(format).value();
 
-  util::StatusOr<std::unique_ptr<Mac>> mac =
+  absl::StatusOr<std::unique_ptr<Mac>> mac =
       AesCmacKeyManager().GetPrimitive<Mac>(key);
   ASSERT_THAT(mac, IsOk());
 
-  util::StatusOr<std::unique_ptr<ChunkedMac>> chunked_mac =
+  absl::StatusOr<std::unique_ptr<ChunkedMac>> chunked_mac =
       AesCmacKeyManager().GetPrimitive<ChunkedMac>(key);
   ASSERT_THAT(chunked_mac, IsOk());
 
   // Compute tag with Mac.
-  util::StatusOr<std::string> tag = (*mac)->ComputeMac("abcxyz");
+  absl::StatusOr<std::string> tag = (*mac)->ComputeMac("abcxyz");
   ASSERT_THAT(tag, IsOk());
 
   // Compute chunked tag with ChunkedMac.
-  util::StatusOr<std::unique_ptr<ChunkedMacComputation>> computation =
+  absl::StatusOr<std::unique_ptr<ChunkedMacComputation>> computation =
       (*chunked_mac)->CreateComputation();
   ASSERT_THAT(computation, IsOk());
   ASSERT_THAT((*computation)->Update("abc"), IsOk());
   ASSERT_THAT((*computation)->Update("xyz"), IsOk());
-  util::StatusOr<std::string> chunked_tag = (*computation)->ComputeMac();
+  absl::StatusOr<std::string> chunked_tag = (*computation)->ComputeMac();
   ASSERT_THAT(chunked_tag, IsOk());
   ASSERT_THAT(*chunked_tag, Eq(*tag));  // Both primitives generated same tag.
 
@@ -250,7 +250,7 @@ TEST(AesCmacKeyManagerTest, MixPrimitives) {
   ASSERT_THAT((*mac)->VerifyMac(*chunked_tag, "abcxyz"), IsOk());
 
   // Verify tag with ChunkedMac.
-  util::StatusOr<std::unique_ptr<ChunkedMacVerification>> verification =
+  absl::StatusOr<std::unique_ptr<ChunkedMacVerification>> verification =
       (*chunked_mac)->CreateVerification(*tag);
   ASSERT_THAT(verification, IsOk());
   ASSERT_THAT((*verification)->Update("abc"), IsOk());

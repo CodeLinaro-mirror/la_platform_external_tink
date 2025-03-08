@@ -6,15 +6,17 @@ tink_cc_library(
     chunked_mac_impl.cc
     chunked_mac_impl.h
   DEPS
+    tink::mac::internal::stateful_cmac_boringssl
+    tink::mac::internal::stateful_hmac_boringssl
+    tink::mac::internal::stateful_mac
     absl::memory
     absl::status
     absl::strings
     crypto
     tink::core::chunked_mac
+    tink::internal::dfsan_forwarders
+    tink::internal::safe_stringops
     tink::subtle::common_enums
-    tink::subtle::stateful_cmac_boringssl
-    tink::subtle::stateful_hmac_boringssl
-    tink::subtle::mac::stateful_mac
     tink::util::enums
     tink::util::secret_data
     tink::util::status
@@ -72,6 +74,90 @@ tink_cc_library(
     tink::util::status
 )
 
+tink_cc_library(
+  NAME stateful_hmac_boringssl
+  SRCS
+    stateful_hmac_boringssl.cc
+    stateful_hmac_boringssl.h
+  DEPS
+    tink::mac::internal::stateful_mac
+    absl::memory
+    absl::status
+    absl::string_view
+    crypto
+    tink::internal::call_with_core_dump_protection
+    tink::internal::md_util
+    tink::internal::secret_buffer
+    tink::internal::ssl_unique_ptr
+    tink::internal::util
+    tink::subtle::common_enums
+    tink::util::secret_data
+    tink::util::status
+    tink::util::statusor
+)
+
+tink_cc_library(
+  NAME stateful_cmac_boringssl
+  SRCS
+    stateful_cmac_boringssl.cc
+    stateful_cmac_boringssl.h
+  DEPS
+    tink::mac::internal::stateful_mac
+    absl::memory
+    absl::status
+    absl::string_view
+    crypto
+    tink::internal::aes_util
+    tink::internal::call_with_core_dump_protection
+    tink::internal::secret_buffer
+    tink::internal::ssl_unique_ptr
+    tink::internal::util
+    tink::subtle::common_enums
+    tink::util::secret_data
+    tink::util::status
+    tink::util::statusor
+)
+
+tink_cc_library(
+  NAME stateful_mac
+  SRCS
+    stateful_mac.h
+  DEPS
+    absl::core_headers
+    absl::string_view
+    tink::util::secret_data
+    tink::util::status
+    tink::util::statusor
+)
+
+tink_cc_library(
+  NAME aes_cmac_proto_serialization_impl
+  SRCS
+    aes_cmac_proto_serialization_impl.cc
+    aes_cmac_proto_serialization_impl.h
+  DEPS
+    absl::status
+    absl::statusor
+    absl::string_view
+    absl::optional
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::internal::key_parser
+    tink::internal::key_serializer
+    tink::internal::mutable_serialization_registry
+    tink::internal::parameters_parser
+    tink::internal::parameters_serializer
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::proto_parser
+    tink::internal::serialization_registry
+    tink::internal::tink_proto_structs
+    tink::mac::aes_cmac_key
+    tink::mac::aes_cmac_parameters
+    tink::util::secret_data
+)
+
 # tests
 
 tink_cc_test(
@@ -80,12 +166,13 @@ tink_cc_test(
     chunked_mac_impl_test.cc
   DEPS
     tink::mac::internal::chunked_mac_impl
+    tink::mac::internal::stateful_mac
     gmock
     absl::memory
     absl::status
     absl::string_view
     tink::core::chunked_mac
-    tink::subtle::mac::stateful_mac
+    tink::util::secret_data
     tink::util::status
     tink::util::statusor
     tink::util::test_matchers
@@ -101,13 +188,14 @@ tink_cc_test(
   DEPS
     tink::mac::internal::chunked_mac_impl
     tink::mac::internal::chunked_mac_wrapper
+    tink::mac::internal::stateful_mac
     gmock
     absl::memory
     absl::status
     absl::strings
     tink::core::chunked_mac
     tink::core::primitive_set
-    tink::subtle::mac::stateful_mac
+    tink::util::secret_data
     tink::util::status
     tink::util::statusor
     tink::util::test_matchers
@@ -156,4 +244,168 @@ tink_cc_test(
     tink::util::statusor
     tink::util::test_matchers
     tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME stateful_hmac_boringssl_test
+  SRCS
+    stateful_hmac_boringssl_test.cc
+  DATA
+    wycheproof::testvectors
+  DEPS
+    tink::mac::internal::stateful_hmac_boringssl
+    tink::mac::internal::stateful_mac
+    gmock
+    absl::log
+    absl::check
+    absl::memory
+    absl::status
+    absl::strings
+    absl::string_view
+    tink::internal::testing::wycheproof_util
+    tink::subtle::common_enums
+    tink::subtle::random
+    tink::util::secret_data
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+)
+
+tink_cc_test(
+  NAME stateful_cmac_boringssl_test
+  SRCS
+    stateful_cmac_boringssl_test.cc
+  DATA
+    wycheproof::testvectors
+  DEPS
+    tink::mac::internal::stateful_cmac_boringssl
+    tink::mac::internal::stateful_mac
+    gmock
+    absl::check
+    absl::memory
+    absl::strings
+    absl::string_view
+    tink::internal::testing::wycheproof_util
+    tink::util::secret_data
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+)
+
+tink_cc_test(
+  NAME aes_cmac_proto_serialization_impl_test
+  SRCS
+    aes_cmac_proto_serialization_impl_test.cc
+  DEPS
+    tink::mac::internal::aes_cmac_proto_serialization_impl
+    gmock
+    absl::check
+    absl::memory
+    absl::status
+    absl::string_view
+    absl::optional
+    tink::core::insecure_secret_key_access_testonly
+    tink::core::key
+    tink::core::parameters
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::serialization
+    tink::internal::serialization_registry
+    tink::internal::tink_proto_structs
+    tink::internal::testing::equals_proto_key_serialization
+    tink::internal::testing::field_with_number
+    tink::mac::aes_cmac_key
+    tink::mac::aes_cmac_parameters
+    tink::subtle::random
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::proto::aes_cmac_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_library(
+  NAME hmac_proto_serialization_impl
+  SRCS
+    hmac_proto_serialization_impl.cc
+    hmac_proto_serialization_impl.h
+  DEPS
+    tink::mac::internal::hmac_proto_structs
+    absl::no_destructor
+    absl::status
+    absl::statusor
+    absl::string_view
+    absl::optional
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::internal::common_proto_enums
+    tink::internal::key_parser
+    tink::internal::key_serializer
+    tink::internal::mutable_serialization_registry
+    tink::internal::parameters_parser
+    tink::internal::parameters_serializer
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::proto_parser
+    tink::internal::serialization_registry
+    tink::internal::tink_proto_structs
+    tink::mac::hmac_key
+    tink::mac::hmac_parameters
+    tink::util::secret_data
+)
+
+tink_cc_test(
+  NAME hmac_proto_serialization_impl_test
+  SRCS
+    hmac_proto_serialization_impl_test.cc
+  DEPS
+    tink::mac::internal::hmac_proto_serialization_impl
+    gmock
+    absl::status
+    absl::optional
+    tink::core::insecure_secret_key_access_testonly
+    tink::core::key
+    tink::core::parameters
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::serialization
+    tink::internal::serialization_registry
+    tink::internal::tink_proto_structs
+    tink::mac::hmac_key
+    tink::mac::hmac_parameters
+    tink::subtle::random
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::proto::common_cc_proto
+    tink::proto::hmac_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_library(
+  NAME hmac_proto_structs
+  SRCS
+    hmac_proto_structs.h
+  DEPS
+    absl::no_destructor
+    tink::internal::common_proto_enums
+    tink::internal::proto_parser
+)
+
+tink_cc_test(
+  NAME hmac_proto_structs_test
+  SRCS
+    hmac_proto_structs_test.cc
+  DEPS
+    tink::mac::internal::hmac_proto_structs
+    gmock
+    absl::statusor
+    tink::internal::common_proto_enums
+    tink::util::test_matchers
+    tink::util::test_util
 )

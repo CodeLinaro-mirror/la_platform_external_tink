@@ -31,8 +31,6 @@
 #include "tink/subtle/hmac_boringssl.h"
 #include "tink/util/constants.h"
 #include "tink/util/enums.h"
-#include "tink/util/errors.h"
-#include "tink/util/protobuf_helper.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -52,7 +50,7 @@ class RawJwtHmacKeyManager
                             google::crypto::tink::JwtHmacKeyFormat, List<Mac>> {
  public:
   class MacFactory : public PrimitiveFactory<Mac> {
-    crypto::tink::util::StatusOr<std::unique_ptr<Mac>> Create(
+    absl::StatusOr<std::unique_ptr<Mac>> Create(
         const google::crypto::tink::JwtHmacKey& jwt_hmac_key) const override {
       int tag_size;
       google::crypto::tink::HashType hash_type;
@@ -70,7 +68,7 @@ class RawJwtHmacKeyManager
           tag_size = 64;
           break;
         default:
-          return util::Status(absl::StatusCode::kInvalidArgument,
+          return absl::Status(absl::StatusCode::kInvalidArgument,
                               "Unknown algorithm.");
       }
       return subtle::HmacBoringSsl::New(
@@ -90,16 +88,16 @@ class RawJwtHmacKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::JwtHmacKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::JwtHmacKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::JwtHmacKey> CreateKey(
+  absl::StatusOr<google::crypto::tink::JwtHmacKey> CreateKey(
       const google::crypto::tink::JwtHmacKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::JwtHmacKey> DeriveKey(
+  absl::StatusOr<google::crypto::tink::JwtHmacKey> DeriveKey(
       const google::crypto::tink::JwtHmacKeyFormat& key_format,
       InputStream* input_stream) const override;
 

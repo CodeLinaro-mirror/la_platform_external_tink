@@ -16,9 +16,13 @@
 
 #include "tink/aead/aes_ctr_hmac_aead_parameters.h"
 
+#include <memory>
+#include <utility>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "tink/parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 
@@ -30,6 +34,7 @@ using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
 using ::testing::Eq;
 using ::testing::HasSubstr;
+using ::testing::IsFalse;
 using ::testing::TestWithParam;
 using ::testing::Values;
 
@@ -66,7 +71,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(AesCtrHmacAeadParametersTest, BuildParametersSucceeds) {
   BuildTestCase test_case = GetParam();
 
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(test_case.aes_key_size)
           .SetHmacKeySizeInBytes(test_case.hmac_key_size)
@@ -341,57 +346,131 @@ TEST(AesCtrHmacAeadParametersTest, BuildWithInvalidVariantFails) {
                HasSubstr("unknown Variant")));
 }
 
-TEST_P(AesCtrHmacAeadParametersTest, CopyConstructor) {
-  BuildTestCase test_case = GetParam();
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+TEST(AesCtrHmacAeadParametersTest, CopyConstructor) {
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
-          .SetAesKeySizeInBytes(test_case.aes_key_size)
-          .SetHmacKeySizeInBytes(test_case.hmac_key_size)
-          .SetIvSizeInBytes(test_case.iv_size)
-          .SetTagSizeInBytes(test_case.tag_size)
-          .SetHashType(test_case.hash_type)
-          .SetVariant(test_case.variant)
+          .SetAesKeySizeInBytes(16)
+          .SetHmacKeySizeInBytes(16)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(32)
+          .SetHashType(AesCtrHmacAeadParameters::HashType::kSha256)
+          .SetVariant(AesCtrHmacAeadParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
   AesCtrHmacAeadParameters copy(*parameters);
 
-  EXPECT_THAT(copy.GetAesKeySizeInBytes(), Eq(test_case.aes_key_size));
-  EXPECT_THAT(copy.GetHmacKeySizeInBytes(), Eq(test_case.hmac_key_size));
-  EXPECT_THAT(copy.GetIvSizeInBytes(), Eq(test_case.iv_size));
-  EXPECT_THAT(copy.GetTagSizeInBytes(), Eq(test_case.tag_size));
-  EXPECT_THAT(copy.GetHashType(), Eq(test_case.hash_type));
-  EXPECT_THAT(copy.GetVariant(), Eq(test_case.variant));
-  EXPECT_THAT(copy.HasIdRequirement(), test_case.has_id_requirement);
+  EXPECT_THAT(copy.GetAesKeySizeInBytes(), Eq(16));
+  EXPECT_THAT(copy.GetHmacKeySizeInBytes(), Eq(16));
+  EXPECT_THAT(copy.GetIvSizeInBytes(), Eq(16));
+  EXPECT_THAT(copy.GetTagSizeInBytes(), Eq(32));
+  EXPECT_THAT(copy.GetHashType(),
+              Eq(AesCtrHmacAeadParameters::HashType::kSha256));
+  EXPECT_THAT(copy.GetVariant(),
+              Eq(AesCtrHmacAeadParameters::Variant::kNoPrefix));
+  EXPECT_THAT(copy.HasIdRequirement(), IsFalse());
 }
 
-TEST_P(AesCtrHmacAeadParametersTest, CopyAssignment) {
-  BuildTestCase test_case = GetParam();
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+TEST(AesCtrHmacAeadParametersTest, CopyAssignment) {
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
-          .SetAesKeySizeInBytes(test_case.aes_key_size)
-          .SetHmacKeySizeInBytes(test_case.hmac_key_size)
-          .SetIvSizeInBytes(test_case.iv_size)
-          .SetTagSizeInBytes(test_case.tag_size)
-          .SetHashType(test_case.hash_type)
-          .SetVariant(test_case.variant)
+          .SetAesKeySizeInBytes(16)
+          .SetHmacKeySizeInBytes(16)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(32)
+          .SetHashType(AesCtrHmacAeadParameters::HashType::kSha256)
+          .SetVariant(AesCtrHmacAeadParameters::Variant::kNoPrefix)
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  AesCtrHmacAeadParameters copy = *parameters;
+  absl::StatusOr<AesCtrHmacAeadParameters> copy =
+      AesCtrHmacAeadParameters::Builder()
+          .SetAesKeySizeInBytes(32)
+          .SetHmacKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(64)
+          .SetHashType(AesCtrHmacAeadParameters::HashType::kSha512)
+          .SetVariant(AesCtrHmacAeadParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(copy, IsOk());
 
-  EXPECT_THAT(copy.GetAesKeySizeInBytes(), Eq(test_case.aes_key_size));
-  EXPECT_THAT(copy.GetHmacKeySizeInBytes(), Eq(test_case.hmac_key_size));
-  EXPECT_THAT(copy.GetIvSizeInBytes(), Eq(test_case.iv_size));
-  EXPECT_THAT(copy.GetTagSizeInBytes(), Eq(test_case.tag_size));
-  EXPECT_THAT(copy.GetHashType(), Eq(test_case.hash_type));
-  EXPECT_THAT(copy.GetVariant(), Eq(test_case.variant));
-  EXPECT_THAT(copy.HasIdRequirement(), test_case.has_id_requirement);
+  *copy = *parameters;
+
+  EXPECT_THAT(copy->GetAesKeySizeInBytes(), Eq(16));
+  EXPECT_THAT(copy->GetHmacKeySizeInBytes(), Eq(16));
+  EXPECT_THAT(copy->GetIvSizeInBytes(), Eq(16));
+  EXPECT_THAT(copy->GetTagSizeInBytes(), Eq(32));
+  EXPECT_THAT(copy->GetHashType(),
+              Eq(AesCtrHmacAeadParameters::HashType::kSha256));
+  EXPECT_THAT(copy->GetVariant(),
+              Eq(AesCtrHmacAeadParameters::Variant::kNoPrefix));
+  EXPECT_THAT(copy->HasIdRequirement(), IsFalse());
+}
+
+TEST(AesCtrHmacAeadParametersTest, MoveConstructor) {
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
+      AesCtrHmacAeadParameters::Builder()
+          .SetAesKeySizeInBytes(16)
+          .SetHmacKeySizeInBytes(16)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(32)
+          .SetHashType(AesCtrHmacAeadParameters::HashType::kSha256)
+          .SetVariant(AesCtrHmacAeadParameters::Variant::kNoPrefix)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  AesCtrHmacAeadParameters move(std::move(*parameters));
+
+  EXPECT_THAT(move.GetAesKeySizeInBytes(), Eq(16));
+  EXPECT_THAT(move.GetHmacKeySizeInBytes(), Eq(16));
+  EXPECT_THAT(move.GetIvSizeInBytes(), Eq(16));
+  EXPECT_THAT(move.GetTagSizeInBytes(), Eq(32));
+  EXPECT_THAT(move.GetHashType(),
+              Eq(AesCtrHmacAeadParameters::HashType::kSha256));
+  EXPECT_THAT(move.GetVariant(),
+              Eq(AesCtrHmacAeadParameters::Variant::kNoPrefix));
+  EXPECT_THAT(move.HasIdRequirement(), IsFalse());
+}
+
+TEST(AesCtrHmacAeadParametersTest, MoveAssignment) {
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
+      AesCtrHmacAeadParameters::Builder()
+          .SetAesKeySizeInBytes(16)
+          .SetHmacKeySizeInBytes(16)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(32)
+          .SetHashType(AesCtrHmacAeadParameters::HashType::kSha256)
+          .SetVariant(AesCtrHmacAeadParameters::Variant::kNoPrefix)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  absl::StatusOr<AesCtrHmacAeadParameters> move =
+      AesCtrHmacAeadParameters::Builder()
+          .SetAesKeySizeInBytes(32)
+          .SetHmacKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(64)
+          .SetHashType(AesCtrHmacAeadParameters::HashType::kSha512)
+          .SetVariant(AesCtrHmacAeadParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(move, IsOk());
+
+  *move = std::move(*parameters);
+
+  EXPECT_THAT(move->GetAesKeySizeInBytes(), Eq(16));
+  EXPECT_THAT(move->GetHmacKeySizeInBytes(), Eq(16));
+  EXPECT_THAT(move->GetIvSizeInBytes(), Eq(16));
+  EXPECT_THAT(move->GetTagSizeInBytes(), Eq(32));
+  EXPECT_THAT(move->GetHashType(),
+              Eq(AesCtrHmacAeadParameters::HashType::kSha256));
+  EXPECT_THAT(move->GetVariant(),
+              Eq(AesCtrHmacAeadParameters::Variant::kNoPrefix));
+  EXPECT_THAT(move->HasIdRequirement(), IsFalse());
 }
 
 TEST_P(AesCtrHmacAeadParametersTest, SameParametersEquals) {
   BuildTestCase test_case = GetParam();
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(test_case.aes_key_size)
           .SetHmacKeySizeInBytes(test_case.hmac_key_size)
@@ -402,7 +481,7 @@ TEST_P(AesCtrHmacAeadParametersTest, SameParametersEquals) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesCtrHmacAeadParameters> other_parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> other_parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(test_case.aes_key_size)
           .SetHmacKeySizeInBytes(test_case.hmac_key_size)
@@ -420,7 +499,7 @@ TEST_P(AesCtrHmacAeadParametersTest, SameParametersEquals) {
 }
 
 TEST(AesCtrHmacAeadParametersTest, DifferentAesKeySizeNotEqual) {
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -431,7 +510,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentAesKeySizeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesCtrHmacAeadParameters> other_parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> other_parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(24)
           .SetHmacKeySizeInBytes(16)
@@ -447,7 +526,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentAesKeySizeNotEqual) {
 }
 
 TEST(AesCtrHmacAeadParametersTest, DifferentHmacKeySizeNotEqual) {
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -458,7 +537,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentHmacKeySizeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesCtrHmacAeadParameters> other_parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> other_parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(32)
@@ -474,7 +553,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentHmacKeySizeNotEqual) {
 }
 
 TEST(AesCtrHmacAeadParametersTest, DifferentIvSizeNotEqual) {
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -485,7 +564,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentIvSizeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesCtrHmacAeadParameters> other_parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> other_parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -501,7 +580,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentIvSizeNotEqual) {
 }
 
 TEST(AesCtrHmacAeadParametersTest, DifferentTagSizeNotEqual) {
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -512,7 +591,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentTagSizeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesCtrHmacAeadParameters> other_parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> other_parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -528,7 +607,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentTagSizeNotEqual) {
 }
 
 TEST(AesCtrHmacAeadParametersTest, DifferentHashTypeNotEqual) {
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -539,7 +618,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentHashTypeNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesCtrHmacAeadParameters> other_parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> other_parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -555,7 +634,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentHashTypeNotEqual) {
 }
 
 TEST(AesCtrHmacAeadParametersTest, DifferentVariantNotEqual) {
-  util::StatusOr<AesCtrHmacAeadParameters> parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -566,7 +645,7 @@ TEST(AesCtrHmacAeadParametersTest, DifferentVariantNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<AesCtrHmacAeadParameters> other_parameters =
+  absl::StatusOr<AesCtrHmacAeadParameters> other_parameters =
       AesCtrHmacAeadParameters::Builder()
           .SetAesKeySizeInBytes(16)
           .SetHmacKeySizeInBytes(16)
@@ -579,6 +658,22 @@ TEST(AesCtrHmacAeadParametersTest, DifferentVariantNotEqual) {
 
   EXPECT_TRUE(*parameters != *other_parameters);
   EXPECT_FALSE(*parameters == *other_parameters);
+}
+
+TEST(AesCtrHmacAeadParametersTest, Clone) {
+  absl::StatusOr<AesCtrHmacAeadParameters> parameters =
+      AesCtrHmacAeadParameters::Builder()
+          .SetAesKeySizeInBytes(16)
+          .SetHmacKeySizeInBytes(16)
+          .SetIvSizeInBytes(12)
+          .SetTagSizeInBytes(16)
+          .SetHashType(AesCtrHmacAeadParameters::HashType::kSha256)
+          .SetVariant(AesCtrHmacAeadParameters::Variant::kTink)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  std::unique_ptr<Parameters> cloned_parameters = parameters->Clone();
+  ASSERT_THAT(*cloned_parameters, Eq(*parameters));
 }
 
 }  // namespace

@@ -52,6 +52,7 @@ tink_cc_library(
   SRCS
     status.h
   DEPS
+    absl::core_headers
     absl::status
   PUBLIC
 )
@@ -62,6 +63,7 @@ tink_cc_library(
     statusor.h
   DEPS
     tink::util::status
+    absl::core_headers
     absl::statusor
   PUBLIC
 )
@@ -195,9 +197,9 @@ tink_cc_library(
     tink::daead::aes_siv_key_manager
     tink::internal::ec_util
     tink::keyderivation::keyset_deriver
+    tink::mac::internal::stateful_mac
     tink::subtle::common_enums
     tink::subtle::random
-    tink::subtle::mac::stateful_mac
     tink::proto::aes_ctr_cc_proto
     tink::proto::aes_ctr_hmac_aead_cc_proto
     tink::proto::aes_gcm_cc_proto
@@ -259,6 +261,7 @@ tink_cc_library(
     absl::strings
     absl::span
     tink::core::input_stream
+    tink::internal::secret_buffer
 )
 
 tink_cc_library(
@@ -458,25 +461,18 @@ tink_cc_test(
 )
 
 tink_cc_library(
-  NAME secret_data_internal
-  SRCS
-    secret_data_internal.h
-  DEPS
-    absl::config
-    absl::core_headers
-    crypto
-)
-
-tink_cc_library(
   NAME secret_data
   SRCS
     secret_data.h
   DEPS
-    tink::util::secret_data_internal
-    absl::span
+    absl::check
     absl::string_view
-    tink::internal::dfsan_forwarders
+    absl::span
+    crypto
+    tink::util::secret_data_internal_class
+    tink::internal::call_with_core_dump_protection
     tink::internal::safe_stringops
+    tink::internal::sanitizing_allocator
 )
 
 tink_cc_test(
@@ -487,6 +483,7 @@ tink_cc_test(
     tink::util::secret_data
     gmock
     absl::strings
+    tink::internal::secret_buffer
 )
 
 tink_cc_library(
@@ -501,6 +498,7 @@ tink_cc_library(
     absl::memory
     absl::status
     tink::internal::call_with_core_dump_protection
+    tink::internal::secret_buffer
 )
 
 tink_cc_test(
@@ -514,6 +512,7 @@ tink_cc_test(
     protobuf::libprotobuf
     gmock
     absl::memory
+    tink::internal::secret_buffer
     tink::proto::test_proto_cc_proto
 )
 
@@ -561,4 +560,29 @@ tink_cc_test(
     tink::proto::kms_aead_cc_proto
     tink::proto::kms_envelope_cc_proto
     tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME test_matchers_test
+  SRCS
+    test_matchers_test.cc
+  DEPS
+    tink::util::status
+    tink::util::statusor
+    tink::util::test_matchers
+    gmock
+    absl::status
+)
+
+tink_cc_library(
+  NAME secret_data_internal_class
+  SRCS
+    secret_data_internal_class.h
+  DEPS
+    absl::check
+    absl::string_view
+    absl::span
+    tink::internal::safe_stringops
+    tink::internal::sanitizing_allocator
+    tink::internal::secret_buffer
 )

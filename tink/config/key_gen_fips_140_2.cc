@@ -25,25 +25,25 @@
 #include "tink/key_gen_configuration.h"
 #include "tink/mac/hmac_key_manager.h"
 #include "tink/prf/hmac_prf_key_manager.h"
+#include "tink/signature/ecdsa_sign_key_manager.h"
 #include "tink/signature/ecdsa_verify_key_manager.h"
 #include "tink/signature/rsa_ssa_pkcs1_sign_key_manager.h"
 #include "tink/signature/rsa_ssa_pkcs1_verify_key_manager.h"
 #include "tink/signature/rsa_ssa_pss_sign_key_manager.h"
 #include "tink/signature/rsa_ssa_pss_verify_key_manager.h"
 #include "tink/util/status.h"
-#include "tink/signature/ecdsa_sign_key_manager.h"
 
 namespace crypto {
 namespace tink {
 namespace {
 
-util::Status AddMac(KeyGenConfiguration& config) {
+absl::Status AddMac(KeyGenConfiguration& config) {
   return internal::KeyGenConfigurationImpl::AddKeyTypeManager(
       absl::make_unique<HmacKeyManager>(), config);
 }
 
-util::Status AddAead(KeyGenConfiguration& config) {
-  util::Status status = internal::KeyGenConfigurationImpl::AddKeyTypeManager(
+absl::Status AddAead(KeyGenConfiguration& config) {
+  absl::Status status = internal::KeyGenConfigurationImpl::AddKeyTypeManager(
       absl::make_unique<AesCtrHmacAeadKeyManager>(), config);
   if (!status.ok()) {
     return status;
@@ -52,13 +52,13 @@ util::Status AddAead(KeyGenConfiguration& config) {
       absl::make_unique<AesGcmKeyManager>(), config);
 }
 
-util::Status AddPrf(KeyGenConfiguration& config) {
+absl::Status AddPrf(KeyGenConfiguration& config) {
   return internal::KeyGenConfigurationImpl::AddKeyTypeManager(
       absl::make_unique<HmacPrfKeyManager>(), config);
 }
 
-util::Status AddSignature(KeyGenConfiguration& config) {
-  util::Status status =
+absl::Status AddSignature(KeyGenConfiguration& config) {
+  absl::Status status =
       internal::KeyGenConfigurationImpl::AddAsymmetricKeyManagers(
           absl::make_unique<EcdsaSignKeyManager>(),
           absl::make_unique<EcdsaVerifyKeyManager>(), config);

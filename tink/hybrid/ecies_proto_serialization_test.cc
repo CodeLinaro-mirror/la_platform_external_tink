@@ -21,21 +21,26 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/log/check.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
+#include "tink/aead/internal/aes_ctr_hmac_proto_structs.h"
 #include "tink/big_integer.h"
 #include "tink/ec_point.h"
 #include "tink/hybrid/ecies_parameters.h"
 #include "tink/hybrid/ecies_private_key.h"
 #include "tink/hybrid/ecies_public_key.h"
 #include "tink/insecure_secret_key_access.h"
+#include "tink/internal/common_proto_enums.h"
 #include "tink/internal/ec_util.h"
 #include "tink/internal/mutable_serialization_registry.h"
 #include "tink/internal/proto_key_serialization.h"
 #include "tink/internal/proto_parameters_serialization.h"
 #include "tink/internal/serialization.h"
+#include "tink/internal/tink_proto_structs.h"
 #include "tink/key.h"
 #include "tink/parameters.h"
 #include "tink/partial_key_access.h"
@@ -44,7 +49,6 @@
 #include "tink/subtle/common_enums.h"
 #include "tink/util/enums.h"
 #include "tink/util/secret_data.h"
-#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "proto/aes_ctr.pb.h"
 #include "proto/aes_ctr_hmac_aead.pb.h"
@@ -62,7 +66,6 @@ namespace {
 
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
-using ::google::crypto::tink::AesCtrHmacAeadKeyFormat;
 using ::google::crypto::tink::AesGcmKeyFormat;
 using ::google::crypto::tink::AesSivKeyFormat;
 using ::google::crypto::tink::EciesAeadDemParams;
@@ -78,6 +81,7 @@ using ::google::crypto::tink::KeyData;
 using ::google::crypto::tink::KeyTemplate;
 using ::google::crypto::tink::OutputPrefixType;
 using ::google::crypto::tink::XChaCha20Poly1305KeyFormat;
+using ::testing::_;
 using ::testing::Eq;
 using ::testing::HasSubstr;
 using ::testing::IsTrue;
@@ -175,35 +179,28 @@ EciesAeadDemParams CreateXChaCha20Poly1305DemParams() {
 EciesAeadDemParams CreateAesCtrHmacDemParams(
     absl::optional<int> aes_key_size, absl::optional<int> iv_size,
     absl::optional<int> version, absl::optional<int> hmac_key_size,
-    absl::optional<int> tag_size, absl::optional<HashType> hash_type) {
-  AesCtrHmacAeadKeyFormat format;
-  if (aes_key_size.has_value()) {
-    format.mutable_aes_ctr_key_format()->set_key_size(aes_key_size.value());
-  }
-  if (iv_size.has_value()) {
-    format.mutable_aes_ctr_key_format()->mutable_params()->set_iv_size(
-        iv_size.value());
-  }
-  if (version.has_value()) {
-    format.mutable_hmac_key_format()->set_version(version.value());
-  }
-  if (hmac_key_size.has_value()) {
-    format.mutable_hmac_key_format()->set_key_size(hmac_key_size.value());
-  }
-  if (tag_size.has_value()) {
-    format.mutable_hmac_key_format()->mutable_params()->set_tag_size(
-        tag_size.value());
-  }
-  if (hash_type.has_value()) {
-    format.mutable_hmac_key_format()->mutable_params()->set_hash(
-        hash_type.value());
-  }
+    absl::optional<int> tag_size,
+    absl::optional<internal::HashTypeEnum> hash_type) {
+  internal::AesCtrHmacAeadKeyFormatStruct format;
+  format.aes_ctr_key_format.key_size = aes_key_size.value_or(0);
+  format.aes_ctr_key_format.params.iv_size = iv_size.value_or(0);
+
+  format.hmac_key_format.version = version.value_or(0);
+  format.hmac_key_format.key_size = hmac_key_size.value_or(0);
+  format.hmac_key_format.params.tag_size = tag_size.value_or(0);
+  format.hmac_key_format.params.hash =
+      hash_type.value_or(internal::HashTypeEnum::kUnknownHash);
+
+  absl::StatusOr<std::string> serialized_format =
+      internal::AesCtrHmacAeadKeyFormatStruct::GetParser().SerializeIntoString(
+          format);
+  CHECK_OK(serialized_format);
 
   KeyTemplate key_template;
   key_template.set_type_url(
       "type.googleapis.com/google.crypto.tink.AesCtrHmacAeadKey");
   key_template.set_output_prefix_type(OutputPrefixType::TINK);
-  format.SerializeToString(key_template.mutable_value());
+  *key_template.mutable_value() = *serialized_format;
 
   EciesAeadDemParams dem_params;
   *dem_params.mutable_aead_dem() = key_template;
@@ -212,10 +209,11 @@ EciesAeadDemParams CreateAesCtrHmacDemParams(
 
 EciesAeadDemParams CreateAesCtrHmacDemParams(int key_size) {
   // Key and tag sizes match for allowed AES-CTR-HMAC DEMs.
-  return CreateAesCtrHmacDemParams(/*aes_key_size=*/key_size, /*iv_size=*/16,
-                                   /*version=*/0, /*hmac_key_size=*/32,
-                                   /*tag_size=*/key_size,
-                                   /*hash_type=*/HashType::SHA256);
+  return CreateAesCtrHmacDemParams(
+      /*aes_key_size=*/key_size, /*iv_size=*/16,
+      /*version=*/0, /*hmac_key_size=*/32,
+      /*tag_size=*/key_size,
+      /*hash_type=*/internal::HashTypeEnum::kSha256);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -297,13 +295,13 @@ TEST_P(EciesProtoSerializationTest, ParseParametersSucceeds) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, test_case.output_prefix_type,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   ASSERT_THAT(parameters, IsOk());
@@ -332,13 +330,13 @@ TEST_F(EciesProtoSerializationTest, ParseLegacyAsCrunchySucceeds) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::LEGACY,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   ASSERT_THAT(parameters, IsOk());
@@ -354,18 +352,15 @@ TEST_F(EciesProtoSerializationTest,
        ParseParametersWithInvalidSerializationFails) {
   ASSERT_THAT(RegisterEciesProtoSerialization(), IsOk());
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::RAW, "invalid_serialization");
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> params =
+  absl::StatusOr<std::unique_ptr<Parameters>> params =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
-  EXPECT_THAT(
-      params.status(),
-      StatusIs(absl::StatusCode::kInvalidArgument,
-               HasSubstr("Failed to parse EciesAeadHkdfKeyFormat proto")));
+  EXPECT_THAT(params.status(), StatusIs(absl::StatusCode::kInvalidArgument, _));
 }
 
 TEST_F(EciesProtoSerializationTest,
@@ -380,13 +375,13 @@ TEST_F(EciesProtoSerializationTest,
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::UNKNOWN_PREFIX,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(
@@ -404,19 +399,17 @@ TEST_F(EciesProtoSerializationTest, ParseParametersWithMissingKemFails) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
-  EXPECT_THAT(
-      parameters.status(),
-      StatusIs(absl::StatusCode::kInvalidArgument,
-               HasSubstr("Missing EciesAeadHkdfParams.kem_params field")));
+  EXPECT_THAT(parameters.status(),
+              StatusIs(absl::StatusCode::kInvalidArgument, _));
 }
 
 TEST_F(EciesProtoSerializationTest, ParseParametersWithMissingDemFails) {
@@ -429,19 +422,17 @@ TEST_F(EciesProtoSerializationTest, ParseParametersWithMissingDemFails) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
-  EXPECT_THAT(
-      parameters.status(),
-      StatusIs(absl::StatusCode::kInvalidArgument,
-               HasSubstr("Missing EciesAeadHkdfParams.dem_params field")));
+  EXPECT_THAT(parameters.status(), StatusIs(absl::StatusCode::kInvalidArgument,
+                                            HasSubstr("proto DEM params")));
 }
 
 TEST_F(EciesProtoSerializationTest,
@@ -455,13 +446,13 @@ TEST_F(EciesProtoSerializationTest,
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(
@@ -482,13 +473,13 @@ TEST_F(EciesProtoSerializationTest, ParseParametersWithMissingSaltSucceeds) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   ASSERT_THAT(parameters, IsOk());
@@ -504,20 +495,17 @@ TEST_F(EciesProtoSerializationTest, ParseParametersWithMissingParamsFails) {
 
   EciesAeadHkdfKeyFormat key_format_proto;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
-  EXPECT_THAT(
-      parameters.status(),
-      StatusIs(
-          absl::StatusCode::kInvalidArgument,
-          HasSubstr("EciesAeadHkdfKeyFormat proto is missing params field")));
+  EXPECT_THAT(parameters.status(),
+              StatusIs(absl::StatusCode::kInvalidArgument, _));
 }
 
 TEST_F(EciesProtoSerializationTest,
@@ -533,18 +521,17 @@ TEST_F(EciesProtoSerializationTest,
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(parameters.status(),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("Missing EciesAeadDemParams.aead_dem field")));
+              StatusIs(absl::StatusCode::kInvalidArgument, _));
 }
 
 TEST_F(EciesProtoSerializationTest, ParseParametersWithUnkownCurveTypeFails) {
@@ -558,13 +545,13 @@ TEST_F(EciesProtoSerializationTest, ParseParametersWithUnkownCurveTypeFails) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(
@@ -584,13 +571,13 @@ TEST_F(EciesProtoSerializationTest, ParseParametersWithUnkownHashTypeFails) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(
@@ -610,13 +597,13 @@ TEST_F(EciesProtoSerializationTest, ParseParametersWithUnkownPointFormatFails) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(
@@ -635,23 +622,22 @@ TEST_F(EciesProtoSerializationTest,
   *params.mutable_dem_params() = CreateAesCtrHmacDemParams(
       /*aes_key_size=*/absl::nullopt, /*iv_size=*/absl::nullopt,
       /*version=*/0, /*hmac_key_size=*/32, /*tag_size=*/16,
-      /*hash_type=*/HashType::SHA256);
+      /*hash_type=*/internal::HashTypeEnum::kSha256);
   params.set_ec_point_format(EcPointFormat::COMPRESSED);
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(parameters.status(),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("Missing aes_ctr_key_format")));
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST_F(EciesProtoSerializationTest,
@@ -665,23 +651,22 @@ TEST_F(EciesProtoSerializationTest,
       CreateAesCtrHmacDemParams(/*aes_key_size=*/16, /*iv_size=*/absl::nullopt,
                                 /*version=*/0, /*hmac_key_size=*/32,
                                 /*tag_size=*/16,
-                                /*hash_type=*/HashType::SHA256);
+                                /*hash_type=*/internal::HashTypeEnum::kSha256);
   params.set_ec_point_format(EcPointFormat::COMPRESSED);
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(parameters.status(),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("Missing aes_ctr_key_format.params")));
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST_F(EciesProtoSerializationTest, ParseAesCtrHmacParamsWithInvalidIv) {
@@ -694,23 +679,23 @@ TEST_F(EciesProtoSerializationTest, ParseAesCtrHmacParamsWithInvalidIv) {
       CreateAesCtrHmacDemParams(/*aes_key_size=*/16, /*iv_size=*/14,
                                 /*version=*/0, /*hmac_key_size=*/32,
                                 /*tag_size=*/16,
-                                /*hash_type=*/HashType::SHA256);
+                                /*hash_type=*/internal::HashTypeEnum::kSha256);
   params.set_ec_point_format(EcPointFormat::COMPRESSED);
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(parameters.status(),
               StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("IV size must by 16 bytes")));
+                       HasSubstr("IV size must be 16 bytes")));
 }
 
 TEST_F(EciesProtoSerializationTest,
@@ -728,18 +713,17 @@ TEST_F(EciesProtoSerializationTest,
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(parameters.status(),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("Missing hmac_key_format")));
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST_F(EciesProtoSerializationTest,
@@ -753,18 +737,18 @@ TEST_F(EciesProtoSerializationTest,
       CreateAesCtrHmacDemParams(/*aes_key_size=*/16, /*iv_size=*/16,
                                 /*version=*/0, /*hmac_key_size=*/30,
                                 /*tag_size=*/16,
-                                /*hash_type=*/HashType::SHA256);
+                                /*hash_type=*/internal::HashTypeEnum::kSha256);
   params.set_ec_point_format(EcPointFormat::COMPRESSED);
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(parameters.status(),
@@ -786,18 +770,17 @@ TEST_F(EciesProtoSerializationTest,
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(parameters.status(),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("Missing hmac_key_format.params")));
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST_F(EciesProtoSerializationTest, ParseAesCtrHmacParamsWithInvalidHashType) {
@@ -810,18 +793,18 @@ TEST_F(EciesProtoSerializationTest, ParseAesCtrHmacParamsWithInvalidHashType) {
       CreateAesCtrHmacDemParams(/*aes_key_size=*/16, /*iv_size=*/16,
                                 /*version=*/0, /*hmac_key_size=*/32,
                                 /*tag_size=*/16,
-                                /*hash_type=*/HashType::SHA1);
+                                /*hash_type=*/internal::HashTypeEnum::kSha1);
   params.set_ec_point_format(EcPointFormat::COMPRESSED);
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(parameters.status(),
@@ -839,18 +822,18 @@ TEST_F(EciesProtoSerializationTest, ParseAesCtrHmacParamsWithInvalidVersion) {
       CreateAesCtrHmacDemParams(/*aes_key_size=*/16, /*iv_size=*/16,
                                 /*version=*/1, /*hmac_key_size=*/32,
                                 /*tag_size=*/16,
-                                /*hash_type=*/HashType::SHA256);
+                                /*hash_type=*/internal::HashTypeEnum::kSha256);
   params.set_ec_point_format(EcPointFormat::COMPRESSED);
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(parameters.status(),
@@ -869,18 +852,18 @@ TEST_F(EciesProtoSerializationTest, ParseAesCtrHmacParamsWithMismatchedSizes) {
       CreateAesCtrHmacDemParams(/*aes_key_size=*/16, /*iv_size=*/16,
                                 /*version=*/0, /*hmac_key_size=*/32,
                                 /*tag_size=*/32,
-                                /*hash_type=*/HashType::SHA256);
+                                /*hash_type=*/internal::HashTypeEnum::kSha256);
   params.set_ec_point_format(EcPointFormat::COMPRESSED);
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<internal::ProtoParametersSerialization> serialization =
+  absl::StatusOr<internal::ProtoParametersSerialization> serialization =
       internal::ProtoParametersSerialization::Create(
           kPrivateTypeUrl, OutputPrefixType::TINK,
           key_format_proto.SerializeAsString());
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Parameters>> parameters =
+  absl::StatusOr<std::unique_ptr<Parameters>> parameters =
       internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
           *serialization);
   EXPECT_THAT(parameters.status(),
@@ -905,10 +888,10 @@ TEST_P(EciesProtoSerializationTest, SerializeParameters) {
   if (test_case.salt.has_value()) {
     parameters_builder.SetSalt(*test_case.salt);
   }
-  util::StatusOr<EciesParameters> parameters = parameters_builder.Build();
+  absl::StatusOr<EciesParameters> parameters = parameters_builder.Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeParameters<internal::ProtoParametersSerialization>(
               *parameters);
@@ -919,15 +902,15 @@ TEST_P(EciesProtoSerializationTest, SerializeParameters) {
       dynamic_cast<const internal::ProtoParametersSerialization*>(
           serialization->get());
   ASSERT_THAT(proto_serialization, NotNull());
-  EXPECT_THAT(proto_serialization->GetKeyTemplate().type_url(),
-              Eq(kPrivateTypeUrl));
-  EXPECT_THAT(proto_serialization->GetKeyTemplate().output_prefix_type(),
-              Eq(test_case.output_prefix_type));
+  const internal::KeyTemplateStruct& key_template =
+      proto_serialization->GetKeyTemplateStruct();
+  EXPECT_THAT(key_template.type_url, Eq(kPrivateTypeUrl));
+  EXPECT_THAT(key_template.output_prefix_type,
+              Eq(static_cast<internal::OutputPrefixTypeEnum>(
+                  test_case.output_prefix_type)));
 
   EciesAeadHkdfKeyFormat key_format;
-  ASSERT_THAT(
-      key_format.ParseFromString(proto_serialization->GetKeyTemplate().value()),
-      IsTrue());
+  ASSERT_THAT(key_format.ParseFromString(key_template.value), IsTrue());
   ASSERT_THAT(key_format.has_params(), IsTrue());
 
   ASSERT_THAT(key_format.params().has_kem_params(), IsTrue());
@@ -957,9 +940,9 @@ struct KeyPair {
   std::string private_key;
 };
 
-util::StatusOr<KeyPair> GenerateKeyPair(subtle::EllipticCurveType curve) {
+absl::StatusOr<KeyPair> GenerateKeyPair(subtle::EllipticCurveType curve) {
   if (curve == subtle::EllipticCurveType::CURVE25519) {
-    util::StatusOr<std::unique_ptr<internal::X25519Key>> x25519_key =
+    absl::StatusOr<std::unique_ptr<internal::X25519Key>> x25519_key =
         internal::NewX25519Key();
     if (!x25519_key.ok()) {
       return x25519_key.status();
@@ -968,11 +951,10 @@ util::StatusOr<KeyPair> GenerateKeyPair(subtle::EllipticCurveType curve) {
         std::string(reinterpret_cast<const char*>((*x25519_key)->public_value),
                     internal::X25519KeyPubKeySize());
     const std::string private_key_bytes =
-        std::string(reinterpret_cast<const char*>((*x25519_key)->private_key),
-                    internal::X25519KeyPrivKeySize());
+        std::string(util::SecretDataAsStringView((*x25519_key)->private_key));
     return KeyPair{/*x=*/public_key_bytes, /*y=*/"", private_key_bytes};
   }
-  util::StatusOr<internal::EcKey> ec_key = internal::NewEcKey(curve);
+  absl::StatusOr<internal::EcKey> ec_key = internal::NewEcKey(curve);
   if (!ec_key.ok()) {
     return ec_key.status();
   }
@@ -992,7 +974,7 @@ TEST_P(EciesProtoSerializationTest, ParsePublicKey) {
   *params.mutable_dem_params() = test_case.dem_params;
   params.set_ec_point_format(test_case.ec_point_format);
 
-  util::StatusOr<KeyPair> key_pair = GenerateKeyPair(
+  absl::StatusOr<KeyPair> key_pair = GenerateKeyPair(
       util::Enums::ProtoToSubtle(test_case.kem_params.curve_type()));
   ASSERT_THAT(key_pair, IsOk());
 
@@ -1004,13 +986,13 @@ TEST_P(EciesProtoSerializationTest, ParsePublicKey) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kPublicTypeUrl, serialized_key, KeyData::ASYMMETRIC_PUBLIC,
           test_case.output_prefix_type, test_case.id);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, /*token=*/absl::nullopt);
   ASSERT_THAT(key, IsOk());
@@ -1030,11 +1012,11 @@ TEST_P(EciesProtoSerializationTest, ParsePublicKey) {
   if (test_case.salt.has_value()) {
     parameters_builder.SetSalt(*test_case.salt);
   }
-  util::StatusOr<EciesParameters> expected_parameters =
+  absl::StatusOr<EciesParameters> expected_parameters =
       parameters_builder.Build();
   ASSERT_THAT(expected_parameters, IsOk());
 
-  util::StatusOr<EciesPublicKey> expected_key;
+  absl::StatusOr<EciesPublicKey> expected_key;
   if (test_case.curve_type != EciesParameters::CurveType::kX25519) {
     expected_key = EciesPublicKey::CreateForNistCurve(
         *expected_parameters,
@@ -1055,20 +1037,17 @@ TEST_F(EciesProtoSerializationTest, ParsePublicKeyWithInvalidSerialization) {
   RestrictedData serialized_key =
       RestrictedData("invalid_serialization", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(kPublicTypeUrl, serialized_key,
                                               KeyData::ASYMMETRIC_PUBLIC,
                                               OutputPrefixType::TINK,
                                               /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
-  EXPECT_THAT(
-      key.status(),
-      StatusIs(absl::StatusCode::kInvalidArgument,
-               HasSubstr("Failed to parse EciesAeadHkdfPublicKey proto")));
+  EXPECT_THAT(key.status(), StatusIs(absl::StatusCode::kInvalidArgument, _));
 }
 
 TEST_F(EciesProtoSerializationTest, ParsePublicKeyWithInvalidVersion) {
@@ -1080,7 +1059,7 @@ TEST_F(EciesProtoSerializationTest, ParsePublicKeyWithInvalidVersion) {
   *params.mutable_dem_params() = CreateAesGcmDemParams(16);
   params.set_ec_point_format(EcPointFormat::COMPRESSED);
 
-  util::StatusOr<KeyPair> key_pair =
+  absl::StatusOr<KeyPair> key_pair =
       GenerateKeyPair(subtle::EllipticCurveType::NIST_P256);
   ASSERT_THAT(key_pair, IsOk());
 
@@ -1092,14 +1071,14 @@ TEST_F(EciesProtoSerializationTest, ParsePublicKeyWithInvalidVersion) {
   RestrictedData serialized_key = RestrictedData(
       key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(kPublicTypeUrl, serialized_key,
                                               KeyData::ASYMMETRIC_PUBLIC,
                                               OutputPrefixType::TINK,
                                               /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, /*token=*/absl::nullopt);
   EXPECT_THAT(
@@ -1126,14 +1105,14 @@ TEST_P(EciesProtoSerializationTest, SerializePublicKey) {
   if (test_case.salt.has_value()) {
     parameters_builder.SetSalt(*test_case.salt);
   }
-  util::StatusOr<EciesParameters> parameters = parameters_builder.Build();
+  absl::StatusOr<EciesParameters> parameters = parameters_builder.Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<KeyPair> key_pair = GenerateKeyPair(
+  absl::StatusOr<KeyPair> key_pair = GenerateKeyPair(
       util::Enums::ProtoToSubtle(test_case.kem_params.curve_type()));
   ASSERT_THAT(key_pair, IsOk());
 
-  util::StatusOr<EciesPublicKey> public_key;
+  absl::StatusOr<EciesPublicKey> public_key;
   if (test_case.curve_type != EciesParameters::CurveType::kX25519) {
     public_key = EciesPublicKey::CreateForNistCurve(
         *parameters, EcPoint(BigInteger(key_pair->x), BigInteger(key_pair->y)),
@@ -1144,7 +1123,7 @@ TEST_P(EciesProtoSerializationTest, SerializePublicKey) {
   }
   ASSERT_THAT(public_key, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeKey<internal::ProtoKeySerialization>(
               *public_key, /*token=*/absl::nullopt);
@@ -1207,7 +1186,7 @@ TEST_P(EciesProtoSerializationTest, ParsePrivateKey) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<KeyPair> key_pair = GenerateKeyPair(
+  absl::StatusOr<KeyPair> key_pair = GenerateKeyPair(
       util::Enums::ProtoToSubtle(test_case.kem_params.curve_type()));
   ASSERT_THAT(key_pair, IsOk());
 
@@ -1225,13 +1204,13 @@ TEST_P(EciesProtoSerializationTest, ParsePrivateKey) {
   RestrictedData serialized_key = RestrictedData(
       private_key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kPrivateTypeUrl, serialized_key, KeyData::ASYMMETRIC_PRIVATE,
           test_case.output_prefix_type, test_case.id);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(key, IsOk());
@@ -1251,11 +1230,11 @@ TEST_P(EciesProtoSerializationTest, ParsePrivateKey) {
   if (test_case.salt.has_value()) {
     parameters_builder.SetSalt(*test_case.salt);
   }
-  util::StatusOr<EciesParameters> expected_parameters =
+  absl::StatusOr<EciesParameters> expected_parameters =
       parameters_builder.Build();
   ASSERT_THAT(expected_parameters, IsOk());
 
-  util::StatusOr<EciesPublicKey> expected_public_key;
+  absl::StatusOr<EciesPublicKey> expected_public_key;
   if (test_case.curve_type != EciesParameters::CurveType::kX25519) {
     expected_public_key = EciesPublicKey::CreateForNistCurve(
         *expected_parameters,
@@ -1267,7 +1246,7 @@ TEST_P(EciesProtoSerializationTest, ParsePrivateKey) {
   }
   ASSERT_THAT(expected_public_key, IsOk());
 
-  util::StatusOr<EciesPrivateKey> expected_private_key;
+  absl::StatusOr<EciesPrivateKey> expected_private_key;
   if (test_case.curve_type != EciesParameters::CurveType::kX25519) {
     expected_private_key = EciesPrivateKey::CreateForNistCurve(
         *expected_public_key,
@@ -1291,20 +1270,52 @@ TEST_F(EciesProtoSerializationTest, ParsePrivateKeyWithInvalidSerialization) {
   RestrictedData serialized_key =
       RestrictedData("invalid_serialization", InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(kPrivateTypeUrl, serialized_key,
                                               KeyData::ASYMMETRIC_PRIVATE,
                                               OutputPrefixType::TINK,
                                               /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
-  EXPECT_THAT(
-      key.status(),
-      StatusIs(absl::StatusCode::kInvalidArgument,
-               HasSubstr("Failed to parse EciesAeadHkdfPrivateKey proto")));
+  EXPECT_THAT(key.status(), StatusIs(absl::StatusCode::kInvalidArgument, _));
+}
+
+TEST_F(EciesProtoSerializationTest, ParsePrivateKeyWithNoPublicKey) {
+  ASSERT_THAT(RegisterEciesProtoSerialization(), IsOk());
+
+  EciesAeadHkdfParams params;
+  *params.mutable_kem_params() =
+      CreateKemParams(EllipticCurveType::NIST_P256, HashType::SHA256, kSalt);
+  *params.mutable_dem_params() = CreateAesGcmDemParams(16);
+  params.set_ec_point_format(EcPointFormat::COMPRESSED);
+  EciesAeadHkdfKeyFormat key_format_proto;
+  *key_format_proto.mutable_params() = params;
+
+  absl::StatusOr<KeyPair> key_pair =
+      GenerateKeyPair(subtle::EllipticCurveType::NIST_P256);
+  ASSERT_THAT(key_pair, IsOk());
+
+  EciesAeadHkdfPrivateKey private_key_proto;
+  private_key_proto.set_version(0);
+  private_key_proto.set_key_value(key_pair->private_key);
+
+  RestrictedData serialized_key = RestrictedData(
+      private_key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
+
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
+      internal::ProtoKeySerialization::Create(kPrivateTypeUrl, serialized_key,
+                                              KeyData::ASYMMETRIC_PRIVATE,
+                                              OutputPrefixType::TINK,
+                                              /*id_requirement=*/0x23456789);
+  ASSERT_THAT(serialization, IsOk());
+
+  absl::StatusOr<std::unique_ptr<Key>> key =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
+          *serialization, InsecureSecretKeyAccess::Get());
+  EXPECT_THAT(key.status(), StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST_F(EciesProtoSerializationTest, ParsePrivateKeyWithInvalidVersion) {
@@ -1318,7 +1329,7 @@ TEST_F(EciesProtoSerializationTest, ParsePrivateKeyWithInvalidVersion) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<KeyPair> key_pair =
+  absl::StatusOr<KeyPair> key_pair =
       GenerateKeyPair(subtle::EllipticCurveType::NIST_P256);
   ASSERT_THAT(key_pair, IsOk());
 
@@ -1336,14 +1347,14 @@ TEST_F(EciesProtoSerializationTest, ParsePrivateKeyWithInvalidVersion) {
   RestrictedData serialized_key = RestrictedData(
       private_key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(kPrivateTypeUrl, serialized_key,
                                               KeyData::ASYMMETRIC_PRIVATE,
                                               OutputPrefixType::TINK,
                                               /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   EXPECT_THAT(
@@ -1352,6 +1363,52 @@ TEST_F(EciesProtoSerializationTest, ParsePrivateKeyWithInvalidVersion) {
           absl::StatusCode::kInvalidArgument,
           HasSubstr(
               "Only version 0 keys are accepted for EciesAeadHkdfPrivateKey")));
+}
+
+TEST_F(EciesProtoSerializationTest,
+       ParsePrivateKeyWithInvalidPublicKeyVersion) {
+  ASSERT_THAT(RegisterEciesProtoSerialization(), IsOk());
+
+  EciesAeadHkdfParams params;
+  *params.mutable_kem_params() =
+      CreateKemParams(EllipticCurveType::NIST_P256, HashType::SHA256, kSalt);
+  *params.mutable_dem_params() = CreateAesGcmDemParams(16);
+  params.set_ec_point_format(EcPointFormat::COMPRESSED);
+  EciesAeadHkdfKeyFormat key_format_proto;
+  *key_format_proto.mutable_params() = params;
+
+  absl::StatusOr<KeyPair> key_pair =
+      GenerateKeyPair(subtle::EllipticCurveType::NIST_P256);
+  ASSERT_THAT(key_pair, IsOk());
+
+  EciesAeadHkdfPublicKey public_key_proto;
+  public_key_proto.set_version(1);
+  public_key_proto.set_x(key_pair->x);
+  public_key_proto.set_y(key_pair->y);
+  *public_key_proto.mutable_params() = params;
+
+  EciesAeadHkdfPrivateKey private_key_proto;
+  private_key_proto.set_version(0);
+  *private_key_proto.mutable_public_key() = public_key_proto;
+  private_key_proto.set_key_value(key_pair->private_key);
+
+  RestrictedData serialized_key = RestrictedData(
+      private_key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
+
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
+      internal::ProtoKeySerialization::Create(kPrivateTypeUrl, serialized_key,
+                                              KeyData::ASYMMETRIC_PRIVATE,
+                                              OutputPrefixType::TINK,
+                                              /*id_requirement=*/0x23456789);
+  ASSERT_THAT(serialization, IsOk());
+
+  absl::StatusOr<std::unique_ptr<Key>> key =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
+          *serialization, InsecureSecretKeyAccess::Get());
+  EXPECT_THAT(key.status(),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Only version 0 public keys are accepted for "
+                                 "EciesAeadHkdfPrivateKey")));
 }
 
 TEST_F(EciesProtoSerializationTest, ParsePrivateKeyNoSecretKeyAccess) {
@@ -1365,7 +1422,7 @@ TEST_F(EciesProtoSerializationTest, ParsePrivateKeyNoSecretKeyAccess) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<KeyPair> key_pair =
+  absl::StatusOr<KeyPair> key_pair =
       GenerateKeyPair(subtle::EllipticCurveType::NIST_P256);
   ASSERT_THAT(key_pair, IsOk());
 
@@ -1383,14 +1440,14 @@ TEST_F(EciesProtoSerializationTest, ParsePrivateKeyNoSecretKeyAccess) {
   RestrictedData serialized_key = RestrictedData(
       private_key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(kPrivateTypeUrl, serialized_key,
                                               KeyData::ASYMMETRIC_PRIVATE,
                                               OutputPrefixType::TINK,
                                               /*id_requirement=*/0x23456789);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> key =
+  absl::StatusOr<std::unique_ptr<Key>> key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, /*token=*/absl::nullopt);
   EXPECT_THAT(key.status(), StatusIs(absl::StatusCode::kPermissionDenied,
@@ -1413,14 +1470,14 @@ TEST_P(EciesProtoSerializationTest, SerializePrivateKey) {
   if (test_case.salt.has_value()) {
     parameters_builder.SetSalt(*test_case.salt);
   }
-  util::StatusOr<EciesParameters> parameters = parameters_builder.Build();
+  absl::StatusOr<EciesParameters> parameters = parameters_builder.Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<KeyPair> key_pair = GenerateKeyPair(
+  absl::StatusOr<KeyPair> key_pair = GenerateKeyPair(
       util::Enums::ProtoToSubtle(test_case.kem_params.curve_type()));
   ASSERT_THAT(key_pair, IsOk());
 
-  util::StatusOr<EciesPublicKey> public_key;
+  absl::StatusOr<EciesPublicKey> public_key;
   if (test_case.curve_type != EciesParameters::CurveType::kX25519) {
     public_key = EciesPublicKey::CreateForNistCurve(
         *parameters, EcPoint(BigInteger(key_pair->x), BigInteger(key_pair->y)),
@@ -1431,7 +1488,7 @@ TEST_P(EciesProtoSerializationTest, SerializePrivateKey) {
   }
   ASSERT_THAT(public_key, IsOk());
 
-  util::StatusOr<EciesPrivateKey> private_key;
+  absl::StatusOr<EciesPrivateKey> private_key;
   if (test_case.curve_type != EciesParameters::CurveType::kX25519) {
     private_key = EciesPrivateKey::CreateForNistCurve(
         *public_key,
@@ -1446,7 +1503,7 @@ TEST_P(EciesProtoSerializationTest, SerializePrivateKey) {
   }
   ASSERT_THAT(private_key, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeKey<internal::ProtoKeySerialization>(
               *private_key, InsecureSecretKeyAccess::Get());
@@ -1516,7 +1573,7 @@ TEST_P(EciesProtoSerializationTest, SerializePrivateKey) {
 TEST_F(EciesProtoSerializationTest, SerializePrivateKeyNoSecretKeyAccess) {
   ASSERT_THAT(RegisterEciesProtoSerialization(), IsOk());
 
-  util::StatusOr<EciesParameters> parameters =
+  absl::StatusOr<EciesParameters> parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kX25519)
           .SetHashType(EciesParameters::HashType::kSha256)
@@ -1525,24 +1582,24 @@ TEST_F(EciesProtoSerializationTest, SerializePrivateKeyNoSecretKeyAccess) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<KeyPair> key_pair = GenerateKeyPair(
+  absl::StatusOr<KeyPair> key_pair = GenerateKeyPair(
       util::Enums::ProtoToSubtle(EllipticCurveType::CURVE25519));
   ASSERT_THAT(key_pair, IsOk());
 
-  util::StatusOr<EciesPublicKey> public_key =
+  absl::StatusOr<EciesPublicKey> public_key =
       EciesPublicKey::CreateForCurveX25519(*parameters, key_pair->x,
                                            /*id_requirement=*/absl::nullopt,
                                            GetPartialKeyAccess());
   ASSERT_THAT(public_key, IsOk());
 
-  util::StatusOr<EciesPrivateKey> private_key =
+  absl::StatusOr<EciesPrivateKey> private_key =
       EciesPrivateKey::CreateForCurveX25519(
           *public_key,
           RestrictedData(key_pair->private_key, InsecureSecretKeyAccess::Get()),
           GetPartialKeyAccess());
   ASSERT_THAT(private_key, IsOk());
 
-  util::StatusOr<std::unique_ptr<Serialization>> serialization =
+  absl::StatusOr<std::unique_ptr<Serialization>> serialization =
       internal::MutableSerializationRegistry::GlobalInstance()
           .SerializeKey<internal::ProtoKeySerialization>(
               *private_key, /*token=*/absl::nullopt);
@@ -1553,6 +1610,8 @@ TEST_F(EciesProtoSerializationTest, SerializePrivateKeyNoSecretKeyAccess) {
 
 // TODO: b/330508549 - Remove test after existing keys are updated/removed.
 TEST(AeadDemTypeUrlExceptionTest, ParseWithInvalidUrl) {
+  ASSERT_THAT(RegisterEciesProtoSerialization(), IsOk());
+
   const std::string invalid_aead_dem_type_url =
       "type.googleapis.com/google.crypto.tink.XChaCha20Poly1305KeyFormat";
   XChaCha20Poly1305KeyFormat format;
@@ -1572,7 +1631,7 @@ TEST(AeadDemTypeUrlExceptionTest, ParseWithInvalidUrl) {
   EciesAeadHkdfKeyFormat key_format_proto;
   *key_format_proto.mutable_params() = params;
 
-  util::StatusOr<KeyPair> key_pair = GenerateKeyPair(
+  absl::StatusOr<KeyPair> key_pair = GenerateKeyPair(
       util::Enums::ProtoToSubtle(params.kem_params().curve_type()));
   ASSERT_THAT(key_pair, IsOk());
 
@@ -1590,18 +1649,18 @@ TEST(AeadDemTypeUrlExceptionTest, ParseWithInvalidUrl) {
   RestrictedData serialized_key = RestrictedData(
       private_key_proto.SerializeAsString(), InsecureSecretKeyAccess::Get());
 
-  util::StatusOr<internal::ProtoKeySerialization> serialization =
+  absl::StatusOr<internal::ProtoKeySerialization> serialization =
       internal::ProtoKeySerialization::Create(
           kPrivateTypeUrl, serialized_key, KeyData::ASYMMETRIC_PRIVATE,
           OutputPrefixType::TINK, /*id_requirement=*/123);
   ASSERT_THAT(serialization, IsOk());
 
-  util::StatusOr<std::unique_ptr<Key>> private_key =
+  absl::StatusOr<std::unique_ptr<Key>> private_key =
       internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
           *serialization, InsecureSecretKeyAccess::Get());
   ASSERT_THAT(private_key, IsOk());
 
-  util::StatusOr<EciesParameters> expected_parameters =
+  absl::StatusOr<EciesParameters> expected_parameters =
       EciesParameters::Builder()
           .SetCurveType(EciesParameters::CurveType::kX25519)
           .SetHashType(EciesParameters::HashType::kSha256)

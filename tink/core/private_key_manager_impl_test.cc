@@ -70,9 +70,9 @@ class ExamplePrivateKeyTypeManager
  public:
   class PrivatePrimitiveFactory : public PrimitiveFactory<PrivatePrimitive> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<PrivatePrimitive>> Create(
+    absl::StatusOr<std::unique_ptr<PrivatePrimitive>> Create(
         const EcdsaPrivateKey& key) const override {
-      return util::Status(absl::StatusCode::kUnimplemented, "Not implemented");
+      return absl::Status(absl::StatusCode::kUnimplemented, "Not implemented");
     }
   };
 
@@ -88,14 +88,14 @@ class ExamplePrivateKeyTypeManager
 
   // We mock out ValidateKey and ValidateKeyFormat so that we can easily test
   // proper behavior in case they return an error.
-  MOCK_METHOD(crypto::tink::util::Status, ValidateKey,
-              (const EcdsaPrivateKey& key), (const, override));
-  MOCK_METHOD(crypto::tink::util::Status, ValidateKeyFormat,
-              (const EcdsaKeyFormat& key), (const, override));
+  MOCK_METHOD(absl::Status, ValidateKey, (const EcdsaPrivateKey& key),
+              (const, override));
+  MOCK_METHOD(absl::Status, ValidateKeyFormat, (const EcdsaKeyFormat& key),
+              (const, override));
 
   const std::string& get_key_type() const override { return kKeyType; }
 
-  crypto::tink::util::StatusOr<EcdsaPrivateKey> CreateKey(
+  absl::StatusOr<EcdsaPrivateKey> CreateKey(
       const EcdsaKeyFormat& key_format) const override {
     EcdsaPublicKey public_key;
     *public_key.mutable_params() = key_format.params();
@@ -104,7 +104,7 @@ class ExamplePrivateKeyTypeManager
     return result;
   }
 
-  crypto::tink::util::StatusOr<EcdsaPublicKey> GetPublicKey(
+  absl::StatusOr<EcdsaPublicKey> GetPublicKey(
       const EcdsaPrivateKey& private_key) const override {
     return private_key.public_key();
   }
@@ -119,9 +119,9 @@ class TestPublicKeyTypeManager
  public:
   class PublicPrimitiveFactory : public PrimitiveFactory<PublicPrimitive> {
    public:
-    crypto::tink::util::StatusOr<std::unique_ptr<PublicPrimitive>> Create(
+    absl::StatusOr<std::unique_ptr<PublicPrimitive>> Create(
         const EcdsaPublicKey& key) const override {
-      return util::Status(absl::StatusCode::kUnimplemented, "Not implemented");
+      return absl::Status(absl::StatusCode::kUnimplemented, "Not implemented");
     }
   };
 
@@ -137,8 +137,8 @@ class TestPublicKeyTypeManager
 
   // We mock out ValidateKey and ValidateKeyFormat so that we can easily test
   // proper behavior in case they return an error.
-  MOCK_METHOD(crypto::tink::util::Status, ValidateKey,
-              (const EcdsaPublicKey& key), (const, override));
+  MOCK_METHOD(absl::Status, ValidateKey, (const EcdsaPublicKey& key),
+              (const, override));
 
   const std::string& get_key_type() const override { return kKeyType; }
 
@@ -185,7 +185,7 @@ TEST(PrivateKeyManagerImplTest, GetPublicKeyDataValidatePrivateKey) {
   ExamplePrivateKeyTypeManager private_km;
   TestPublicKeyTypeManager public_km;
   EXPECT_CALL(private_km, ValidateKey)
-      .WillOnce(Return(util::Status(absl::StatusCode::kOutOfRange,
+      .WillOnce(Return(absl::Status(absl::StatusCode::kOutOfRange,
                                     "GetPublicKeyDataValidatePrivateKey")));
 
   std::unique_ptr<KeyManager<PrivatePrimitive>> key_manager =

@@ -21,7 +21,9 @@
 #include "tink/config/tink_fips.h"
 #include "tink/registry.h"
 #include "tink/signature/ecdsa_proto_serialization.h"
+#include "tink/signature/ecdsa_sign_key_manager.h"
 #include "tink/signature/ecdsa_verify_key_manager.h"
+#include "tink/signature/ed25519_proto_serialization.h"
 #include "tink/signature/ed25519_sign_key_manager.h"
 #include "tink/signature/ed25519_verify_key_manager.h"
 #include "tink/signature/public_key_sign_wrapper.h"
@@ -33,14 +35,13 @@
 #include "tink/signature/rsa_ssa_pss_sign_key_manager.h"
 #include "tink/signature/rsa_ssa_pss_verify_key_manager.h"
 #include "tink/util/status.h"
-#include "tink/signature/ecdsa_sign_key_manager.h"
 #include "proto/config.pb.h"
 
 namespace crypto {
 namespace tink {
 
 // static
-util::Status SignatureConfig::Register() {
+absl::Status SignatureConfig::Register() {
   // Register primitive wrappers.
   auto status = Registry::RegisterPrimitiveWrapper(
       absl::make_unique<PublicKeySignWrapper>());
@@ -81,7 +82,7 @@ util::Status SignatureConfig::Register() {
   if (!status.ok()) return status;
 
   if (IsFipsModeEnabled()) {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
   // ED25519
@@ -90,7 +91,10 @@ util::Status SignatureConfig::Register() {
       absl::make_unique<Ed25519VerifyKeyManager>(), true);
   if (!status.ok()) return status;
 
-  return util::OkStatus();
+  status = RegisterEd25519ProtoSerialization();
+  if (!status.ok()) return status;
+
+  return absl::OkStatus();
 }
 
 }  // namespace tink

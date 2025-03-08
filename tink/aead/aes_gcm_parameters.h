@@ -17,6 +17,8 @@
 #ifndef TINK_AEAD_AES_GCM_PARAMETERS_H_
 #define TINK_AEAD_AES_GCM_PARAMETERS_H_
 
+#include <memory>
+
 #include "tink/aead/aead_parameters.h"
 #include "tink/parameters.h"
 #include "tink/util/statusor.h"
@@ -57,7 +59,7 @@ class AesGcmParameters : public AeadParameters {
     Builder& SetVariant(Variant variant);
 
     // Creates AES-GCM parameters object from this builder.
-    util::StatusOr<AesGcmParameters> Build();
+    absl::StatusOr<AesGcmParameters> Build();
 
    private:
     int key_size_in_bytes_;
@@ -85,6 +87,10 @@ class AesGcmParameters : public AeadParameters {
   }
 
   bool operator==(const Parameters& other) const override;
+
+  std::unique_ptr<Parameters> Clone() const override {
+    return std::make_unique<AesGcmParameters>(*this);
+  }
 
  private:
   AesGcmParameters(int key_size_in_bytes, int iv_size_in_bytes,

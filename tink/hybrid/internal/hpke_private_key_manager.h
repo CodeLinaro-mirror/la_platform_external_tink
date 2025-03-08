@@ -46,7 +46,7 @@ class HpkePrivateKeyManager
                                    List<HybridDecrypt>> {
  public:
   class HybridDecryptFactory : public PrimitiveFactory<HybridDecrypt> {
-    crypto::tink::util::StatusOr<std::unique_ptr<HybridDecrypt>> Create(
+    absl::StatusOr<std::unique_ptr<HybridDecrypt>> Create(
         const google::crypto::tink::HpkePrivateKey& private_key)
         const override {
       return HpkeDecrypt::New(private_key);
@@ -65,17 +65,16 @@ class HpkePrivateKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::HpkePrivateKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::HpkeKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::HpkePrivateKey> CreateKey(
+  absl::StatusOr<google::crypto::tink::HpkePrivateKey> CreateKey(
       const google::crypto::tink::HpkeKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::HpkePublicKey>
-  GetPublicKey(
+  absl::StatusOr<google::crypto::tink::HpkePublicKey> GetPublicKey(
       const google::crypto::tink::HpkePrivateKey& private_key) const override;
 
  private:

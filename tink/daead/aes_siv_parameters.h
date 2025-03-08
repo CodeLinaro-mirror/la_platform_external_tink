@@ -17,6 +17,8 @@
 #ifndef TINK_DAEAD_AES_SIV_PARAMETERS_H_
 #define TINK_DAEAD_AES_SIV_PARAMETERS_H_
 
+#include <memory>
+
 #include "tink/daead/deterministic_aead_parameters.h"
 #include "tink/parameters.h"
 #include "tink/util/statusor.h"
@@ -47,7 +49,7 @@ class AesSivParameters : public DeterministicAeadParameters {
 
   // Creates `AesSivParameters` object from `key_size_in_bytes` and `variant`.
   // Only allows 32-, 48-, and 64-byte key sizes as specified in RFC 5297.
-  static util::StatusOr<AesSivParameters> Create(int key_size_in_bytes,
+  static absl::StatusOr<AesSivParameters> Create(int key_size_in_bytes,
                                                  Variant variant);
 
   int KeySizeInBytes() const { return key_size_in_bytes_; }
@@ -59,6 +61,10 @@ class AesSivParameters : public DeterministicAeadParameters {
   }
 
   bool operator==(const Parameters& other) const override;
+
+  std::unique_ptr<Parameters> Clone() const override {
+    return std::make_unique<AesSivParameters>(*this);
+  }
 
  private:
   AesSivParameters(int key_size_in_bytes, Variant variant)

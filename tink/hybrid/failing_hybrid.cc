@@ -38,10 +38,10 @@ class AlwaysFailHybridEncrypt : public HybridEncrypt {
   explicit AlwaysFailHybridEncrypt(std::string message)
       : message_(std::move(message)) {}
 
-  util::StatusOr<std::string> Encrypt(
+  absl::StatusOr<std::string> Encrypt(
       absl::string_view plaintext,
       absl::string_view associated_data) const override {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInternal,
         absl::StrCat(
             "AlwaysFailHybridEncrypt will always fail on encrypt (msg=",
@@ -58,10 +58,10 @@ class AlwaysFailHybridDecrypt : public HybridDecrypt {
   explicit AlwaysFailHybridDecrypt(std::string message)
       : message_(std::move(message)) {}
 
-  util::StatusOr<std::string> Decrypt(
+  absl::StatusOr<std::string> Decrypt(
       absl::string_view plaintext,
       absl::string_view associated_data) const override {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInternal,
         absl::StrCat(
             "AlwaysFailHybridDecrypt will always fail on decrypt (msg=",

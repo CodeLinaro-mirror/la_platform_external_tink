@@ -30,6 +30,7 @@
 #include "tink/core/key_type_manager.h"
 #include "tink/core/template_util.h"
 #include "tink/input_stream.h"
+#include "tink/internal/call_with_core_dump_protection.h"
 #include "tink/key_manager.h"
 #include "tink/util/constants.h"
 #include "tink/util/errors.h"
@@ -61,10 +62,10 @@ class KeyFactoryImpl<
                                          List<Primitives...>>* key_type_manager)
       : key_type_manager_(key_type_manager) {}
 
-  crypto::tink::util::StatusOr<std::unique_ptr<portable_proto::MessageLite>>
-  NewKey(const portable_proto::MessageLite& key_format) const override {
+  absl::StatusOr<std::unique_ptr<portable_proto::MessageLite>> NewKey(
+      const portable_proto::MessageLite& key_format) const override {
     if (key_format.GetTypeName() != KeyFormatProto().GetTypeName()) {
-      return crypto::tink::util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           absl::StrCat("Key format proto '", key_format.GetTypeName(),
                        "' is not supported by this manager."));
@@ -82,11 +83,11 @@ class KeyFactoryImpl<
         absl::make_unique<KeyProto>(std::move(new_key_result.value())));
   }
 
-  crypto::tink::util::StatusOr<std::unique_ptr<portable_proto::MessageLite>>
-  NewKey(absl::string_view serialized_key_format) const override {
+  absl::StatusOr<std::unique_ptr<portable_proto::MessageLite>> NewKey(
+      absl::string_view serialized_key_format) const override {
     KeyFormatProto key_format;
     if (!key_format.ParseFromString(serialized_key_format)) {
-      return crypto::tink::util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           absl::StrCat("Could not parse the passed string as proto '",
                        KeyFormatProto().GetTypeName(), "'."));
@@ -98,8 +99,8 @@ class KeyFactoryImpl<
     return NewKey(static_cast<const portable_proto::MessageLite&>(key_format));
   }
 
-  crypto::tink::util::StatusOr<std::unique_ptr<google::crypto::tink::KeyData>>
-  NewKeyData(absl::string_view serialized_key_format) const override {
+  absl::StatusOr<std::unique_ptr<google::crypto::tink::KeyData>> NewKeyData(
+      absl::string_view serialized_key_format) const override {
     auto new_key_result = NewKey(serialized_key_format);
     if (!new_key_result.ok()) return new_key_result.status();
     auto new_key = static_cast<const KeyProto&>(*(new_key_result.value()));
@@ -129,23 +130,23 @@ class KeyFactoryImpl<KeyTypeManager<KeyProto, void, List<Primitives...>>>
   explicit KeyFactoryImpl(
       KeyTypeManager<KeyProto, void, List<Primitives...>>* key_type_manager) {}
 
-  crypto::tink::util::StatusOr<std::unique_ptr<portable_proto::MessageLite>>
-  NewKey(const portable_proto::MessageLite& key_format) const override {
-    return util::Status(
+  absl::StatusOr<std::unique_ptr<portable_proto::MessageLite>> NewKey(
+      const portable_proto::MessageLite& key_format) const override {
+    return absl::Status(
         absl::StatusCode::kUnimplemented,
         "Creating new keys is not supported for this key manager.");
   }
 
-  crypto::tink::util::StatusOr<std::unique_ptr<portable_proto::MessageLite>>
-  NewKey(absl::string_view serialized_key_format) const override {
-    return util::Status(
+  absl::StatusOr<std::unique_ptr<portable_proto::MessageLite>> NewKey(
+      absl::string_view serialized_key_format) const override {
+    return absl::Status(
         absl::StatusCode::kUnimplemented,
         "Creating new keys is not supported for this key manager.");
   }
 
-  crypto::tink::util::StatusOr<std::unique_ptr<google::crypto::tink::KeyData>>
-  NewKeyData(absl::string_view serialized_key_format) const override {
-    return util::Status(
+  absl::StatusOr<std::unique_ptr<google::crypto::tink::KeyData>> NewKeyData(
+      absl::string_view serialized_key_format) const override {
+    return absl::Status(
         absl::StatusCode::kUnimplemented,
         "Creating new keys is not supported for this key manager.");
   }
@@ -188,7 +189,9 @@ class KeyManagerImpl<
                        key_data.type_url());
     }
     crypto::tink::util::SecretProto<KeyProto> key_proto;
-    if (!key_proto->ParseFromString(key_data.value())) {
+    bool parsed = CallWithCoreDumpProtection(
+        [&]() -> bool { return key_proto->ParseFromString(key_data.value()); });
+    if (!parsed) {
       return ToStatusF(absl::StatusCode::kInvalidArgument,
                        "Could not parse key_data.value as key type '%s'.",
                        key_data.type_url());
@@ -254,17 +257,17 @@ std::unique_ptr<KeyManager<Primitive>> MakeKeyManager(
 // Note that the returned function stores a pointer to the given KeyTypeManager,
 // which must remain valid for the lifetime of the function.
 template <class KeyProto, class KeyFormatProto, class... Primitives>
-std::function<crypto::tink::util::StatusOr<google::crypto::tink::KeyData>(
-    absl::string_view, InputStream*)>
+std::function<absl::StatusOr<google::crypto::tink::KeyData>(absl::string_view,
+                                                            InputStream*)>
 CreateDeriverFunctionFor(
     KeyTypeManager<KeyProto, KeyFormatProto, List<Primitives...>>*
         key_type_manager) {
   return [key_type_manager](absl::string_view serialized_key_format,
                             InputStream* randomness)
-             -> crypto::tink::util::StatusOr<google::crypto::tink::KeyData> {
+             -> absl::StatusOr<google::crypto::tink::KeyData> {
     KeyFormatProto key_format;
     if (!key_format.ParseFromString(serialized_key_format)) {
-      return crypto::tink::util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           absl::StrCat("Could not parse the passed string as proto '",
                        KeyFormatProto().GetTypeName(), "'."));
@@ -292,19 +295,17 @@ CreateDeriverFunctionFor(
 // Template specialization of CreateDeriverFor in case the KeyTypeManager has
 // KeyFormatProto = void, and hence there is no key derivation.
 template <class KeyProto, class... Primitives>
-std::function<crypto::tink::util::StatusOr<google::crypto::tink::KeyData>(
-    absl::string_view, InputStream*)>
+std::function<absl::StatusOr<google::crypto::tink::KeyData>(absl::string_view,
+                                                            InputStream*)>
 CreateDeriverFunctionFor(
-    KeyTypeManager<KeyProto, void, List<Primitives...>>*
-        key_type_manager) {
+    KeyTypeManager<KeyProto, void, List<Primitives...>>* key_type_manager) {
   return [key_type_manager](absl::string_view serialized_key_format,
                             InputStream* randomness)
-             -> crypto::tink::util::StatusOr<google::crypto::tink::KeyData> {
-    return crypto::tink::util::Status(
-        absl::StatusCode::kUnimplemented,
-        absl::StrCat("Registered KeyManager for type '",
-                     key_type_manager->get_key_type(),
-                     "' does not support key generation."));
+             -> absl::StatusOr<google::crypto::tink::KeyData> {
+    return absl::Status(absl::StatusCode::kUnimplemented,
+                        absl::StrCat("Registered KeyManager for type '",
+                                     key_type_manager->get_key_type(),
+                                     "' does not support key generation."));
   };
 }
 

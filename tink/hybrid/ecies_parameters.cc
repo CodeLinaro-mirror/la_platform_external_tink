@@ -82,12 +82,12 @@ EciesParameters::Builder& EciesParameters::Builder::SetVariant(
   return *this;
 }
 
-util::StatusOr<EciesParameters> EciesParameters::Builder::Build() {
+absl::StatusOr<EciesParameters> EciesParameters::Builder::Build() {
   static const std::set<CurveType>* kSupportedCurves =
       new std::set<CurveType>({CurveType::kNistP256, CurveType::kNistP384,
                                CurveType::kNistP521, CurveType::kX25519});
   if (kSupportedCurves->find(curve_type_) == kSupportedCurves->end()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create ECIES parameters with unknown curve type.");
   }
@@ -96,7 +96,7 @@ util::StatusOr<EciesParameters> EciesParameters::Builder::Build() {
       {HashType::kSha1, HashType::kSha224, HashType::kSha256, HashType::kSha384,
        HashType::kSha512});
   if (kSupportedHashes->find(hash_type_) == kSupportedHashes->end()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create ECIES parameters with unknown hash type.");
   }
@@ -107,7 +107,7 @@ util::StatusOr<EciesParameters> EciesParameters::Builder::Build() {
            PointFormat::kLegacyUncompressed, absl::nullopt});
   if (kSupportedPointFormats->find(point_format_) ==
       kSupportedPointFormats->end()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Cannot create ECIES parameters with unknown point format.");
   }
@@ -117,26 +117,26 @@ util::StatusOr<EciesParameters> EciesParameters::Builder::Build() {
        DemId::kXChaCha20Poly1305Raw, DemId::kAes128CtrHmacSha256Raw,
        DemId::kAes256CtrHmacSha256Raw});
   if (kSupportedDemIds->find(dem_id_) == kSupportedDemIds->end()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Cannot create ECIES parameters with unknown DEM.");
   }
 
   static const std::set<Variant>* kSupportedVariants = new std::set<Variant>(
       {Variant::kTink, Variant::kCrunchy, Variant::kNoPrefix});
   if (kSupportedVariants->find(variant_) == kSupportedVariants->end()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Cannot create ECIES parameters with unknown variant.");
   }
 
   if (curve_type_ == EciesParameters::CurveType::kX25519 &&
       point_format_.has_value()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Point format must not be specified for the X25519 curve.");
   }
 
   if (IsNistCurve(curve_type_) && !point_format_.has_value()) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Point format must be specified for a NIST curve.");
   }
 
@@ -144,7 +144,7 @@ util::StatusOr<EciesParameters> EciesParameters::Builder::Build() {
                          variant_);
 }
 
-util::StatusOr<std::unique_ptr<Parameters>>
+absl::StatusOr<std::unique_ptr<Parameters>>
 EciesParameters::CreateDemParameters() const {
   switch (dem_id_) {
     case DemId::kAes128GcmRaw:
@@ -152,7 +152,7 @@ EciesParameters::CreateDemParameters() const {
     case DemId::kAes256GcmRaw: {
       int key_size =
           (dem_id_ == EciesParameters::DemId::kAes128GcmRaw) ? 16 : 32;
-      util::StatusOr<AesGcmParameters> aes_gcm_raw =
+      absl::StatusOr<AesGcmParameters> aes_gcm_raw =
           AesGcmParameters::Builder()
               .SetKeySizeInBytes(key_size)
               .SetIvSizeInBytes(12)
@@ -166,7 +166,7 @@ EciesParameters::CreateDemParameters() const {
     }
 
     case DemId::kAes256SivRaw: {
-      util::StatusOr<AesSivParameters> aes_256_siv_raw =
+      absl::StatusOr<AesSivParameters> aes_256_siv_raw =
           AesSivParameters::Create(/*key_size_in_bytes=*/64,
                                    AesSivParameters::Variant::kNoPrefix);
       if (!aes_256_siv_raw.ok()) {
@@ -176,7 +176,7 @@ EciesParameters::CreateDemParameters() const {
     }
 
     case DemId::kXChaCha20Poly1305Raw: {
-      util::StatusOr<XChaCha20Poly1305Parameters> xchacha20_poly1305_raw =
+      absl::StatusOr<XChaCha20Poly1305Parameters> xchacha20_poly1305_raw =
           XChaCha20Poly1305Parameters::Create(
               XChaCha20Poly1305Parameters::Variant::kNoPrefix);
       if (!xchacha20_poly1305_raw.ok()) {
@@ -193,7 +193,7 @@ EciesParameters::CreateDemParameters() const {
       int size = (dem_id_ == EciesParameters::DemId::kAes128CtrHmacSha256Raw)
                      ? 16
                      : 32;
-      util::StatusOr<AesCtrHmacAeadParameters> aes_ctr_hmac_aead_raw =
+      absl::StatusOr<AesCtrHmacAeadParameters> aes_ctr_hmac_aead_raw =
           AesCtrHmacAeadParameters::Builder()
               .SetAesKeySizeInBytes(size)
               .SetHmacKeySizeInBytes(32)
@@ -209,7 +209,7 @@ EciesParameters::CreateDemParameters() const {
     }
 
     default:
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kInternal,
           absl::StrCat("Cannot create DEM parameters for DEM id: ", dem_id_));
   }

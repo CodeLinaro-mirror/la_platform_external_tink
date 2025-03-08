@@ -52,20 +52,20 @@ namespace {
 constexpr int kMinKeySizeInBytes = 16;
 constexpr int kMinIvSizeInBytes = 12;
 constexpr int kMinTagSizeInBytes = 10;
-}
+}  // namespace
 
 using ::crypto::tink::util::Enums;
 using ::crypto::tink::util::Status;
 using ::crypto::tink::util::StatusOr;
-using ::google::crypto::tink::AesCtrHmacAeadKey;
+using AesCtrHmacAeadKeyProto = ::google::crypto::tink::AesCtrHmacAeadKey;
 using ::google::crypto::tink::AesCtrHmacAeadKeyFormat;
-using ::google::crypto::tink::AesCtrKey;
+using AesCtrKeyProto = ::google::crypto::tink::AesCtrKey;
 using ::google::crypto::tink::HashType;
-using ::google::crypto::tink::HmacKey;
+using HmacKeyProto = ::google::crypto::tink::HmacKey;
 
-StatusOr<AesCtrHmacAeadKey> AesCtrHmacAeadKeyManager::CreateKey(
+absl::StatusOr<AesCtrHmacAeadKeyProto> AesCtrHmacAeadKeyManager::CreateKey(
     const AesCtrHmacAeadKeyFormat& aes_ctr_hmac_aead_key_format) const {
-  AesCtrHmacAeadKey aes_ctr_hmac_aead_key;
+  AesCtrHmacAeadKeyProto aes_ctr_hmac_aead_key;
   aes_ctr_hmac_aead_key.set_version(get_version());
 
   // Generate AesCtrKey.
@@ -87,8 +87,9 @@ StatusOr<AesCtrHmacAeadKey> AesCtrHmacAeadKeyManager::CreateKey(
   return aes_ctr_hmac_aead_key;
 }
 
-StatusOr<std::unique_ptr<Aead>> AesCtrHmacAeadKeyManager::AeadFactory::Create(
-    const AesCtrHmacAeadKey& key) const {
+absl::StatusOr<std::unique_ptr<Aead>>
+AesCtrHmacAeadKeyManager::AeadFactory::Create(
+    const AesCtrHmacAeadKeyProto& key) const {
   auto aes_ctr_result = subtle::AesCtrBoringSsl::New(
       util::SecretDataFromStringView(key.aes_ctr_key().key_value()),
       key.aes_ctr_key().params().iv_size());
@@ -107,7 +108,7 @@ StatusOr<std::unique_ptr<Aead>> AesCtrHmacAeadKeyManager::AeadFactory::Create(
 }
 
 Status AesCtrHmacAeadKeyManager::ValidateKey(
-    const AesCtrHmacAeadKey& key) const {
+    const AesCtrHmacAeadKeyProto& key) const {
   Status status = ValidateVersion(key.version(), get_version());
   if (!status.ok()) return status;
 
@@ -115,7 +116,7 @@ Status AesCtrHmacAeadKeyManager::ValidateKey(
   if (!status.ok()) return status;
 
   // Validate AesCtrKey.
-  auto aes_ctr_key = key.aes_ctr_key();
+  const google::crypto::tink::AesCtrKey& aes_ctr_key = key.aes_ctr_key();
   uint32_t aes_key_size = aes_ctr_key.key_value().size();
   status = ValidateAesKeySize(aes_key_size);
   if (!status.ok()) {
@@ -123,7 +124,7 @@ Status AesCtrHmacAeadKeyManager::ValidateKey(
   }
   if (aes_ctr_key.params().iv_size() < kMinIvSizeInBytes ||
       aes_ctr_key.params().iv_size() > 16) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "Invalid AesCtrHmacAeadKey: IV size out of range.");
   }
   return HmacKeyManager().ValidateKey(key.hmac_key());
@@ -139,7 +140,7 @@ Status AesCtrHmacAeadKeyManager::ValidateKeyFormat(
   }
   if (aes_ctr_key_format.params().iv_size() < kMinIvSizeInBytes ||
       aes_ctr_key_format.params().iv_size() > 16) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Invalid AesCtrHmacAeadKeyFormat: IV size out of range.");
   }
@@ -147,13 +148,13 @@ Status AesCtrHmacAeadKeyManager::ValidateKeyFormat(
   // Validate HmacKeyFormat.
   auto hmac_key_format = key_format.hmac_key_format();
   if (hmac_key_format.key_size() < kMinKeySizeInBytes) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         "Invalid AesCtrHmacAeadKeyFormat: HMAC key_size is too small.");
   }
   auto params = hmac_key_format.params();
   if (params.tag_size() < kMinTagSizeInBytes) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         absl::StrCat("Invalid HmacParams: tag_size ",
                                      params.tag_size(), " is too small."));
   }
@@ -163,13 +164,13 @@ Status AesCtrHmacAeadKeyManager::ValidateKeyFormat(
                                                {HashType::SHA384, 48},
                                                {HashType::SHA512, 64}};
   if (max_tag_size.find(params.hash()) == max_tag_size.end()) {
-    return util::Status(
+    return absl::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Invalid HmacParams: HashType '",
                      Enums::HashName(params.hash()), "' not supported."));
   } else {
     if (params.tag_size() > max_tag_size[params.hash()]) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           absl::StrCat("Invalid HmacParams: tag_size ", params.tag_size(),
                        " is too big for HashType '",
@@ -180,33 +181,36 @@ Status AesCtrHmacAeadKeyManager::ValidateKeyFormat(
   return HmacKeyManager().ValidateKeyFormat(key_format.hmac_key_format());
 }
 
-// To ensure the resulting key can provide key commitment, the AES-CTR key must
-// be derived first, then the HMAC key. This avoids situation where it's
-// possible to brute force raw key material so that the 32th byte of the
-// keystream is a 0 Give party A a key with this raw key material, saying that
-// the size of the HMAC key is 32 bytes and the size of the AES key is 16 bytes.
-// Give party B a key with this raw key material, saying that the size of the
-// HMAC key is 31 bytes and the size of the AES key is 16 bytes. Since HMAC will
-// pad the key with zeroes, this leads to both parties using the same HMAC key,
-// but a different AES key (offset by 1 byte)
-StatusOr<AesCtrHmacAeadKey> AesCtrHmacAeadKeyManager::DeriveKey(
+// To ensure the resulting key provides key commitment, derive the AES key
+// first, then the HMAC key.
+//
+// Consider the following scenario:
+//   - Derive the HMAC key before the AES key from the keystream.
+//   - Brute force the raw key material so the 32nd byte of the keystream is 0.
+//   - Give party A a key with this raw key material with HMAC key size 32 bytes
+//     and AES key size 16 bytes.
+//   - Give party B a key with this raw key material with HMAC key size 31 bytes
+//     and AES key size 16 bytes.
+//   - HMAC pads its key with zeroes, so both parties will end up with the same
+//     HMAC key, but different AES keys (offset by 1 byte).
+absl::StatusOr<AesCtrHmacAeadKeyProto> AesCtrHmacAeadKeyManager::DeriveKey(
     const AesCtrHmacAeadKeyFormat& key_format,
     InputStream* input_stream) const {
   Status status = ValidateKeyFormat(key_format);
   if (!status.ok()) {
     return status;
   }
-  StatusOr<std::string> aes_ctr_randomness = ReadBytesFromStream(
+  absl::StatusOr<std::string> aes_ctr_randomness = ReadBytesFromStream(
       key_format.aes_ctr_key_format().key_size(), input_stream);
   if (!aes_ctr_randomness.ok()) {
     if (absl::IsOutOfRange(aes_ctr_randomness.status())) {
-      return crypto::tink::util::Status(
+      return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "Could not get enough pseudorandomness from input stream");
     }
     return aes_ctr_randomness.status();
   }
-  StatusOr<HmacKey> hmac_key =
+  absl::StatusOr<HmacKeyProto> hmac_key =
       HmacKeyManager().DeriveKey(key_format.hmac_key_format(), input_stream);
   if (!hmac_key.ok()) {
     return hmac_key.status();
@@ -216,7 +220,7 @@ StatusOr<AesCtrHmacAeadKey> AesCtrHmacAeadKeyManager::DeriveKey(
   key.set_version(get_version());
   *key.mutable_hmac_key() = hmac_key.value();
 
-  AesCtrKey* aes_ctr_key = key.mutable_aes_ctr_key();
+  AesCtrKeyProto* aes_ctr_key = key.mutable_aes_ctr_key();
   aes_ctr_key->set_version(get_version());
   aes_ctr_key->set_key_value(aes_ctr_randomness.value());
   *aes_ctr_key->mutable_params() = key_format.aes_ctr_key_format().params();

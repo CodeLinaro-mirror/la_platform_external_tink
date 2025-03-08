@@ -61,19 +61,19 @@ class SerializationRegistry {
 
     // Registers parameters `parser`. Returns an error if a different parameters
     // parser has already been registered.
-    util::Status RegisterParametersParser(ParametersParser* parser);
+    absl::Status RegisterParametersParser(ParametersParser* parser);
 
     // Registers parameters `serializer`. Returns an error if a different
     // parameters serializer has already been registered.
-    util::Status RegisterParametersSerializer(ParametersSerializer* serializer);
+    absl::Status RegisterParametersSerializer(ParametersSerializer* serializer);
 
     // Registers key `parser`. Returns an error if a different key parser has
     // already been registered.
-    util::Status RegisterKeyParser(KeyParser* parser);
+    absl::Status RegisterKeyParser(KeyParser* parser);
 
     // Registers key `serializer`. Returns an error if a different key
     // serializer has already been registered.
-    util::Status RegisterKeySerializer(KeySerializer* serializer);
+    absl::Status RegisterKeySerializer(KeySerializer* serializer);
 
     // Creates serialization registry from this builder.
     SerializationRegistry Build() &&;
@@ -109,17 +109,22 @@ class SerializationRegistry {
   SerializationRegistry() = default;
 
   // Parses `serialization` into a `Parameters` instance.
-  util::StatusOr<std::unique_ptr<Parameters>> ParseParameters(
+  absl::StatusOr<std::unique_ptr<Parameters>> ParseParameters(
+      const Serialization& serialization) const;
+
+  // Similar to `ParseParameters` but falls back to legacy proto parameters
+  // serialization if the corresponding parameters parser is not found.
+  absl::StatusOr<std::unique_ptr<Parameters>> ParseParametersWithLegacyFallback(
       const Serialization& serialization) const;
 
   // Serializes `parameters` into a `Serialization` instance.
   template <typename SerializationT>
-  util::StatusOr<std::unique_ptr<Serialization>> SerializeParameters(
+  absl::StatusOr<std::unique_ptr<Serialization>> SerializeParameters(
       const Parameters& parameters) const {
     SerializerIndex index = SerializerIndex::Create<SerializationT>(parameters);
     auto it = parameters_serializers_.find(index);
     if (it == parameters_serializers_.end()) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kNotFound,
           absl::StrFormat(
               "No parameters serializer found for parameters type %s",
@@ -130,18 +135,23 @@ class SerializationRegistry {
   }
 
   // Parses `serialization` into a `Key` instance.
-  util::StatusOr<std::unique_ptr<Key>> ParseKey(
+  absl::StatusOr<std::unique_ptr<Key>> ParseKey(
       const Serialization& serialization,
       absl::optional<SecretKeyAccessToken> token) const;
 
+  // Similar to `ParseKey` but falls back to legacy proto key serialization if
+  // the corresponding key parser is not found.
+  absl::StatusOr<std::unique_ptr<Key>> ParseKeyWithLegacyFallback(
+      const Serialization& serialization, SecretKeyAccessToken token) const;
+
   // Serializes `parameters` into a `Serialization` instance.
   template <typename SerializationT>
-  util::StatusOr<std::unique_ptr<Serialization>> SerializeKey(
+  absl::StatusOr<std::unique_ptr<Serialization>> SerializeKey(
       const Key& key, absl::optional<SecretKeyAccessToken> token) const {
     SerializerIndex index = SerializerIndex::Create<SerializationT>(key);
     auto it = key_serializers_.find(index);
     if (it == key_serializers_.end()) {
-      return util::Status(
+      return absl::Status(
           absl::StatusCode::kNotFound,
           absl::StrFormat("No key serializer found for key type %s",
                           typeid(key).name()));

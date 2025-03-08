@@ -16,11 +16,13 @@
 
 #include "tink/hybrid/hpke_parameters.h"
 
+#include <memory>
 #include <tuple>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "tink/parameters.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 
@@ -71,7 +73,7 @@ TEST_P(HpkeParametersTest, Build) {
   VariantWithIdRequirement variant;
   std::tie(kem_id, kdf_id, aead_id, variant) = GetParam();
 
-  util::StatusOr<HpkeParameters> parameters = HpkeParameters::Builder()
+  absl::StatusOr<HpkeParameters> parameters = HpkeParameters::Builder()
                                                   .SetVariant(variant.variant)
                                                   .SetKemId(kem_id)
                                                   .SetKdfId(kdf_id)
@@ -87,7 +89,7 @@ TEST_P(HpkeParametersTest, Build) {
 }
 
 TEST(HpkeParametersTest, BuildWithInvalidVariantFails) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::
                           kDoNotUseInsteadUseDefaultWhenWritingSwitchStatements)
@@ -100,7 +102,7 @@ TEST(HpkeParametersTest, BuildWithInvalidVariantFails) {
 }
 
 TEST(HpkeParametersTest, BuildWithoutVariantFails) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
           .SetKdfId(HpkeParameters::KdfId::kHkdfSha256)
@@ -111,7 +113,7 @@ TEST(HpkeParametersTest, BuildWithoutVariantFails) {
 }
 
 TEST(HpkeParametersTest, BuildWithInvalidKemIdFails) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::
@@ -124,7 +126,7 @@ TEST(HpkeParametersTest, BuildWithInvalidKemIdFails) {
 }
 
 TEST(HpkeParametersTest, BuildWithoutKemIdFails) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKdfId(HpkeParameters::KdfId::kHkdfSha256)
@@ -135,7 +137,7 @@ TEST(HpkeParametersTest, BuildWithoutKemIdFails) {
 }
 
 TEST(HpkeParametersTest, BuildWithInvalidKdfIdFails) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -148,7 +150,7 @@ TEST(HpkeParametersTest, BuildWithInvalidKdfIdFails) {
 }
 
 TEST(HpkeParametersTest, BuildWithoutKdfIdFails) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -159,7 +161,7 @@ TEST(HpkeParametersTest, BuildWithoutKdfIdFails) {
 }
 
 TEST(HpkeParametersTest, BuildWithInvalidAeadIdFails) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -172,7 +174,7 @@ TEST(HpkeParametersTest, BuildWithInvalidAeadIdFails) {
 }
 
 TEST(HpkeParametersTest, BuildWithoutAeadIdFails) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -183,7 +185,7 @@ TEST(HpkeParametersTest, BuildWithoutAeadIdFails) {
 }
 
 TEST(HpkeParametersTest, CopyConstructor) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -199,7 +201,7 @@ TEST(HpkeParametersTest, CopyConstructor) {
 }
 
 TEST(HpkeParametersTest, CopyAssignment) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -221,7 +223,7 @@ TEST_P(HpkeParametersTest, ParametersEquals) {
   VariantWithIdRequirement variant;
   std::tie(kem_id, kdf_id, aead_id, variant) = GetParam();
 
-  util::StatusOr<HpkeParameters> parameters = HpkeParameters::Builder()
+  absl::StatusOr<HpkeParameters> parameters = HpkeParameters::Builder()
                                                   .SetVariant(variant.variant)
                                                   .SetKemId(kem_id)
                                                   .SetKdfId(kdf_id)
@@ -229,7 +231,7 @@ TEST_P(HpkeParametersTest, ParametersEquals) {
                                                   .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<HpkeParameters> other_parameters =
+  absl::StatusOr<HpkeParameters> other_parameters =
       HpkeParameters::Builder()
           .SetVariant(variant.variant)
           .SetKemId(kem_id)
@@ -245,7 +247,7 @@ TEST_P(HpkeParametersTest, ParametersEquals) {
 }
 
 TEST(HpkeParametersTest, VariantNotEqual) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -254,7 +256,7 @@ TEST(HpkeParametersTest, VariantNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<HpkeParameters> other_parameters =
+  absl::StatusOr<HpkeParameters> other_parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kCrunchy)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -268,7 +270,7 @@ TEST(HpkeParametersTest, VariantNotEqual) {
 }
 
 TEST(HpkeParametersTest, KemIdNotEqual) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -277,7 +279,7 @@ TEST(HpkeParametersTest, KemIdNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<HpkeParameters> other_parameters =
+  absl::StatusOr<HpkeParameters> other_parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemP256HkdfSha256)
@@ -291,7 +293,7 @@ TEST(HpkeParametersTest, KemIdNotEqual) {
 }
 
 TEST(HpkeParametersTest, KdfIdNotEqual) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -300,7 +302,7 @@ TEST(HpkeParametersTest, KdfIdNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<HpkeParameters> other_parameters =
+  absl::StatusOr<HpkeParameters> other_parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -314,7 +316,7 @@ TEST(HpkeParametersTest, KdfIdNotEqual) {
 }
 
 TEST(HpkeParametersTest, AeadIdNotEqual) {
-  util::StatusOr<HpkeParameters> parameters =
+  absl::StatusOr<HpkeParameters> parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -323,7 +325,7 @@ TEST(HpkeParametersTest, AeadIdNotEqual) {
           .Build();
   ASSERT_THAT(parameters, IsOk());
 
-  util::StatusOr<HpkeParameters> other_parameters =
+  absl::StatusOr<HpkeParameters> other_parameters =
       HpkeParameters::Builder()
           .SetVariant(HpkeParameters::Variant::kTink)
           .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
@@ -334,6 +336,20 @@ TEST(HpkeParametersTest, AeadIdNotEqual) {
 
   EXPECT_TRUE(*parameters != *other_parameters);
   EXPECT_FALSE(*parameters == *other_parameters);
+}
+
+TEST(HpkeParametersTest, Clone) {
+  absl::StatusOr<HpkeParameters> parameters =
+      HpkeParameters::Builder()
+          .SetVariant(HpkeParameters::Variant::kTink)
+          .SetKemId(HpkeParameters::KemId::kDhkemX25519HkdfSha256)
+          .SetKdfId(HpkeParameters::KdfId::kHkdfSha256)
+          .SetAeadId(HpkeParameters::AeadId::kAesGcm128)
+          .Build();
+  ASSERT_THAT(parameters, IsOk());
+
+  std::unique_ptr<Parameters> cloned_parameters = parameters->Clone();
+  ASSERT_THAT(*cloned_parameters, Eq(*parameters));
 }
 
 }  // namespace

@@ -25,6 +25,7 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "tink/internal/call_with_core_dump_protection.h"
+#include "tink/internal/secret_buffer.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -62,7 +63,7 @@ class SecretProto {
       return proto->ParseFromArray(data.data(), data.size());
     });
     if (!parsed) {
-      return Status(absl::StatusCode::kInternal, "Could not parse proto");
+      return absl::Status(absl::StatusCode::kInternal, "Could not parse proto");
     }
     return proto;
   }
@@ -98,15 +99,15 @@ class SecretProto {
   inline T& operator*() { return *value_; }
   inline const T& operator*() const { return *value_; }
 
-  StatusOr<SecretData> SerializeAsSecretData() const {
-    SecretData data(value_->ByteSizeLong());
-    bool serialized = crypto::tink::internal::CallWithCoreDumpProtection([&] {
-      return value_->SerializeToArray(data.data(), data.size());
-    });
+  absl::StatusOr<SecretData> SerializeAsSecretData() const {
+    crypto::tink::internal::SecretBuffer buffer(value_->ByteSizeLong());
+    bool serialized = crypto::tink::internal::CallWithCoreDumpProtection(
+        [&] { return value_->SerializeToArray(buffer.data(), buffer.size()); });
     if (!serialized) {
-      return Status(absl::StatusCode::kInternal, "Could not serialize proto");
+      return absl::Status(absl::StatusCode::kInternal,
+                          "Could not serialize proto");
     }
-    return data;
+    return internal::AsSecretData(std::move(buffer));
   }
 
  private:

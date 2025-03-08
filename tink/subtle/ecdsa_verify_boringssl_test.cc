@@ -23,27 +23,36 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
-#include "include/rapidjson/document.h"
 #include "tink/internal/fips_utils.h"
-#include "tink/public_key_sign.h"
+#include "tink/internal/testing/wycheproof_util.h"
 #include "tink/public_key_verify.h"
+#include "tink/signature/ecdsa_private_key.h"
+#include "tink/signature/internal/testing/ecdsa_test_vectors.h"
+#include "tink/signature/internal/testing/signature_test_vector.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/ecdsa_sign_boringssl.h"
 #include "tink/subtle/subtle_util_boringssl.h"
-#include "tink/subtle/wycheproof_util.h"
-#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
-#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
 namespace subtle {
 namespace {
 
+using ::crypto::tink::internal::wycheproof_testing::GetBytesFromHexValue;
+using ::crypto::tink::internal::wycheproof_testing::
+    GetEllipticCurveTypeFromValue;
+using ::crypto::tink::internal::wycheproof_testing::GetHashTypeFromValue;
+using ::crypto::tink::internal::wycheproof_testing::GetIntegerFromHexValue;
+using ::crypto::tink::internal::wycheproof_testing::ReadTestVectors;
+using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
+using ::testing::Not;
+using ::testing::NotNull;
 
 class EcdsaVerifyBoringSslTest : public ::testing::Test {};
 
@@ -137,14 +146,16 @@ TEST_F(EcdsaVerifyBoringSslTest, NewErrors) {
   EXPECT_FALSE(verifier_result.ok()) << verifier_result.status();
 }
 
-static util::StatusOr<std::unique_ptr<EcdsaVerifyBoringSsl>> GetVerifier(
-    const rapidjson::Value& test_group,
+static absl::StatusOr<std::unique_ptr<EcdsaVerifyBoringSsl>> GetVerifier(
+    const google::protobuf::Value& test_group,
     subtle::EcdsaSignatureEncoding encoding) {
   SubtleUtilBoringSSL::EcKey key;
-  key.pub_x = WycheproofUtil::GetInteger(test_group["key"]["wx"]);
-  key.pub_y = WycheproofUtil::GetInteger(test_group["key"]["wy"]);
-  key.curve = WycheproofUtil::GetEllipticCurveType(test_group["key"]["curve"]);
-  HashType md = WycheproofUtil::GetHashType(test_group["sha"]);
+  const auto& test_group_fields = test_group.struct_value().fields();
+  const auto& key_fields = test_group_fields.at("key").struct_value().fields();
+  key.pub_x = GetIntegerFromHexValue(key_fields.at("wx"));
+  key.pub_y = GetIntegerFromHexValue(key_fields.at("wy"));
+  key.curve = GetEllipticCurveTypeFromValue(key_fields.at("curve"));
+  HashType md = GetHashTypeFromValue(test_group_fields.at("sha"));
   auto result = EcdsaVerifyBoringSsl::New(key, md, encoding);
   if (!result.ok()) {
     std::cout << "Failed: " << result.status() << "\n";
@@ -157,36 +168,33 @@ static util::StatusOr<std::unique_ptr<EcdsaVerifyBoringSsl>> GetVerifier(
 // a verfier cannot be constructed. This option can be used for
 // if a file contains test vectors that are not necessarily supported
 // by tink.
-bool TestSignatures(const std::string& filename, bool allow_skipping,
+bool TestSignatures(const std::string& filename,
+                    int expected_skipped_test_groups,
                     subtle::EcdsaSignatureEncoding encoding) {
-  std::unique_ptr<rapidjson::Document> root =
-      WycheproofUtil::ReadTestVectors(filename);
-  std::cout << (*root)["algorithm"].GetString();
-  std::cout << "generator version " << (*root)["generatorVersion"].GetString();
-  std::cout << "expected version 0.2.5";
+  absl::StatusOr<google::protobuf::Struct> parsed_input =
+      ReadTestVectors(filename);
+  CHECK_OK(parsed_input.status());
+  const google::protobuf::Value& test_groups =
+      parsed_input->fields().at("testGroups");
   int passed_tests = 0;
   int failed_tests = 0;
-  for (const rapidjson::Value& test_group : (*root)["testGroups"].GetArray()) {
+  int skipped_test_groups = 0;
+  for (const google::protobuf::Value& test_group :
+       test_groups.list_value().values()) {
     auto verifier_result = GetVerifier(test_group, encoding);
     if (!verifier_result.ok()) {
-      std::string curve = test_group["key"]["curve"].GetString();
-      if (allow_skipping) {
-        std::cout << "Could not construct verifier for curve " << curve
-                  << verifier_result.status();
-      } else {
-        ADD_FAILURE() << "Could not construct verifier for curve " << curve
-                      << verifier_result.status();
-        failed_tests += test_group["tests"].GetArray().Size();
-      }
+      ++skipped_test_groups;
       continue;
     }
     auto verifier = std::move(verifier_result.value());
-    for (const rapidjson::Value& test : test_group["tests"].GetArray()) {
-      std::string expected = test["result"].GetString();
-      std::string msg = WycheproofUtil::GetBytes(test["msg"]);
-      std::string sig = WycheproofUtil::GetBytes(test["sig"]);
-      std::string id =
-          absl::StrCat(test["tcId"].GetInt(), " ", test["comment"].GetString());
+    for (const google::protobuf::Value& test :
+         test_group.struct_value().fields().at("tests").list_value().values()) {
+      auto test_fields = test.struct_value().fields();
+      std::string expected = test_fields.at("result").string_value();
+      std::string msg = GetBytesFromHexValue(test_fields.at("msg"));
+      std::string sig = GetBytesFromHexValue(test_fields.at("sig"));
+      std::string id = absl::StrCat(test_fields.at("tcId").number_value(), " ",
+                                    test_fields.at("comment").string_value());
       auto status = verifier->Verify(sig, msg);
       if (expected == "valid") {
         if (status.ok()) {
@@ -194,7 +202,7 @@ bool TestSignatures(const std::string& filename, bool allow_skipping,
         } else {
           ++failed_tests;
           ADD_FAILURE() << "Valid signature not verified:" << id
-              << " status:" << status;
+                        << " status:" << status;
         }
       } else if (expected == "invalid") {
         if (!status.ok()) {
@@ -215,7 +223,8 @@ bool TestSignatures(const std::string& filename, bool allow_skipping,
       }
     }
   }
-  int num_tests = (*root)["numberOfTests"].GetInt();
+  int num_tests = parsed_input->fields().at("numberOfTests").number_value();
+  CHECK_EQ(skipped_test_groups, expected_skipped_test_groups);
   std::cout << "total number of tests: " << num_tests;
   std::cout << "number of tests passed:" << passed_tests;
   std::cout << "number of tests failed:" << failed_tests;
@@ -227,7 +236,8 @@ TEST_F(EcdsaVerifyBoringSslTest, WycheproofCurveP256) {
     GTEST_SKIP()
         << "Test is skipped if kOnlyUseFips but BoringCrypto is unavailable.";
   }
-  ASSERT_TRUE(TestSignatures("ecdsa_secp256r1_sha256_test.json", false,
+  ASSERT_TRUE(TestSignatures("ecdsa_secp256r1_sha256_test.json",
+                             /*expected_skipped_test_groups=*/0,
                              subtle::EcdsaSignatureEncoding::DER));
 }
 
@@ -236,7 +246,8 @@ TEST_F(EcdsaVerifyBoringSslTest, WycheproofCurveP384) {
     GTEST_SKIP()
         << "Test is skipped if kOnlyUseFips but BoringCrypto is unavailable.";
   }
-  ASSERT_TRUE(TestSignatures("ecdsa_secp384r1_sha512_test.json", false,
+  ASSERT_TRUE(TestSignatures("ecdsa_secp384r1_sha512_test.json",
+                             /*expected_skipped_test_groups=*/0,
                              subtle::EcdsaSignatureEncoding::DER));
 }
 
@@ -245,7 +256,8 @@ TEST_F(EcdsaVerifyBoringSslTest, WycheproofCurveP521) {
     GTEST_SKIP()
         << "Test is skipped if kOnlyUseFips but BoringCrypto is unavailable.";
   }
-  ASSERT_TRUE(TestSignatures("ecdsa_secp521r1_sha512_test.json", false,
+  ASSERT_TRUE(TestSignatures("ecdsa_secp521r1_sha512_test.json",
+                             /*expected_skipped_test_groups=*/0,
                              subtle::EcdsaSignatureEncoding::DER));
 }
 
@@ -254,7 +266,9 @@ TEST_F(EcdsaVerifyBoringSslTest, WycheproofWithIeeeP1363Encoding) {
     GTEST_SKIP()
         << "Test is skipped if kOnlyUseFips but BoringCrypto is unavailable.";
   }
-  ASSERT_TRUE(TestSignatures("ecdsa_webcrypto_test.json", true,
+  int expected_skipped_test_groups = 15;
+  ASSERT_TRUE(TestSignatures("ecdsa_webcrypto_test.json",
+                             expected_skipped_test_groups,
                              subtle::EcdsaSignatureEncoding::IEEE_P1363));
 }
 
@@ -286,6 +300,49 @@ TEST_F(EcdsaVerifyBoringSslTest, TestFipsFailWithoutBoringCrypto) {
                   .status(),
               StatusIs(absl::StatusCode::kInternal));
 }
+
+using EcdsaVerifyBoringSslTestVectorTest =
+    testing::TestWithParam<internal::SignatureTestVector>;
+
+TEST_P(EcdsaVerifyBoringSslTestVectorTest, VerifySignatureInTestVector) {
+  const internal::SignatureTestVector& param = GetParam();
+  const EcdsaPrivateKey* typed_key =
+      dynamic_cast<const EcdsaPrivateKey*>(param.signature_private_key.get());
+  ASSERT_THAT(typed_key, NotNull());
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
+    // Users wants FIPS, but we don't have FIPS.
+    ASSERT_THAT(EcdsaVerifyBoringSsl::New(typed_key->GetPublicKey()),
+                Not(IsOk()));
+    return;
+  }
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      EcdsaVerifyBoringSsl::New(typed_key->GetPublicKey());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT((*verifier)->Verify(param.signature, param.message), IsOk());
+}
+
+TEST_P(EcdsaVerifyBoringSslTestVectorTest, DifferentMessageDoesNotVerify) {
+  const internal::SignatureTestVector& param = GetParam();
+  const EcdsaPrivateKey* typed_key =
+      dynamic_cast<const EcdsaPrivateKey*>(param.signature_private_key.get());
+  ASSERT_THAT(typed_key, NotNull());
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
+    // Users wants FIPS, but we don't have FIPS.
+    ASSERT_THAT(EcdsaVerifyBoringSsl::New(typed_key->GetPublicKey()),
+                Not(IsOk()));
+    return;
+  }
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      EcdsaVerifyBoringSsl::New(typed_key->GetPublicKey());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT(
+      (*verifier)->Verify(param.signature, absl::StrCat(param.message, "a")),
+      Not(IsOk()));
+}
+
+INSTANTIATE_TEST_SUITE_P(EcdsaVerifyBoringSslTestVectorTest,
+                         EcdsaVerifyBoringSslTestVectorTest,
+                         testing::ValuesIn(internal::CreateEcdsaTestVectors()));
 
 }  // namespace
 }  // namespace subtle

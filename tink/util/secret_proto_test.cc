@@ -23,6 +23,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
+#include "tink/internal/secret_buffer.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/statusor.h"
 #include "proto/test_proto.pb.h"
@@ -32,6 +33,8 @@ namespace tink {
 namespace util {
 namespace {
 
+using ::crypto::tink::internal::SecretBuffer;
+using ::crypto::tink::util::internal::AsSecretData;
 using ::google::crypto::tink::NestedTestProto;
 using ::google::crypto::tink::TestProto;
 using ::google::protobuf::util::MessageDifferencer;
@@ -135,9 +138,10 @@ TYPED_TEST(SecretProtoTest, MoveAssignment) {
 
 TYPED_TEST(SecretProtoTest, FromSecretData) {
   TypeParam proto = CreateProto<TypeParam>();
-  SecretData data;
-  data.resize(proto.ByteSizeLong());
-  ASSERT_TRUE(proto.SerializeToArray(data.data(), data.size()));
+  SecretBuffer buffer;
+  buffer.resize(proto.ByteSizeLong());
+  ASSERT_TRUE(proto.SerializeToArray(buffer.data(), buffer.size()));
+  SecretData data = AsSecretData(buffer);
   StatusOr<SecretProto<TypeParam>> secret_proto =
       SecretProto<TypeParam>::ParseFromSecretData(data);
   ASSERT_TRUE(secret_proto.ok()) << secret_proto.status();
@@ -148,7 +152,8 @@ TYPED_TEST(SecretProtoTest, AsSecretData) {
   TypeParam proto = CreateProto<TypeParam>();
   std::string serialized = proto.SerializeAsString();
   SecretProto<TypeParam> secret_proto(proto);
-  StatusOr<SecretData> secret_serialized = secret_proto.SerializeAsSecretData();
+  absl::StatusOr<SecretData> secret_serialized =
+      secret_proto.SerializeAsSecretData();
   ASSERT_TRUE(secret_serialized.ok()) << secret_serialized.status();
   EXPECT_EQ(serialized, SecretDataAsStringView(*secret_serialized));
 }

@@ -13,26 +13,19 @@
 // limitations under the License.
 //
 ///////////////////////////////////////////////////////////////////////////////
-#include <algorithm>
 #include <cstdint>
-#include <iterator>
 #include <limits>
 #include <memory>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/container/flat_hash_set.h"
-#include "absl/memory/memory.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "tink/aead/internal/ssl_aead.h"
-#include "tink/config/tink_fips.h"
 #include "tink/internal/ssl_util.h"
 #include "tink/internal/util.h"
 #include "tink/subtle/subtle_util.h"
@@ -40,6 +33,7 @@
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
+#include "tink/util/test_util.h"
 
 // We test SslOneShotAead implementations against a very large input.
 namespace crypto {
@@ -57,7 +51,7 @@ constexpr absl::string_view k128Key = "000102030405060708090a0b0c0d0e0f";
 constexpr absl::string_view k256Key =
     "000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f";
 // 12 bytes IV.
-constexpr absl::string_view kAesGcmIvHex = "0123456789012345678901234";
+constexpr absl::string_view kAesGcmIvHex = "012345678901234567890123";
 // 24 bytes IV.
 constexpr absl::string_view kXchacha20Poly1305IvHex =
     "012345678901234567890123456789012345678901234567";
@@ -71,7 +65,7 @@ struct TestParams {
 };
 
 // Returns a SslOneShotAead from `cipher_name` and `key`.
-util::StatusOr<std::unique_ptr<SslOneShotAead>> CipherFromName(
+absl::StatusOr<std::unique_ptr<SslOneShotAead>> CipherFromName(
     absl::string_view cipher, const util::SecretData& key) {
   if (cipher == "aes_gcm") {
     return CreateAesGcmOneShotCrypter(key);
@@ -82,7 +76,7 @@ util::StatusOr<std::unique_ptr<SslOneShotAead>> CipherFromName(
   if (cipher == "xchacha20_poly1305") {
     return CreateXchacha20Poly1305OneShotCrypter(key);
   }
-  return util::Status(absl::StatusCode::kInvalidArgument,
+  return absl::Status(absl::StatusCode::kInvalidArgument,
                       absl::StrCat("Invalid cipher ", cipher));
 }
 
@@ -98,12 +92,12 @@ TEST_P(SslOneShotAeadLargeInputsTest, EncryptDecryptLargeInput) {
   std::string large_input(buff_size, '0');
 
   TestParams test_param = GetParam();
-  util::StatusOr<std::unique_ptr<SslOneShotAead>> aead = CipherFromName(
-      test_param.cipher, util::SecretDataFromStringView(
-                             absl::HexStringToBytes(test_param.key_hex)));
+  absl::StatusOr<std::unique_ptr<SslOneShotAead>> aead = CipherFromName(
+      test_param.cipher,
+      util::SecretDataFromStringView(test::HexDecodeOrDie(test_param.key_hex)));
   ASSERT_THAT(aead, IsOk());
 
-  std::string iv = absl::HexStringToBytes(test_param.iv_hex);
+  std::string iv = test::HexDecodeOrDie(test_param.iv_hex);
   std::string ciphertext_buffer;
   // Length of the message + tag.
   subtle::ResizeStringUninitialized(
@@ -111,7 +105,7 @@ TEST_P(SslOneShotAeadLargeInputsTest, EncryptDecryptLargeInput) {
 
   // Encrypt.
   ASSERT_GE(ciphertext_buffer.size(), large_input.size() + test_param.tag_size);
-  util::StatusOr<int64_t> res = (*aead)->Encrypt(
+  absl::StatusOr<int64_t> res = (*aead)->Encrypt(
       large_input, kAad, iv, absl::MakeSpan(ciphertext_buffer));
   ASSERT_THAT(res, IsOk());
   EXPECT_EQ(*res, large_input.size() + test_param.tag_size);
@@ -119,7 +113,7 @@ TEST_P(SslOneShotAeadLargeInputsTest, EncryptDecryptLargeInput) {
   // Decrypt.
   std::string plaintext_buff;
   subtle::ResizeStringUninitialized(&plaintext_buff, large_input.size());
-  util::StatusOr<int64_t> written_bytes = (*aead)->Decrypt(
+  absl::StatusOr<int64_t> written_bytes = (*aead)->Decrypt(
       ciphertext_buffer, kAad, iv, absl::MakeSpan(plaintext_buff));
   ASSERT_THAT(written_bytes, IsOk());
   EXPECT_EQ(*written_bytes, large_input.size());

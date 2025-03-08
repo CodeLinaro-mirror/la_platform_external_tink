@@ -25,6 +25,7 @@
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
 #include "absl/types/optional.h"
+#include "tink/key.h"
 #include "tink/mac/hmac_parameters.h"
 #include "tink/partial_key_access.h"
 #include "tink/restricted_data.h"
@@ -76,12 +77,12 @@ TEST_P(HmacKeyTest, CreateSucceeds) {
   TestCase test_case;
   std::tie(key_size, cryptographic_tag_size, hash_type, test_case) = GetParam();
 
-  util::StatusOr<HmacParameters> params = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> params = HmacParameters::Create(
       key_size, cryptographic_tag_size, hash_type, test_case.variant);
   ASSERT_THAT(params, IsOk());
 
   RestrictedData secret = RestrictedData(key_size);
-  util::StatusOr<HmacKey> key = HmacKey::Create(
+  absl::StatusOr<HmacKey> key = HmacKey::Create(
       *params, secret, test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(key.status(), IsOk());
 
@@ -92,7 +93,7 @@ TEST_P(HmacKeyTest, CreateSucceeds) {
 
 TEST(HmacKeyTest, CreateKeyWithMismatchedKeySizeFails) {
   // Key size parameter is 32 bytes.
-  util::StatusOr<HmacParameters> params = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> params = HmacParameters::Create(
       /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
       HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
   ASSERT_THAT(params, IsOk());
@@ -107,12 +108,12 @@ TEST(HmacKeyTest, CreateKeyWithMismatchedKeySizeFails) {
 }
 
 TEST(HmacKeyTest, CreateKeyWithWrongIdRequirementFails) {
-  util::StatusOr<HmacParameters> no_prefix_params = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> no_prefix_params = HmacParameters::Create(
       /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
       HmacParameters::HashType::kSha512, HmacParameters::Variant::kNoPrefix);
   ASSERT_THAT(no_prefix_params, IsOk());
 
-  util::StatusOr<HmacParameters> tink_params = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> tink_params = HmacParameters::Create(
       /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
       HmacParameters::HashType::kSha512, HmacParameters::Variant::kTink);
   ASSERT_THAT(tink_params, IsOk());
@@ -137,13 +138,13 @@ TEST_P(HmacKeyTest, GetKeyBytes) {
   TestCase test_case;
   std::tie(key_size, cryptographic_tag_size, hash_type, test_case) = GetParam();
 
-  util::StatusOr<HmacParameters> params = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> params = HmacParameters::Create(
       key_size, cryptographic_tag_size, hash_type, test_case.variant);
   ASSERT_THAT(params, IsOk());
 
   RestrictedData secret = RestrictedData(key_size);
 
-  util::StatusOr<HmacKey> key = HmacKey::Create(
+  absl::StatusOr<HmacKey> key = HmacKey::Create(
       *params, secret, test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(key.status(), IsOk());
 
@@ -157,16 +158,16 @@ TEST_P(HmacKeyTest, KeyEquals) {
   TestCase test_case;
   std::tie(key_size, cryptographic_tag_size, hash_type, test_case) = GetParam();
 
-  util::StatusOr<HmacParameters> params = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> params = HmacParameters::Create(
       key_size, cryptographic_tag_size, hash_type, test_case.variant);
   ASSERT_THAT(params, IsOk());
 
   RestrictedData secret = RestrictedData(key_size);
-  util::StatusOr<HmacKey> key = HmacKey::Create(
+  absl::StatusOr<HmacKey> key = HmacKey::Create(
       *params, secret, test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<HmacKey> other_key = HmacKey::Create(
+  absl::StatusOr<HmacKey> other_key = HmacKey::Create(
       *params, secret, test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(other_key, IsOk());
 
@@ -177,24 +178,24 @@ TEST_P(HmacKeyTest, KeyEquals) {
 }
 
 TEST(HmacKeyTest, DifferentFormatNotEqual) {
-  util::StatusOr<HmacParameters> legacy_params = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> legacy_params = HmacParameters::Create(
       /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
       HmacParameters::HashType::kSha256, HmacParameters::Variant::kLegacy);
   ASSERT_THAT(legacy_params, IsOk());
 
-  util::StatusOr<HmacParameters> tink_params = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> tink_params = HmacParameters::Create(
       /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
       HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
   ASSERT_THAT(tink_params, IsOk());
 
   RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
 
-  util::StatusOr<HmacKey> key =
+  absl::StatusOr<HmacKey> key =
       HmacKey::Create(*legacy_params, secret, /*id_requirement=*/0x01020304,
                       GetPartialKeyAccess());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<HmacKey> other_key =
+  absl::StatusOr<HmacKey> other_key =
       HmacKey::Create(*tink_params, secret, /*id_requirement=*/0x01020304,
                       GetPartialKeyAccess());
   ASSERT_THAT(other_key.status(), IsOk());
@@ -206,7 +207,7 @@ TEST(HmacKeyTest, DifferentFormatNotEqual) {
 }
 
 TEST(HmacKeyTest, DifferentSecretDataNotEqual) {
-  util::StatusOr<HmacParameters> params = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> params = HmacParameters::Create(
       /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
       HmacParameters::HashType::kSha384, HmacParameters::Variant::kTink);
   ASSERT_THAT(params, IsOk());
@@ -214,11 +215,11 @@ TEST(HmacKeyTest, DifferentSecretDataNotEqual) {
   RestrictedData secret1 = RestrictedData(/*num_random_bytes=*/32);
   RestrictedData secret2 = RestrictedData(/*num_random_bytes=*/32);
 
-  util::StatusOr<HmacKey> key = HmacKey::Create(
+  absl::StatusOr<HmacKey> key = HmacKey::Create(
       *params, secret1, /*id_requirement=*/0x01020304, GetPartialKeyAccess());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<HmacKey> other_key = HmacKey::Create(
+  absl::StatusOr<HmacKey> other_key = HmacKey::Create(
       *params, secret2, /*id_requirement=*/0x01020304, GetPartialKeyAccess());
   ASSERT_THAT(other_key.status(), IsOk());
 
@@ -229,18 +230,18 @@ TEST(HmacKeyTest, DifferentSecretDataNotEqual) {
 }
 
 TEST(HmacKeyTest, DifferentIdRequirementNotEqual) {
-  util::StatusOr<HmacParameters> params = HmacParameters::Create(
+  absl::StatusOr<HmacParameters> params = HmacParameters::Create(
       /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
       HmacParameters::HashType::kSha224, HmacParameters::Variant::kTink);
   ASSERT_THAT(params, IsOk());
 
   RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
 
-  util::StatusOr<HmacKey> key = HmacKey::Create(
+  absl::StatusOr<HmacKey> key = HmacKey::Create(
       *params, secret, /*id_requirement=*/0x01020304, GetPartialKeyAccess());
   ASSERT_THAT(key.status(), IsOk());
 
-  util::StatusOr<HmacKey> other_key = HmacKey::Create(
+  absl::StatusOr<HmacKey> other_key = HmacKey::Create(
       *params, secret, /*id_requirement=*/0x02030405, GetPartialKeyAccess());
   ASSERT_THAT(other_key.status(), IsOk());
 
@@ -248,6 +249,124 @@ TEST(HmacKeyTest, DifferentIdRequirementNotEqual) {
   EXPECT_TRUE(*other_key != *key);
   EXPECT_FALSE(*key == *other_key);
   EXPECT_FALSE(*other_key == *key);
+}
+
+TEST(HmacKeyTest, CopyConstructor) {
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+      /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
+      HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<HmacKey> key = HmacKey::Create(
+      *parameters, secret, /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  HmacKey copy(*key);
+
+  EXPECT_THAT(copy.GetParameters(), Eq(*parameters));
+  EXPECT_THAT(copy.GetKeyBytes(GetPartialKeyAccess()), Eq(secret));
+  EXPECT_THAT(copy.GetIdRequirement(), Eq(123));
+}
+
+TEST(HmacKeyTest, CopyAssignment) {
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+      /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
+      HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<HmacKey> key = HmacKey::Create(
+      *parameters, secret, /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  absl::StatusOr<HmacParameters> parameters2 = HmacParameters::Create(
+      /*key_size_in_bytes=*/16, /*cryptographic_tag_size_in_bytes=*/12,
+      HmacParameters::HashType::kSha224, HmacParameters::Variant::kNoPrefix);
+  ASSERT_THAT(parameters2, IsOk());
+
+  RestrictedData secret2 = RestrictedData(/*num_random_bytes=*/16);
+
+  absl::StatusOr<HmacKey> copy =
+      HmacKey::Create(*parameters2, secret2, /*id_requirement=*/absl::nullopt,
+                      GetPartialKeyAccess());
+  ASSERT_THAT(copy, IsOk());
+
+  *copy = *key;
+
+  EXPECT_THAT(copy->GetParameters(), Eq(*parameters));
+  EXPECT_THAT(copy->GetKeyBytes(GetPartialKeyAccess()), Eq(secret));
+  EXPECT_THAT(copy->GetIdRequirement(), Eq(123));
+}
+
+TEST(HmacKeyTest, MoveConstructor) {
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+      /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
+      HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<HmacKey> key = HmacKey::Create(
+      *parameters, secret, /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  HmacKey move(std::move(*key));
+
+  EXPECT_THAT(move.GetParameters(), Eq(*parameters));
+  EXPECT_THAT(move.GetKeyBytes(GetPartialKeyAccess()), Eq(secret));
+  EXPECT_THAT(move.GetIdRequirement(), Eq(123));
+}
+
+TEST(HmacKeyTest, MoveAssignment) {
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+      /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
+      HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<HmacKey> key = HmacKey::Create(
+      *parameters, secret, /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  absl::StatusOr<HmacParameters> parameters2 = HmacParameters::Create(
+      /*key_size_in_bytes=*/16, /*cryptographic_tag_size_in_bytes=*/12,
+      HmacParameters::HashType::kSha224, HmacParameters::Variant::kNoPrefix);
+  ASSERT_THAT(parameters2, IsOk());
+
+  RestrictedData secret2 = RestrictedData(/*num_random_bytes=*/16);
+
+  absl::StatusOr<HmacKey> move =
+      HmacKey::Create(*parameters2, secret2, /*id_requirement=*/absl::nullopt,
+                      GetPartialKeyAccess());
+  ASSERT_THAT(move, IsOk());
+
+  *move = std::move(*key);
+
+  EXPECT_THAT(move->GetParameters(), Eq(*parameters));
+  EXPECT_THAT(move->GetKeyBytes(GetPartialKeyAccess()), Eq(secret));
+  EXPECT_THAT(move->GetIdRequirement(), Eq(123));
+}
+
+TEST(HmacKeyTest, Clone) {
+  absl::StatusOr<HmacParameters> parameters = HmacParameters::Create(
+      /*key_size_in_bytes=*/32, /*cryptographic_tag_size_in_bytes=*/16,
+      HmacParameters::HashType::kSha256, HmacParameters::Variant::kTink);
+  ASSERT_THAT(parameters, IsOk());
+
+  RestrictedData secret = RestrictedData(/*num_random_bytes=*/32);
+
+  absl::StatusOr<HmacKey> key = HmacKey::Create(
+      *parameters, secret, /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  // Clone the key.
+  std::unique_ptr<Key> cloned_key = key->Clone();
+
+  ASSERT_THAT(*cloned_key, Eq(*key));
 }
 
 }  // namespace

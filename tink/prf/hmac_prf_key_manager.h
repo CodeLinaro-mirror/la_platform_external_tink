@@ -33,11 +33,11 @@
 #include "tink/input_stream.h"
 #include "tink/internal/fips_utils.h"
 #include "tink/key_manager.h"
+#include "tink/mac/internal/stateful_hmac_boringssl.h"
 #include "tink/prf/prf_set.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/prf/prf_set_util.h"
 #include "tink/subtle/random.h"
-#include "tink/subtle/stateful_hmac_boringssl.h"
 #include "tink/util/constants.h"
 #include "tink/util/enums.h"
 #include "tink/util/errors.h"
@@ -57,19 +57,19 @@ class HmacPrfKeyManager
                             google::crypto::tink::HmacPrfKeyFormat, List<Prf>> {
  public:
   class PrfFactory : public PrimitiveFactory<Prf> {
-    crypto::tink::util::StatusOr<std::unique_ptr<Prf>> Create(
+    absl::StatusOr<std::unique_ptr<Prf>> Create(
         const google::crypto::tink::HmacPrfKey& key) const override {
       crypto::tink::subtle::HashType hash =
           util::Enums::ProtoToSubtle(key.params().hash());
       absl::optional<uint64_t> max_output_length = MaxOutputLength(hash);
       if (!max_output_length.has_value()) {
-        return util::Status(
+        return absl::Status(
             absl::StatusCode::kInvalidArgument,
             absl::StrCat("Unknown hash when constructing HMAC PRF ",
                          HashType_Name(key.params().hash())));
       }
       return subtle::CreatePrfFromStatefulMacFactory(
-          absl::make_unique<subtle::StatefulHmacBoringSslFactory>(
+          absl::make_unique<internal::StatefulHmacBoringSslFactory>(
               hash, *max_output_length,
               util::SecretDataFromStringView(key.key_value())));
     }
@@ -87,16 +87,16 @@ class HmacPrfKeyManager
 
   const std::string& get_key_type() const override { return key_type_; }
 
-  crypto::tink::util::Status ValidateKey(
+  absl::Status ValidateKey(
       const google::crypto::tink::HmacPrfKey& key) const override;
 
-  crypto::tink::util::Status ValidateKeyFormat(
+  absl::Status ValidateKeyFormat(
       const google::crypto::tink::HmacPrfKeyFormat& key_format) const override;
 
-  crypto::tink::util::StatusOr<google::crypto::tink::HmacPrfKey> CreateKey(
+  absl::StatusOr<google::crypto::tink::HmacPrfKey> CreateKey(
       const google::crypto::tink::HmacPrfKeyFormat& key_format) const override;
 
-  util::StatusOr<google::crypto::tink::HmacPrfKey> DeriveKey(
+  absl::StatusOr<google::crypto::tink::HmacPrfKey> DeriveKey(
       const google::crypto::tink::HmacPrfKeyFormat& hmac_prf_key_format,
       InputStream* input_stream) const override;
 
@@ -107,7 +107,7 @@ class HmacPrfKeyManager
  private:
   static absl::optional<uint64_t> MaxOutputLength(subtle::HashType hash_type);
 
-  util::Status ValidateParams(
+  absl::Status ValidateParams(
       const google::crypto::tink::HmacPrfParams& params) const;
 
   const std::string key_type_ = absl::StrCat(

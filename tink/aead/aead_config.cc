@@ -27,8 +27,13 @@
 #include "tink/aead/aes_gcm_proto_serialization.h"
 #include "tink/aead/aes_gcm_siv_key_manager.h"
 #include "tink/aead/aes_gcm_siv_proto_serialization.h"
+#include "tink/aead/chacha20_poly1305_proto_serialization.h"
 #include "tink/aead/kms_aead_key_manager.h"
 #include "tink/aead/kms_envelope_aead_key_manager.h"
+#include "tink/aead/legacy_kms_aead_proto_serialization.h"
+#include "tink/aead/legacy_kms_envelope_aead_proto_serialization.h"
+#include "tink/aead/x_aes_gcm_key_manager.h"
+#include "tink/aead/x_aes_gcm_proto_serialization.h"
 #include "tink/aead/xchacha20_poly1305_key_manager.h"
 #include "tink/aead/xchacha20_poly1305_proto_serialization.h"
 #include "tink/config/tink_fips.h"
@@ -40,7 +45,7 @@
 namespace crypto {
 namespace tink {
 // static
-util::Status AeadConfig::Register() {
+absl::Status AeadConfig::Register() {
   auto status = MacConfig::Register();
   if (!status.ok()) {
     return status;
@@ -77,7 +82,7 @@ util::Status AeadConfig::Register() {
   }
 
   if (IsFipsModeEnabled()) {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
   // Register all the other key managers.
@@ -111,6 +116,11 @@ util::Status AeadConfig::Register() {
     return status;
   }
 
+  status = Registry::RegisterKeyTypeManager(CreateXAesGcmKeyManager(), true);
+  if (!status.ok()) {
+    return status;
+  }
+
   status = RegisterAesGcmSivProtoSerialization();
   if (!status.ok()) {
     return status;
@@ -126,7 +136,22 @@ util::Status AeadConfig::Register() {
     return status;
   }
 
-  return util::OkStatus();
+  status = RegisterChaCha20Poly1305ProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = RegisterXAesGcmProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = RegisterLegacyKmsAeadProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
+
+  return RegisterLegacyKmsEnvelopeAeadProtoSerialization();
 }
 
 }  // namespace tink

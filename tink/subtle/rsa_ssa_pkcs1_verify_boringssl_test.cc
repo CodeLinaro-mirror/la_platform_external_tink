@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc.
+// Copyright 2018 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,30 +24,37 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/log/check.h"
 #include "absl/status/status.h"
-#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "openssl/bn.h"
-#include "include/rapidjson/document.h"
 #include "tink/internal/err_util.h"
 #include "tink/internal/fips_utils.h"
 #include "tink/internal/rsa_util.h"
 #include "tink/internal/ssl_unique_ptr.h"
-#include "tink/public_key_sign.h"
+#include "tink/internal/testing/wycheproof_util.h"
 #include "tink/public_key_verify.h"
+#include "tink/signature/internal/testing/rsa_ssa_pkcs1_test_vectors.h"
+#include "tink/signature/internal/testing/signature_test_vector.h"
+#include "tink/signature/rsa_ssa_pkcs1_private_key.h"
 #include "tink/subtle/common_enums.h"
-#include "tink/subtle/wycheproof_util.h"
-#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
+#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
 namespace subtle {
 namespace {
 
+using ::crypto::tink::internal::wycheproof_testing::GetBytesFromHexValue;
+using ::crypto::tink::internal::wycheproof_testing::GetHashTypeFromValue;
+using ::crypto::tink::internal::wycheproof_testing::GetIntegerFromHexValue;
+using ::crypto::tink::internal::wycheproof_testing::ReadTestVectors;
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
+using ::testing::Not;
+using ::testing::NotNull;
 
 class RsaSsaPkcs1VerifyBoringSslTest : public ::testing::Test {};
 
@@ -62,7 +69,7 @@ struct NistTestVector {
 };
 
 static const NistTestVector nist_test_vector{
-    absl::HexStringToBytes(
+    test::HexDecodeOrDie(
         "c47abacc2a84d56f3614d92fd62ed36ddde459664b9301dcd1d61781cfcc026bcb2399"
         "bee7e75681a80b7bf500e2d08ceae1c42ec0b707927f2b2fe92ae852087d25f1d260cc"
         "74905ee5f9b254ed05494a9fe06732c3680992dd6f0dc634568d11542a705f83ae96d2"
@@ -71,13 +78,13 @@ static const NistTestVector nist_test_vector{
         "b66305e4fdf8f0391b3b2313fe549f0189ff968b92f33c266a4bc2cffc897d1937eeb9"
         "e406f5d0eaa7a14782e76af3fce98f54ed237b4a04a4159a5f6250a296a902880204e6"
         "1d891c4da29f2d65f34cbb"),
-    absl::HexStringToBytes("49d2a1"),
-    absl::HexStringToBytes(
+    test::HexDecodeOrDie("49d2a1"),
+    test::HexDecodeOrDie(
         "95123c8d1b236540b86976a11cea31f8bd4e6c54c235147d20ce722b03a6ad756fbd91"
         "8c27df8ea9ce3104444c0bbe877305bc02e35535a02a58dcda306e632ad30b3dc3ce0b"
         "a97fdf46ec192965dd9cd7f4a71b02b8cba3d442646eeec4af590824ca98d74fbca934"
         "d0b6867aa1991f3040b707e806de6e66b5934f05509bea"),
-    absl::HexStringToBytes(
+    test::HexDecodeOrDie(
         "51265d96f11ab338762891cb29bf3f1d2b3305107063f5f3245af376dfcc7027d39365"
         "de70a31db05e9e10eb6148cb7f6425f0c93c4fb0e2291adbd22c77656afc196858a11e"
         "1c670d9eeb592613e69eb4f3aa501730743ac4464486c7ae68fd509e896f63884e9424"
@@ -170,13 +177,14 @@ TEST_F(RsaSsaPkcs1VerifyBoringSslTest, Modification) {
   }
 }
 
-static util::StatusOr<std::unique_ptr<RsaSsaPkcs1VerifyBoringSsl>> GetVerifier(
-    const rapidjson::Value& test_group) {
+static absl::StatusOr<std::unique_ptr<RsaSsaPkcs1VerifyBoringSsl>> GetVerifier(
+    const google::protobuf::Value& test_group) {
+  auto test_group_fields = test_group.struct_value().fields();
   internal::RsaPublicKey key;
-  key.n = WycheproofUtil::GetInteger(test_group["n"]);
-  key.e = WycheproofUtil::GetInteger(test_group["e"]);
+  key.n = GetIntegerFromHexValue(test_group_fields.at("n"));
+  key.e = GetIntegerFromHexValue(test_group_fields.at("e"));
 
-  HashType md = WycheproofUtil::GetHashType(test_group["sha"]);
+  HashType md = GetHashTypeFromValue(test_group_fields.at("sha"));
   internal::RsaSsaPkcs1Params params;
   params.hash_type = md;
 
@@ -188,42 +196,30 @@ static util::StatusOr<std::unique_ptr<RsaSsaPkcs1VerifyBoringSsl>> GetVerifier(
 }
 
 // Tests signature verification using the test vectors in the specified file.
-// allow_skipping determines whether it is OK to skip a test because
-// a verfier cannot be constructed. This option can be used for
-// if a file contains test vectors that are not necessarily supported
-// by tink.
-bool TestSignatures(const std::string& filename, bool allow_skipping) {
-  std::unique_ptr<rapidjson::Document> root =
-      WycheproofUtil::ReadTestVectors(filename);
-  std::cout << (*root)["algorithm"].GetString();
-  std::cout << "generator version " << (*root)["generatorVersion"].GetString();
-  std::cout << "expected version 0.4.12";
+bool TestSignatures(const std::string& filename) {
+  absl::StatusOr<google::protobuf::Struct> parsed_input =
+      ReadTestVectors(filename);
+  CHECK_OK(parsed_input.status());
+  const google::protobuf::Value& test_groups =
+      parsed_input->fields().at("testGroups");
   int passed_tests = 0;
   int failed_tests = 0;
   int group_count = 0;
-  for (const rapidjson::Value& test_group : (*root)["testGroups"].GetArray()) {
+  for (const google::protobuf::Value& test_group :
+       test_groups.list_value().values()) {
+    auto test_group_fields = test_group.struct_value().fields();
     group_count++;
     auto verifier_result = GetVerifier(test_group);
-    if (!verifier_result.ok()) {
-      std::string type = test_group["type"].GetString();
-      if (allow_skipping) {
-        std::cout << "Could not construct verifier for " << type << " group "
-                  << group_count << ": " << verifier_result.status();
-      } else {
-        ADD_FAILURE() << "Could not construct verifier for " << type
-                      << " group " << group_count << ": "
-                      << verifier_result.status();
-        failed_tests += test_group["tests"].GetArray().Size();
-      }
-      continue;
-    }
+    CHECK_OK(verifier_result.status());
     auto verifier = std::move(verifier_result.value());
-    for (const rapidjson::Value& test : test_group["tests"].GetArray()) {
-      std::string expected = test["result"].GetString();
-      std::string msg = WycheproofUtil::GetBytes(test["msg"]);
-      std::string sig = WycheproofUtil::GetBytes(test["sig"]);
-      std::string id =
-          absl::StrCat(test["tcId"].GetInt(), " ", test["comment"].GetString());
+    for (const google::protobuf::Value& test :
+         test_group.struct_value().fields().at("tests").list_value().values()) {
+      auto test_fields = test.struct_value().fields();
+      std::string expected = test_fields.at("result").string_value();
+      std::string msg = GetBytesFromHexValue(test_fields.at("msg"));
+      std::string sig = GetBytesFromHexValue(test_fields.at("sig"));
+      std::string id = absl::StrCat(test_fields.at("tcId").number_value(), " ",
+                                    test_fields.at("comment").string_value());
       auto status = verifier->Verify(sig, msg);
       if (expected == "valid") {
         if (status.ok()) {
@@ -252,7 +248,9 @@ bool TestSignatures(const std::string& filename, bool allow_skipping) {
       }
     }
   }
-  int num_tests = (*root)["numberOfTests"].GetInt();
+  int num_tests =
+      (int)parsed_input->fields().at("numberOfTests").number_value();
+  CHECK_EQ(num_tests, passed_tests + failed_tests);
   std::cout << "total number of tests: " << num_tests;
   std::cout << "number of tests passed:" << passed_tests;
   std::cout << "number of tests failed:" << failed_tests;
@@ -263,8 +261,7 @@ TEST_F(RsaSsaPkcs1VerifyBoringSslTest, WycheproofRsaPkcs12048SHA256) {
   if (internal::IsFipsModeEnabled()) {
     GTEST_SKIP() << "Test not run in FIPS-only mode";
   }
-  ASSERT_TRUE(TestSignatures("rsa_signature_2048_sha256_test.json",
-                             /*allow_skipping=*/true));
+  ASSERT_TRUE(TestSignatures("rsa_signature_2048_sha256_test.json"));
 }
 
 TEST_F(RsaSsaPkcs1VerifyBoringSslTest, WycheproofRsaPkcs13072SHA256) {
@@ -272,8 +269,7 @@ TEST_F(RsaSsaPkcs1VerifyBoringSslTest, WycheproofRsaPkcs13072SHA256) {
     GTEST_SKIP()
         << "Test is skipped if kOnlyUseFips but BoringCrypto is unavailable.";
   }
-  ASSERT_TRUE(TestSignatures("rsa_signature_3072_sha256_test.json",
-                             /*allow_skipping=*/true));
+  ASSERT_TRUE(TestSignatures("rsa_signature_3072_sha256_test.json"));
 }
 
 TEST_F(RsaSsaPkcs1VerifyBoringSslTest, WycheproofRsaPkcs13072SHA512) {
@@ -281,16 +277,14 @@ TEST_F(RsaSsaPkcs1VerifyBoringSslTest, WycheproofRsaPkcs13072SHA512) {
     GTEST_SKIP()
         << "Test is skipped if kOnlyUseFips but BoringCrypto is unavailable.";
   }
-  ASSERT_TRUE(TestSignatures("rsa_signature_3072_sha512_test.json",
-                             /*allow_skipping=*/true));
+  ASSERT_TRUE(TestSignatures("rsa_signature_3072_sha512_test.json"));
 }
 
 TEST_F(RsaSsaPkcs1VerifyBoringSslTest, WycheproofRsaPkcs14096SHA512) {
   if (internal::IsFipsModeEnabled()) {
     GTEST_SKIP() << "Test not run in FIPS-only mode";
   }
-  ASSERT_TRUE(TestSignatures("rsa_signature_4096_sha512_test.json",
-                             /*allow_skipping=*/true));
+  ASSERT_TRUE(TestSignatures("rsa_signature_4096_sha512_test.json"));
 }
 
 // FIPS-only mode test
@@ -350,6 +344,69 @@ TEST_F(RsaSsaPkcs1VerifyBoringSslTest, TestRestrictedFipsModuli) {
   EXPECT_THAT(RsaSsaPkcs1VerifyBoringSsl::New(public_key, params).status(),
               StatusIs(absl::StatusCode::kInternal));
 }
+
+using RsaSsaPkcs1VerifyBoringSslTestVectorTest =
+    testing::TestWithParam<internal::SignatureTestVector>;
+
+TEST_P(RsaSsaPkcs1VerifyBoringSslTestVectorTest, VerifySignatureInTestVector) {
+  const internal::SignatureTestVector& param = GetParam();
+  const RsaSsaPkcs1PrivateKey* typed_key =
+      dynamic_cast<const RsaSsaPkcs1PrivateKey*>(
+          param.signature_private_key.get());
+  ASSERT_THAT(typed_key, NotNull());
+  if (internal::IsFipsModeEnabled() &&
+      typed_key->GetParameters().GetModulusSizeInBits() != 2048 &&
+      typed_key->GetParameters().GetModulusSizeInBits() != 3072) {
+    // Users wants FIPS but modulus size doesn't support FIPS
+    ASSERT_THAT(RsaSsaPkcs1VerifyBoringSsl::New(typed_key->GetPublicKey()),
+                Not(IsOk()));
+    return;
+  }
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
+    // Users wants FIPS, but we don't have FIPS.
+    ASSERT_THAT(RsaSsaPkcs1VerifyBoringSsl::New(typed_key->GetPublicKey()),
+                Not(IsOk()));
+    return;
+  }
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      RsaSsaPkcs1VerifyBoringSsl::New(typed_key->GetPublicKey());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT((*verifier)->Verify(param.signature, param.message), IsOk());
+}
+
+TEST_P(RsaSsaPkcs1VerifyBoringSslTestVectorTest,
+       DifferentMessageDoesNotVerify) {
+  const internal::SignatureTestVector& param = GetParam();
+  const RsaSsaPkcs1PrivateKey* typed_key =
+      dynamic_cast<const RsaSsaPkcs1PrivateKey*>(
+          param.signature_private_key.get());
+  ASSERT_THAT(typed_key, NotNull());
+  if (internal::IsFipsModeEnabled() &&
+      typed_key->GetParameters().GetModulusSizeInBits() != 2048 &&
+      typed_key->GetParameters().GetModulusSizeInBits() != 3072) {
+    // Users wants FIPS but modulus size doesn't support FIPS
+    ASSERT_THAT(RsaSsaPkcs1VerifyBoringSsl::New(typed_key->GetPublicKey()),
+                Not(IsOk()));
+    return;
+  }
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
+    // Users wants FIPS, but we don't have FIPS.
+    ASSERT_THAT(RsaSsaPkcs1VerifyBoringSsl::New(typed_key->GetPublicKey()),
+                Not(IsOk()));
+    return;
+  }
+  absl::StatusOr<std::unique_ptr<PublicKeyVerify>> verifier =
+      RsaSsaPkcs1VerifyBoringSsl::New(typed_key->GetPublicKey());
+  ASSERT_THAT(verifier, IsOk());
+  EXPECT_THAT(
+      (*verifier)->Verify(param.signature, absl::StrCat(param.message, "a")),
+      Not(IsOk()));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    RsaSsaPkcs1VerifyBoringSslTestVectorTest,
+    RsaSsaPkcs1VerifyBoringSslTestVectorTest,
+    testing::ValuesIn(internal::CreateRsaSsaPkcs1TestVectors()));
 
 }  // namespace
 }  // namespace subtle

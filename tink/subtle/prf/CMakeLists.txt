@@ -39,8 +39,11 @@ tink_cc_library(
     absl::strings
     crypto
     tink::core::input_stream
+    tink::internal::call_with_core_dump_protection
+    tink::internal::dfsan_forwarders
     tink::internal::fips_utils
     tink::internal::md_util
+    tink::internal::secret_buffer
     tink::internal::ssl_unique_ptr
     tink::subtle::subtle
     tink::subtle::subtle_util
@@ -59,9 +62,11 @@ tink_cc_library(
     absl::memory
     absl::status
     absl::strings
+    tink::internal::dfsan_forwarders
+    tink::mac::internal::stateful_mac
     tink::prf::prf_set
-    tink::subtle::mac::stateful_mac
     tink::util::input_stream_util
+    tink::util::secret_data
     tink::util::status
     tink::util::statusor
 )
@@ -117,9 +122,10 @@ tink_cc_test(
     absl::status
     absl::strings
     tink::core::input_stream
+    tink::mac::internal::stateful_mac
     tink::prf::prf_set
-    tink::subtle::mac::stateful_mac
     tink::util::istream_input_stream
+    tink::util::secret_data
     tink::util::status
     tink::util::statusor
     tink::util::test_matchers

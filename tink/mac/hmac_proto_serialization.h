@@ -17,13 +17,19 @@
 #ifndef TINK_MAC_HMAC_PROTO_SERIALIZATION_H_
 #define TINK_MAC_HMAC_PROTO_SERIALIZATION_H_
 
+#include "tink/internal/mutable_serialization_registry.h"
+#include "tink/mac/internal/hmac_proto_serialization_impl.h"
 #include "tink/util/status.h"
 
 namespace crypto {
 namespace tink {
 
-// Registers proto parsers and serializers for HMAC parameters and keys.
-crypto::tink::util::Status RegisterHmacProtoSerialization();
+// Registers proto parsers and serializers for HMAC parameters and
+// keys into global serialization registry.
+inline absl::Status RegisterHmacProtoSerialization() {
+  return internal::RegisterHmacProtoSerializationWithMutableRegistry(
+      internal::MutableSerializationRegistry::GlobalInstance());
+}
 
 }  // namespace tink
 }  // namespace crypto

@@ -41,16 +41,16 @@ namespace {
 constexpr absl::string_view kPrimitive = "hybrid_encrypt";
 constexpr absl::string_view kEncryptApi = "encrypt";
 
-util::Status Validate(PrimitiveSet<HybridEncrypt>* hybrid_encrypt_set) {
+absl::Status Validate(PrimitiveSet<HybridEncrypt>* hybrid_encrypt_set) {
   if (hybrid_encrypt_set == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
+    return absl::Status(absl::StatusCode::kInternal,
                         "hybrid_encrypt_set must be non-NULL");
   }
   if (hybrid_encrypt_set->get_primary() == nullptr) {
-    return util::Status(absl::StatusCode::kInvalidArgument,
+    return absl::Status(absl::StatusCode::kInvalidArgument,
                         "hybrid_encrypt_set has no primary");
   }
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 // Returns an HybridEncrypt-primitive that uses the primary
@@ -65,7 +65,7 @@ class HybridEncryptSetWrapper : public HybridEncrypt {
         monitoring_encryption_client_(std::move(monitoring_encryption_client)) {
   }
 
-  crypto::tink::util::StatusOr<std::string> Encrypt(
+  absl::StatusOr<std::string> Encrypt(
       absl::string_view plaintext,
       absl::string_view context_info) const override;
 
@@ -76,7 +76,7 @@ class HybridEncryptSetWrapper : public HybridEncrypt {
   std::unique_ptr<MonitoringClient> monitoring_encryption_client_;
 };
 
-util::StatusOr<std::string> HybridEncryptSetWrapper::Encrypt(
+absl::StatusOr<std::string> HybridEncryptSetWrapper::Encrypt(
     absl::string_view plaintext, absl::string_view context_info) const {
   // BoringSSL expects a non-null pointer for plaintext and context_info,
   // regardless of whether the size is 0.
@@ -102,9 +102,9 @@ util::StatusOr<std::string> HybridEncryptSetWrapper::Encrypt(
 
 }  // anonymous namespace
 
-util::StatusOr<std::unique_ptr<HybridEncrypt>> HybridEncryptWrapper::Wrap(
+absl::StatusOr<std::unique_ptr<HybridEncrypt>> HybridEncryptWrapper::Wrap(
     std::unique_ptr<PrimitiveSet<HybridEncrypt>> primitive_set) const {
-  util::Status status = Validate(primitive_set.get());
+  absl::Status status = Validate(primitive_set.get());
   if (!status.ok()) return status;
 
   MonitoringClientFactory* const monitoring_factory =
@@ -116,13 +116,13 @@ util::StatusOr<std::unique_ptr<HybridEncrypt>> HybridEncryptWrapper::Wrap(
         absl::make_unique<HybridEncryptSetWrapper>(std::move(primitive_set))};
   }
 
-  util::StatusOr<MonitoringKeySetInfo> keyset_info =
+  absl::StatusOr<MonitoringKeySetInfo> keyset_info =
       internal::MonitoringKeySetInfoFromPrimitiveSet(*primitive_set);
   if (!keyset_info.ok()) {
     return keyset_info.status();
   }
 
-  util::StatusOr<std::unique_ptr<MonitoringClient>>
+  absl::StatusOr<std::unique_ptr<MonitoringClient>>
       monitoring_encryption_client = monitoring_factory->New(
           MonitoringContext(kPrimitive, kEncryptApi, *keyset_info));
   if (!monitoring_encryption_client.ok()) {

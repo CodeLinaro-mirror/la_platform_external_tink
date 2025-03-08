@@ -28,6 +28,8 @@
 #include "tink/jwt/internal/jwt_rsa_ssa_pss_sign_key_manager.h"
 #include "tink/jwt/internal/jwt_rsa_ssa_pss_verify_key_manager.h"
 #include "tink/jwt/jwt_ecdsa_proto_serialization.h"
+#include "tink/jwt/jwt_rsa_ssa_pkcs1_proto_serialization.h"
+#include "tink/jwt/jwt_rsa_ssa_pss_proto_serialization.h"
 #include "tink/registry.h"
 #include "tink/util/status.h"
 #include "proto/config.pb.h"
@@ -36,7 +38,7 @@ namespace crypto {
 namespace tink {
 
 // static
-util::Status JwtSignatureRegister() {
+absl::Status JwtSignatureRegister() {
   // Register primitive wrappers.
   auto status = Registry::RegisterPrimitiveWrapper(
       absl::make_unique<jwt_internal::JwtPublicKeySignWrapper>());
@@ -51,6 +53,16 @@ util::Status JwtSignatureRegister() {
   }
 
   status = RegisterJwtEcdsaProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = RegisterJwtRsaSsaPkcs1ProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = RegisterJwtRsaSsaPssProtoSerialization();
   if (!status.ok()) {
     return status;
   }
@@ -80,12 +92,12 @@ util::Status JwtSignatureRegister() {
   }
 
   if (IsFipsModeEnabled()) {
-    return util::OkStatus();
+    return absl::OkStatus();
   }
 
   // There are currently no non-FIPS key managers.
 
-  return util::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace tink

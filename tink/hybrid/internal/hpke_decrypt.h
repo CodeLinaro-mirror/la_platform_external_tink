@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "absl/strings/string_view.h"
+#include "tink/hybrid/hpke_private_key.h"
 #include "tink/hybrid_decrypt.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/statusor.h"
@@ -29,6 +30,7 @@
 
 namespace crypto {
 namespace tink {
+namespace internal {
 
 class HpkeDecrypt : public HybridDecrypt {
  public:
@@ -38,23 +40,38 @@ class HpkeDecrypt : public HybridDecrypt {
   HpkeDecrypt(HpkeDecrypt&& other) = default;
   HpkeDecrypt& operator=(HpkeDecrypt&& other) = default;
 
-  static crypto::tink::util::StatusOr<std::unique_ptr<HybridDecrypt>> New(
+  static absl::StatusOr<std::unique_ptr<HybridDecrypt>> New(
       const google::crypto::tink::HpkePrivateKey& recipient_private_key);
 
-  crypto::tink::util::StatusOr<std::string> Decrypt(
+  static absl::StatusOr<std::unique_ptr<HybridDecrypt>> New(
+      const crypto::tink::HpkePrivateKey& recipient_private_key);
+
+  absl::StatusOr<std::string> Decrypt(
       absl::string_view ciphertext,
       absl::string_view context_info) const override;
 
  private:
   HpkeDecrypt(const google::crypto::tink::HpkeParams& hpke_params,
-              const util::SecretData& recipient_private_key)
+              const util::SecretData& recipient_private_key,
+              absl::string_view output_prefix)
       : hpke_params_(hpke_params),
-        recipient_private_key_(recipient_private_key) {}
+        recipient_private_key_(recipient_private_key),
+        output_prefix_(output_prefix) {}
+
+  static absl::StatusOr<std::unique_ptr<HybridDecrypt>> New(
+      const google::crypto::tink::HpkeParams& hpke_params,
+      const util::SecretData& recipient_private_key,
+      absl::string_view output_prefix);
+
+  absl::StatusOr<std::string> DecryptNoPrefix(
+      absl::string_view ciphertext, absl::string_view context_info) const;
 
   google::crypto::tink::HpkeParams hpke_params_;
   util::SecretData recipient_private_key_;
+  std::string output_prefix_;
 };
 
+}  // namespace internal
 }  // namespace tink
 }  // namespace crypto
 
